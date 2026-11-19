@@ -2,7 +2,7 @@
 
 <img src="AppAssets/DownAudible.png" alt="DownAudible icon showing a mint-green arrow pointing into an open book" width="96" height="96" align="right">
 
-DownAudible backs up your Audible library on a Mac. Keep the original DRM-protected Audible files, or convert them to M4B, M4A, or MP3 and play them on any device. You can keep a book in one file or save each chapter separately.
+DownAudible backs up your Audible library on a Mac. Keep the original DRM-protected Audible files, or convert them to M4B, M4A, or MP3 and play them on any device, with support for embedded and split chapters and embedded cover art.
 
 ## Why I built DownAudible
 
@@ -15,28 +15,6 @@ I refuse to use the Audible app. It is an atrocity, especially on macOS. We must
 [**Download DownAudible for Mac (.zip)**](https://github.com/ashleycox/DownAudible/releases/latest/download/DownAudible.zip)
 
 DownAudible requires an Apple silicon Mac running macOS 15 or later. Unzip the download and drag DownAudible to Applications.
-
-## Build and run
-
-You’ll need an Apple silicon Mac, Xcode 27.2, and uv. DownAudible targets macOS 15 and later. The first build downloads the Audible helper’s dependencies and compiles FFmpeg and LAME. Later builds reuse the tools. [Xcode](https://developer.apple.com/xcode/) · [Install uv](https://docs.astral.sh/uv/getting-started/installation/)
-
-Open `DownAudible.xcodeproj`, choose the **DownAudible** scheme, and press Command-R. To build from Terminal, run
-
-```sh
-xcodebuild -scheme DownAudible \
-  -configuration Debug \
-  -derivedDataPath DerivedData build
-open DerivedData/Build/Products/Debug/DownAudible.app
-```
-
-Automatic signing is enabled. The checked-in settings sign builds to run locally. To use your Apple development team, sign in under **Xcode > Settings > Accounts**, then create `Signing.local.xcconfig` beside `App.xcconfig` with your Team ID.
-
-```xcconfig
-DEVELOPMENT_TEAM = YOUR_TEAM_ID
-CODE_SIGN_IDENTITY = Apple Development
-```
-
-Git ignores this file. Set the team here so Xcode leaves the shared project file free of team-specific settings. Xcode uses the signing identities in your Keychain or Apple’s signing service.
 
 ## Start with your library
 
@@ -61,7 +39,29 @@ Folder and filename templates are independent. The default folder template, `{fo
 
 Open **Help → DownAudible Help** for the manual, including steps for recovering a batch, fixing missing files, and using Audible CLI profiles. **Help → Keyboard Shortcuts** opens the keyboard reference. [Browse manual chapters](DownAudible/Help/Manual) · [Keyboard shortcuts](DownAudible/Help/Manual/help-10-keyboard-shortcuts.md)
 
-From an Applications folder, these commands open macOS Help. From a build folder, DownAudible displays the same help pages in its own windows. VoiceOver can navigate the shortcut tables by row and column in either viewer.
+From an Applications folder, these commands open macOS Help. From a build folder, DownAudible displays the same help pages in its own windows.
+
+## Build and run
+
+If you wish to build from source, you’ll need an Apple silicon Mac, Xcode 27.2, and uv. DownAudible targets macOS 15 and later. The first build downloads the Audible helper’s dependencies and compiles FFmpeg and LAME. Later builds reuse the tools. [Xcode](https://developer.apple.com/xcode/) · [Install uv](https://docs.astral.sh/uv/getting-started/installation/)
+
+Open `DownAudible.xcodeproj`, choose the **DownAudible** scheme, and choose product>run or press Command-R. To build from Terminal, run
+
+```sh
+xcodebuild -scheme DownAudible \
+  -configuration Debug \
+  -derivedDataPath DerivedData build
+open DerivedData/Build/Products/Debug/DownAudible.app
+```
+
+Automatic signing is enabled. The checked-in settings sign builds to run locally. To use your Apple development team, sign in under **Xcode > Settings > Accounts**, then create `Signing.local.xcconfig` beside `App.xcconfig` with your Team ID.
+
+```xcconfig
+DEVELOPMENT_TEAM = YOUR_TEAM_ID
+CODE_SIGN_IDENTITY = Apple Development
+```
+
+Git ignores this file. Set the team here so Xcode leaves the shared project file free of team-specific settings. Xcode uses the signing identities in your Keychain or Apple’s signing service.
 
 ## Checks
 
@@ -79,7 +79,7 @@ PYTHONPATH=Scripts/Audible \
 
 ## Credits
 
-Ashley Cox develops DownAudible. The source is licensed under the GNU Affero General Public License, version 3. [Ashley Cox](https://ashleycox.co.uk/) · [Licence](LICENSE)
+DownAudible is developed by [Ashley Cox](https://ashleycox.co.uk). The source is licensed under the GNU Affero General Public License, version 3. [Licence](LICENSE)
 
 The Audible helper uses mkb79’s Audible and Audible CLI libraries. Libation and AAX Audio Converter were references for the download and conversion workflow. [Audible](https://github.com/mkb79/Audible) · [Audible CLI](https://github.com/mkb79/audible-cli) · [Libation](https://github.com/rmcrackan/Libation) · [AAX Audio Converter](https://github.com/audiamus/AaxAudioConverter)
 
