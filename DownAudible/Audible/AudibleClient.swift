@@ -117,6 +117,10 @@ nonisolated struct AudibleCLIProfile: Decodable, Identifiable, Sendable {
 }
 
 nonisolated struct AudibleBook: Codable, Identifiable, Hashable, Sendable {
+    enum DownloadUnavailableReason: String, Codable, Sendable {
+        case podcastSeries, offlineRestricted, unpublished
+    }
+
     let asin: String
     let title: String
     let subtitle: String?
@@ -140,6 +144,7 @@ nonisolated struct AudibleBook: Codable, Identifiable, Hashable, Sendable {
     let coverImages: [String: URL]?
     let hasPDF: Bool
     let isDownloadable: Bool
+    let downloadUnavailableReason: DownloadUnavailableReason?
 
     var id: String { asin }
 }

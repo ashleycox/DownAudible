@@ -45,6 +45,7 @@ struct DestinationPicker: View {
                 Button("Choose…") {
                     if let selected = Panels.openFolder(allowCreation: true) { directory = selected }
                 }
+                .keyboardShortcut("y", modifiers: [.control, .shift])
                 .accessibilityLabel("Choose destination folder")
             }
         }
@@ -88,8 +89,10 @@ struct AboutView: View {
             Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0")")
                 .foregroundStyle(.secondary)
             Link("Developed by Ashley Cox", destination: website)
+                .keyboardShortcut("w", modifiers: [.control, .shift])
                 .padding(.top, 8)
             Link("View on GitHub", destination: repository)
+                .keyboardShortcut("g", modifiers: [.control, .shift])
         }
         .padding(32)
         .frame(minWidth: 300)

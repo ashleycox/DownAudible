@@ -13,12 +13,14 @@ Choose **Help > Set Up DownAudible…** to run setup again with your saved setti
 ## Your first download
 
 1. Open **Library**. If you need to connect an account, click **Sign In…** and choose the marketplace where you bought your books. You can also choose **Import from Audible CLI…**.
-2. Select a book in the table. From the Download toolbar menu, choose **Download Selected…**.
+2. Select a book in the table. From the **Download** toolbar menu, choose **Download Selected As…**.
 3. Choose a destination folder. Keep **Download audio** on and choose whether to convert it. To save the original and a converted copy, turn on **Keep the original after conversion**.
-4. Click **Download**. Follow the job in **Transfers**. When it finishes, use **Show Output in Finder** to see the file.
+4. Click **Download**. Follow the job in **Transfers**. When it finishes, use **Show Output in Finder** to see the file. Use **Download Selected** for the next book to start with the saved settings.
 
 ## The sidebar
 
 **Library** shows the current Audible account. **Convert Files** works on files you already have. **Transfers** shows work in progress, results, and errors. The **View** menu opens any of these pages even when the sidebar is hidden.
 
-Choose **DownAudible > Settings** or press Command-comma to change the app’s defaults. Choose another chapter on the left or search for a setting by name.
+Use **View > Hide Sidebar** or **Show Sidebar** to change the layout. The **View** menu also opens **Library Status** and controls the status bar at the bottom of the library window.
+
+Choose **DownAudible > Settings** or press Command-comma to change the app’s defaults. Choose **Help > Keyboard Shortcuts** for a reference organised by task.

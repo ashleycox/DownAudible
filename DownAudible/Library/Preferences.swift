@@ -12,7 +12,6 @@ struct TransferPreferences: Codable, Sendable {
     var conversionJobLimit = 2
     var continueAfterError = true
     var showProgress = true
-    var skipConfirmation = false
     var existingFiles = ExistingFiles.reuse
     var logLevel = TransferLogLevel.off
     var logFile: URL?

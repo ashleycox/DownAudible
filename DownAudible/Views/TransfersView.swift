@@ -18,13 +18,14 @@ struct TransfersView: View {
                             .tag(transfer.id)
                     }
                     .contextMenu(forSelectionType: UUID.self) { ids in
-                        transferMenu(model.transfers.filter { ids.contains($0.id) })
+                        TransferSelectionActions(selection: selectedTransfers(ids))
                     }
                     Divider()
                     footer
                 }
             }
         }
+        .focusedSceneValue(\.transferSelection, selectedTransfers(selection))
         .toolbar {
             if !model.transfers.isEmpty {
                 ToolbarItem {
@@ -47,6 +48,7 @@ struct TransfersView: View {
             presenting: restartIDs
         ) { ids in
             Button("Restart Downloads") { model.retryTransfers(ids, restartIncomplete: true) }
+                .keyboardShortcut(.defaultAction)
         } message: { _ in
             Text("DownAudible will discard the temporary audio for these incomplete downloads. Files already saved in the archive stay available.")
         }
@@ -55,6 +57,10 @@ struct TransfersView: View {
     private func askToRestart(_ transfers: [Transfer]) {
         restartIDs = transfers.map(\.id)
         confirmingRestart = !restartIDs.isEmpty
+    }
+
+    private func selectedTransfers(_ ids: Set<UUID>) -> TransferSelection {
+        TransferSelection(model: model, items: model.transfers.filter { ids.contains($0.id) }, askToRestart: askToRestart)
     }
 
     private var footer: some View {
@@ -76,9 +82,36 @@ struct TransfersView: View {
         }
         .padding(12)
     }
+}
 
-    @ViewBuilder
-    private func transferMenu(_ items: [Transfer]) -> some View {
+extension FocusedValues {
+    @Entry fileprivate var transferSelection: TransferSelection?
+}
+
+struct TransferSelectionCommands: View {
+    @FocusedValue(\.transferSelection) private var selection
+
+    var body: some View {
+        if let selection {
+            Divider()
+            TransferSelectionActions(selection: selection, inMenuBar: true)
+        }
+    }
+}
+
+private struct TransferSelection {
+    let model: WorkspaceModel
+    let items: [Transfer]
+    let askToRestart: ([Transfer]) -> Void
+}
+
+private struct TransferSelectionActions: View {
+    let selection: TransferSelection
+    var inMenuBar = false
+
+    var body: some View {
+        let model = selection.model
+        let items = selection.items
         let ids = items.map(\.id)
         let incomplete = items.filter(\.canRetry)
         let restartable = incomplete.filter(\.canRestart)
@@ -90,39 +123,59 @@ struct TransfersView: View {
             default: nil
             }
         }
+        let canCancel = model.isTransferring && items.contains { !$0.isFinished }
+        let canAddToBooks = files.contains(where: AppleBooks.supports)
 
-        if model.isTransferring && items.contains(where: { !$0.isFinished }) {
+        if inMenuBar || canCancel {
             Button(items.count == 1 ? "Cancel Transfer" : "Cancel Selected Transfers") {
                 ids.forEach { model.cancelTransfer($0) }
             }
+            .keyboardShortcut(shortcut("x"))
+            .disabled(!canCancel)
         }
-        if !incomplete.isEmpty {
-            Button("Retry") { model.retryTransfers(incomplete.map(\.id)) }
-                .disabled(!model.canRetry)
+        if inMenuBar || !incomplete.isEmpty {
+            Button(inMenuBar ? "Retry Selected Transfers" : "Retry") { model.retryTransfers(incomplete.map(\.id)) }
+                .keyboardShortcut(shortcut("r"))
+                .disabled(incomplete.isEmpty || !model.canRetry)
         }
-        if !restartable.isEmpty {
-            Button("Restart Download…") { askToRestart(restartable) }
-                .disabled(!model.canRestart)
+        if inMenuBar || !restartable.isEmpty {
+            Button(inMenuBar ? "Restart Selected Downloads…" : "Restart Download…") { selection.askToRestart(restartable) }
+                .keyboardShortcut(shortcut("d"))
+                .disabled(restartable.isEmpty || !model.canRestart)
         }
-        if !files.isEmpty {
+        if inMenuBar || !files.isEmpty {
             Button("Show Output in Finder") { NSWorkspace.shared.activateFileViewerSelecting(files) }
-            if files.contains(where: AppleBooks.supports) {
-                Button("Add to Apple Books") { Task { await model.addToAppleBooks(files) } }
-            }
+                .keyboardShortcut(shortcut("f"))
+                .disabled(files.isEmpty)
         }
-        if !partial.isEmpty {
+        if inMenuBar || canAddToBooks {
+            Button("Add to Apple Books") { Task { await model.addToAppleBooks(files) } }
+                .keyboardShortcut(shortcut("b"))
+                .disabled(!canAddToBooks)
+        }
+        if inMenuBar || !partial.isEmpty {
             Button("Show Partial Files") { NSWorkspace.shared.activateFileViewerSelecting(partial) }
+                .keyboardShortcut(shortcut("p"))
+                .disabled(partial.isEmpty)
         }
-        if !errors.isEmpty {
+        if inMenuBar || !errors.isEmpty {
             Button(errors.count == 1 ? "Copy Error" : "Copy Errors") {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(errors.joined(separator: "\n\n"), forType: .string)
             }
+            .keyboardShortcut(shortcut("e"))
+            .disabled(errors.isEmpty)
         }
-        if !items.isEmpty {
+        if inMenuBar || !items.isEmpty {
             Divider()
-            Button("Remove from List") { model.removeTransfers(ids) }.disabled(model.isTransferring)
+            Button("Remove from List") { model.removeTransfers(ids) }
+                .keyboardShortcut(shortcut(.delete))
+                .disabled(items.isEmpty || model.isTransferring)
         }
+    }
+
+    private func shortcut(_ key: KeyEquivalent) -> KeyboardShortcut? {
+        inMenuBar ? KeyboardShortcut(key, modifiers: [.control, .shift]) : nil
     }
 }
 

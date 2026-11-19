@@ -230,6 +230,13 @@ def represent_book(item):
     series = next(iter(item.series or []), {})
     duration_minutes = item.runtime_length_min
     rights = item.customer_rights or {}
+    unavailable_reason = None
+    if item.is_parent_podcast():
+        unavailable_reason = "podcastSeries"
+    elif rights.get("is_consumable_offline") is False:
+        unavailable_reason = "offlineRestricted"
+    elif not item.is_published():
+        unavailable_reason = "unpublished"
     library_status = item.library_status or {}
     rating = (item.rating or {}).get("overall_distribution") or {}
     genres = (
@@ -265,9 +272,8 @@ def represent_book(item):
         "coverURL": image_url(item),
         "coverImages": image_urls(item),
         "hasPDF": bool(item.pdf_url),
-        "isDownloadable": not item.is_parent_podcast()
-        and rights.get("is_consumable_offline") is not False
-        and item.is_published(),
+        "isDownloadable": unavailable_reason is None,
+        "downloadUnavailableReason": unavailable_reason,
     }
 
 
@@ -364,7 +370,11 @@ def catalog_entries(items):
     books = {}
     for item in items:
         if item.asin and item.title:
-            books[item.asin] = {**represent_book(item), "isDownloadable": False}
+            books[item.asin] = {
+                **represent_book(item),
+                "isDownloadable": False,
+                "downloadUnavailableReason": None,
+            }
     return list(books.values())
 
 

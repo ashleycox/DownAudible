@@ -167,17 +167,28 @@ final class WorkspaceModel {
 
     var missingBooks: [AudibleBook] {
         books.filter { book in
-            guard book.isDownloadable else { return false }
-            switch downloadStatus(for: book) {
-            case .partial, .missing, .notDownloaded: return true
-            default: return false
+            LibraryAudioCategory(status: downloadStatus(for: book), isDownloadable: book.isDownloadable) == .toDownload
+        }
+    }
+
+    var activeLibraryAudioTransfers: [AudibleBook.ID: Transfer.Status] {
+        guard isTransferring, let batch = lastBatch, let accountID = activeAccountID,
+              batch.account?.id == accountID, batch.options.downloadAudio else { return [:] }
+        return zip(batch.work, transfers).reduce(into: [:]) { result, pair in
+            let (work, transfer) = pair
+            if case .library(let book, _) = work, !transfer.isFinished {
+                result[book.id] = transfer.status
             }
         }
     }
 
     var canDownloadMissing: Bool {
-        signedIn && !isRefreshing && !isScanning && !isCheckingFiles && !isTransferring && !missingBooks.isEmpty
+        canRequestDownloads && !isRefreshing && !isScanning && !isCheckingFiles && !missingBooks.isEmpty
     }
+
+    var canStartDownloads: Bool { signedIn && !accountBusy && !signInBusy && !isTransferring }
+    var canRequestDownloads: Bool { canStartDownloads && downloadRequest == nil }
+    var selectedAudiobooks: [AudibleBook] { books.filter { selectedBooks.contains($0.id) } }
 
     var finishedCount: Int { transfers.count(where: \.isFinished) }
 
@@ -559,42 +570,45 @@ final class WorkspaceModel {
         selectedFiles.removeAll()
     }
 
-    func requestDownloads(_ books: [AudibleBook]) {
-        requestDownloads(books, restartsIncomplete: false)
-    }
-
-    func requestMissingDownloads() {
-        guard canDownloadMissing else { return }
+    func requestMissingDownloads(customizing: Bool = false) {
+        guard canDownloadMissing, let accountID = activeAccountID else { return }
         Task {
+            guard canDownloadMissing, activeAccountID == accountID else { return }
             await recheckFiles()
+            guard canRequestDownloads, activeAccountID == accountID,
+                  !isRefreshing, !isScanning, !isCheckingFiles else { return }
             let missing = missingBooks
             guard !missing.isEmpty else {
                 notice = Notice(title: "Library is up to date", message: "Every downloadable title has a saved or matched audio file.")
                 return
             }
-            requestDownloads(missing, restartsIncomplete: false, ensureAudio: true)
+            requestDownloads(missing, customizing: customizing, ensureAudio: true)
         }
     }
 
     func restartDownloads(_ books: [AudibleBook]) {
         let resumable = books.filter { inventory[$0.id]?.hasPartial == true }
-        requestDownloads(resumable, restartsIncomplete: true, ensureAudio: true)
+        guard canRequestDownloads, !resumable.isEmpty else { return }
+        downloadRequest = DownloadRequest(books: resumable, restartsIncomplete: true, requestsAudio: true)
     }
 
-    private func requestDownloads(_ books: [AudibleBook], restartsIncomplete: Bool, ensureAudio: Bool = false) {
-        guard !isTransferring && !books.isEmpty else { return }
+    func requestDownloads(_ books: [AudibleBook], customizing: Bool = false, ensureAudio: Bool = false) {
+        guard canRequestDownloads, !books.isEmpty else { return }
+        if customizing {
+            downloadRequest = DownloadRequest(books: books, requestsAudio: ensureAudio)
+            return
+        }
         var options = downloadOptions
         if ensureAudio { options.downloadAudio = true }
-        if transferPreferences.skipConfirmation && options.hasSelection && !restartsIncomplete {
-            startDownloads(for: books, options: options, restartsIncomplete: restartsIncomplete)
-        } else {
-            downloadRequest = DownloadRequest(books: books, restartsIncomplete: restartsIncomplete, requestsAudio: ensureAudio)
+        guard options.hasSelection else {
+            notice = Notice(title: "Choose What to Download", message: "Use a Download As command or choose what to save in Downloads settings.")
+            return
         }
+        startDownloads(for: books, options: options)
     }
 
     func startDownloads(for books: [AudibleBook], options: DownloadOptions, restartsIncomplete: Bool = false) {
-        guard signedIn, options.hasSelection, let account = activeAccount else { return }
-        downloadOptions = options
+        guard canStartDownloads, options.hasSelection, let account = activeAccount else { return }
         let work = books.map { book in
             TransferWork.library(book, matches: restartsIncomplete ? [] : sourceFiles(for: book))
         }

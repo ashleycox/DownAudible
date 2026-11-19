@@ -5,7 +5,7 @@ import warnings
 import httpx
 from audible.aescipher import AESCipher
 from audible.exceptions import NotFoundError
-from audible_helper import catalog_search, edit_wishlist, execute
+from audible_helper import catalog_search, edit_wishlist, execute, list_books
 from download_transfer import OperationError
 
 ACCOUNT = {
@@ -18,6 +18,51 @@ ASIN = "B000000001"
 
 
 class AccountToolsTests(unittest.IsolatedAsyncioTestCase):
+    async def test_library_excludes_wishlist_only_items_and_reports_availability(self):
+        calls = []
+
+        class Service:
+            async def get(self, path, **options):
+                calls.append(path)
+                if path == "wishlist":
+                    return {"products": [{"asin": "B000000005", "title": "Wish List only"}]}
+                items = [
+                    {"asin": ASIN, "title": "Owned and wishlisted", "in_wishlist": True},
+                    {
+                        "asin": "B000000002",
+                        "title": "Offline restricted",
+                        "customer_rights": {"is_consumable_offline": False},
+                    },
+                    {
+                        "asin": "B000000003",
+                        "title": "Upcoming",
+                        "publication_datetime": "2999-01-01T00:00:00Z",
+                    },
+                    {
+                        "asin": "B000000004",
+                        "title": "Podcast series",
+                        "content_delivery_type": "PodcastParent",
+                        "content_type": "Podcast",
+                        "has_children": True,
+                    },
+                ]
+                return httpx.Response(200, json={"items": items}, headers={"total-count": "4"})
+
+        books = await list_books(Service(), {"podcasts": "showSeries"})
+        self.assertEqual(calls, ["library"])
+        self.assertEqual(
+            [
+                (book["asin"], book["isDownloadable"], book["downloadUnavailableReason"])
+                for book in books
+            ],
+            [
+                (ASIN, True, None),
+                ("B000000002", False, "offlineRestricted"),
+                ("B000000003", False, "unpublished"),
+                ("B000000004", False, "podcastSeries"),
+            ],
+        )
+
     async def test_export_encrypts_cli_account(self):
         request = {"command": "exportAuthFile", "session": json.dumps(ACCOUNT)}
         with self.assertRaisesRegex(OperationError, "exportPassword"):

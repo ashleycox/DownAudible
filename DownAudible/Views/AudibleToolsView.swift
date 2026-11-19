@@ -58,14 +58,18 @@ private struct AudibleAccountToolsView: View {
                 HStack(spacing: 8) {
                     if bytes == nil {
                         Button("Show") { load() }
+                            .keyboardShortcut("h", modifiers: [.control, .shift])
                     } else {
                         Button("Hide") {
                             bytes = nil
                             isCopied = false
                         }
+                        .keyboardShortcut("h", modifiers: [.control, .shift])
                         Button("Copy") { copyBytes() }
+                            .keyboardShortcut("c", modifiers: [.control, .shift])
                     }
                     Button("Reload from Audible") { load(refresh: true) }
+                        .keyboardShortcut("l", modifiers: [.control, .shift])
                     if work != nil {
                         ProgressView()
                             .controlSize(.small)
@@ -87,6 +91,7 @@ private struct AudibleAccountToolsView: View {
                     showingExport = true
                     didExport = false
                 }
+                .keyboardShortcut("e", modifiers: [.control, .shift])
                 if didExport {
                     Text("Account file saved.")
                         .foregroundStyle(.secondary)

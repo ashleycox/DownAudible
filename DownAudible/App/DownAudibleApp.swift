@@ -5,20 +5,23 @@ import SwiftUI
 struct DownAudibleApp: App {
     @Environment(\.openWindow) private var openWindow
     @NSApplicationDelegateAdaptor(DownAudibleAppDelegate.self) private var appDelegate
+    @AppStorage("ShowsLibraryStatusBar") private var showsStatusBar = true
     @State private var model = WorkspaceModel()
     @State private var showingOnboarding = false
+    @State private var sidebarVisibility = NavigationSplitViewVisibility.all
 
     var body: some Scene {
         Window("DownAudible", id: "workspace") {
-            WorkspaceView(model: model, showingOnboarding: $showingOnboarding)
+            WorkspaceView(model: model, showsStatusBar: showsStatusBar,
+                          showingOnboarding: $showingOnboarding, sidebarVisibility: $sidebarVisibility)
                 .frame(minWidth: 720, minHeight: 440)
                 .onAppear { appDelegate.model = model }
         }
         .defaultSize(width: 1_080, height: 640)
         .commands {
-            SidebarCommands()
             CommandGroup(replacing: .appInfo) {
                 Button("About DownAudible") { openWindow(id: "about") }
+                    .keyboardShortcut("a", modifiers: [.command, .control, .shift])
             }
             CommandGroup(replacing: .newItem) {
                 Button("Open Audio Files…", action: openAudioFiles)
@@ -29,12 +32,21 @@ struct DownAudibleApp: App {
                     .disabled(model.isPreparingFiles)
             }
             CommandGroup(after: .toolbar) {
+                Button(sidebarVisibility == .detailOnly ? "Show Sidebar" : "Hide Sidebar", action: toggleSidebar)
+                    .keyboardShortcut("s", modifiers: [.command, .control])
+                Button(showsStatusBar ? "Hide Status Bar" : "Show Status Bar") {
+                    showsStatusBar.toggle()
+                }
+                .keyboardShortcut("s", modifiers: [.command, .option])
+                Divider()
                 Button("Library") { show(.library) }
                     .keyboardShortcut("1")
                 Button("Transfers") { show(.transfers) }
                     .keyboardShortcut("2")
                 Button("Convert Files") { show(.convert) }
                     .keyboardShortcut("3")
+                Button("Library Status") { openWindow(id: "library-status") }
+                    .keyboardShortcut("4")
             }
             CommandMenu("Audiobooks") {
                 Button("Refresh Library") {
@@ -47,70 +59,75 @@ struct DownAudibleApp: App {
                     show(.library)
                     Task { await model.recheckFiles() }
                 }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
                 .disabled(!model.signedIn || model.isRefreshing || model.isScanning || model.isCheckingFiles)
 
                 Divider()
-                Button("Download Selected…") {
-                    show(.library)
-                    model.requestDownloads(model.books.filter { model.selectedBooks.contains($0.id) })
-                }
-                .keyboardShortcut("d")
-                .disabled(showingOnboarding || model.selectedBooks.isEmpty || model.isTransferring)
-                Button("Download Missing…") {
-                    show(.library)
-                    model.requestMissingDownloads()
-                }
-                .keyboardShortcut("d", modifiers: [.command, .shift])
-                .disabled(showingOnboarding || !model.canDownloadMissing)
-                Button("Download Entire Library…") {
-                    show(.library)
-                    model.requestDownloads(model.books)
-                }
-                .disabled(showingOnboarding || model.books.isEmpty || model.isTransferring)
+                LibraryDownloadActions(model: model, activateLibrary: { show(.library) })
+                    .disabled(showingOnboarding)
 
                 Divider()
+                LibraryContextCommands(model: model)
+                    .disabled(showingOnboarding || model.downloadRequest != nil)
                 Menu("Export Library") {
                     Button("JSON…") { Task { await model.exportLibrary(.json) } }
+                        .keyboardShortcut("j", modifiers: [.command, .control])
                     Button("CSV…") { Task { await model.exportLibrary(.csv) } }
+                        .keyboardShortcut("c", modifiers: [.command, .control])
                     Button("TSV…") { Task { await model.exportLibrary(.tsv) } }
+                        .keyboardShortcut("t", modifiers: [.command, .control])
                 }
                 .disabled(!model.signedIn || model.isRefreshing)
                 Button("Audible Tools…") { openWindow(id: "audible-tools") }
+                    .keyboardShortcut("5")
                     .disabled(model.activeAudibleClient == nil)
+                WishlistExportCommands()
             }
             CommandMenu("Transfers") {
                 Button("Cancel Batch") {
                     show(.transfers)
                     model.cancelBatch()
                 }
+                .keyboardShortcut(".", modifiers: [.command, .control])
                 .disabled(!model.isTransferring)
                 Button("Retry Incomplete") {
                     show(.transfers)
                     model.retryBatch()
                 }
+                .keyboardShortcut("r", modifiers: [.command, .option])
                 .disabled(!model.canRetry)
                 Button("Restart Incomplete Downloads") {
                     show(.transfers)
                     model.restartBatch()
                 }
+                .keyboardShortcut("r", modifiers: [.command, .control])
                 .disabled(!model.canRestart)
                 Divider()
-                Button("Clear Finished") {
+                Button("Clear Completed") {
                     show(.transfers)
                     model.clearCompletedTransfers()
                 }
+                .keyboardShortcut("k", modifiers: [.command, .control])
                 .disabled(!model.canClearCompleted)
+                TransferSelectionCommands()
+            }
+            CommandMenu("Conversion") {
+                ConversionSelectionCommands()
             }
             CommandGroup(after: .windowArrangement) {
                 Button("Show DownAudible") { openWindow(id: "workspace") }
+                    .keyboardShortcut("0", modifiers: [.command, .control])
             }
             CommandGroup(replacing: .help) {
                 Button("DownAudible Help") { openWindow(id: "help") }
                     .keyboardShortcut("/", modifiers: [.command, .shift])
+                Button("Keyboard Shortcuts") { openWindow(id: "keyboard-shortcuts") }
+                    .keyboardShortcut("/", modifiers: [.command, .option])
                 Button("Set Up DownAudible…") {
                     openWindow(id: "workspace")
                     showingOnboarding = true
                 }
+                .keyboardShortcut(",", modifiers: [.command, .option])
                 .disabled(showingOnboarding || model.downloadRequest != nil)
             }
         }
@@ -145,6 +162,22 @@ struct DownAudibleApp: App {
         }
         .defaultSize(width: 820, height: 580)
         .commandsRemoved()
+
+        Window("Keyboard Shortcuts", id: "keyboard-shortcuts") {
+            DownAudibleHelpView(keyboardShortcuts: true)
+        }
+        .defaultSize(width: 780, height: 620)
+        .commandsRemoved()
+
+        Window("Library Status", id: "library-status") {
+            LibraryStatusView(model: model)
+        }
+        .defaultSize(width: 960, height: 560)
+        .commandsRemoved()
+    }
+
+    private func toggleSidebar() {
+        sidebarVisibility = sidebarVisibility == .detailOnly ? .all : .detailOnly
     }
 
     private func show(_ page: WorkspacePage) {
@@ -171,11 +204,13 @@ private struct WorkspaceView: View {
     @Environment(\.openWindow) private var openWindow
     @AppStorage("HasFinishedOnboarding") private var hasFinishedOnboarding = false
     @Bindable var model: WorkspaceModel
+    let showsStatusBar: Bool
     @Binding var showingOnboarding: Bool
+    @Binding var sidebarVisibility: NavigationSplitViewVisibility
     @State private var openManualAfterSetup = false
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $sidebarVisibility) {
             List(WorkspacePage.allCases, selection: $model.page) { page in
                 Label(page.rawValue, systemImage: page.icon)
                     .badge(page == .transfers && model.isTransferring ? model.transfers.count - model.finishedCount : 0)
@@ -187,7 +222,7 @@ private struct WorkspaceView: View {
             Group {
                 switch model.page ?? .library {
                 case .library:
-                    LibraryView(model: model)
+                    LibraryView(model: model, showsStatusBar: showsStatusBar)
                 case .transfers:
                     TransfersView(model: model)
                 case .convert:

@@ -4,6 +4,7 @@ import SwiftUI
 struct AudibleWishlistView: View {
     let client: AudibleClient
 
+    @FocusState private var filterFocused: Bool
     @State private var books: [AudibleBook] = []
     @State private var search = ""
     @State private var selection: Set<String> = []
@@ -19,9 +20,11 @@ struct AudibleWishlistView: View {
             HStack {
                 TextField("Filter Wish List", text: $search)
                     .textFieldStyle(.roundedBorder)
+                    .focused($filterFocused)
                 Button("Refresh", systemImage: "arrow.clockwise") {
                     run { try await load() }
                 }
+                .keyboardShortcut("r", modifiers: [.control, .shift])
                 .disabled(isBusy)
                 if isBusy && hasLoaded {
                     ProgressView()
@@ -48,18 +51,19 @@ struct AudibleWishlistView: View {
             }
             HStack {
                 Button("Add Titles…", systemImage: "plus") { showingCatalog = true }
+                    .keyboardShortcut("a", modifiers: [.control, .shift])
                     .disabled(isBusy)
                 Button("Remove", systemImage: "minus") { confirmingRemoval = true }
+                    .keyboardShortcut(.delete, modifiers: [.control, .shift])
                     .disabled(selection.isEmpty || isBusy)
                 Spacer()
                 Menu("Export", systemImage: "square.and.arrow.up") {
-                    ForEach(LibraryExportFormat.allCases) { format in
-                        Button(format.rawValue.uppercased()) { export(as: format) }
-                    }
+                    WishlistExportActions(state: exportState)
                 }
-                .disabled(books.isEmpty || isBusy)
+                .disabled(!exportState.canExport)
             }
         }
+        .focusedSceneValue(\.wishListCommands, exportState)
         .padding(12)
         .task {
             do {
@@ -93,6 +97,10 @@ struct AudibleWishlistView: View {
     }
 
     private var isBusy: Bool { loading || work != nil }
+
+    private var exportState: WishlistExportState {
+        WishlistExportState(canExport: !books.isEmpty && !isBusy, export: export, find: { filterFocused = true })
+    }
 
     private func load() async throws {
         loading = true
@@ -143,6 +151,52 @@ struct AudibleWishlistView: View {
     }
 }
 
+extension FocusedValues {
+    @Entry fileprivate var wishListCommands: WishlistExportState?
+}
+
+struct WishlistExportCommands: View {
+    @FocusedValue(\.wishListCommands) private var state
+
+    var body: some View {
+        if let state {
+            Button("Find in Wish List", action: state.find)
+                .keyboardShortcut("f")
+            Menu("Export Wish List") {
+                WishlistExportActions(state: state, inMenuBar: true)
+            }
+            .disabled(!state.canExport)
+        }
+    }
+}
+
+private struct WishlistExportState {
+    let canExport: Bool
+    let export: (LibraryExportFormat) -> Void
+    let find: () -> Void
+}
+
+private struct WishlistExportActions: View {
+    let state: WishlistExportState
+    var inMenuBar = false
+
+    var body: some View {
+        ForEach(LibraryExportFormat.allCases) { format in
+            Button(format.rawValue.uppercased()) { state.export(format) }
+                .keyboardShortcut(inMenuBar ? KeyboardShortcut(shortcut(for: format), modifiers: [.control, .shift]) : nil)
+                .disabled(!state.canExport)
+        }
+    }
+
+    private func shortcut(for format: LibraryExportFormat) -> KeyEquivalent {
+        switch format {
+        case .json: "j"
+        case .csv: "g"
+        case .tsv: "t"
+        }
+    }
+}
+
 private struct AudibleCatalogSearchView: View {
     let client: AudibleClient
     let existing: Set<String>
@@ -163,6 +217,7 @@ private struct AudibleCatalogSearchView: View {
                     .textFieldStyle(.roundedBorder)
                     .onSubmit(search)
                 Button("Search", systemImage: "magnifyingglass", action: search)
+                    .keyboardShortcut("f", modifiers: [.control, .shift])
                     .disabled(!canSearch)
             }
             AudibleCatalogTable(books: books, selection: $selection)
@@ -189,6 +244,7 @@ private struct AudibleCatalogSearchView: View {
                     add(selection)
                     dismiss()
                 }
+                .keyboardShortcut("a", modifiers: [.control, .shift])
                 .disabled(selection.isEmpty || work != nil)
             }
         }

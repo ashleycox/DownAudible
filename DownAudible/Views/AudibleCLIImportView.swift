@@ -143,6 +143,7 @@ struct AudibleCLIImportView: View {
                     guard panel.runModal() == .OK, let selected = panel.url else { return }
                     select(selected)
                 }
+                .keyboardShortcut("o", modifiers: [.control, .shift])
                 .accessibilityLabel("Choose \(title.lowercased()) file")
             }
         }

@@ -12,7 +12,7 @@ DownAudible asks what to do if you quit while a batch is running. Choose **Keep 
 
 ## Set limits
 
-Open **Settings > Jobs** to set simultaneous downloads and conversions. Lower these numbers if the Mac needs more room for other work. **Bandwidth per download (bytes/s)** applies to each running download. Enter zero to remove that limit. **Request timeout** sets how long DownAudible waits on a network request. Zero turns off that timeout.
+Open **Settings > Jobs** to set simultaneous downloads and conversions. Lower these numbers if the Mac needs more room for other work. **Bandwidth per download (kbps)** applies to each running download. Choose a preset, choose **Custom** and enter a rate in **Custom bandwidth (kbps)**, or choose **Unlimited** to remove the limit. **Request timeout** sets how long DownAudible waits on a network request. Enter zero seconds to turn off the timeout.
 
 **Continue after a job fails** lets other books in the batch run. If you turn it off, DownAudible stops starting new items after a failure. **Show detailed transfer progress** controls the progress bars and detail in Transfers.
 

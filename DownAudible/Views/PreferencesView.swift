@@ -95,6 +95,7 @@ private struct LibraryPreferencesView: View {
                 Text("Refresh the library to apply these settings.")
                     .foregroundStyle(.secondary)
                 Button("Refresh Library") { Task { await model.refresh() } }
+                    .keyboardShortcut("r", modifiers: [.control, .shift])
                     .disabled(!model.signedIn || !model.canSwitchAccounts || reversedDateRange)
             }
         }
@@ -186,6 +187,7 @@ private struct DownloadPreferencesView: View {
                 Text("Leave the sizes unchecked to use the largest cover Audible provides.")
                     .foregroundStyle(.secondary)
                 Button("Use Largest Available") { model.apiOptions.coverSizes = [] }
+                    .keyboardShortcut("l", modifiers: [.control, .shift])
                     .disabled(model.apiOptions.coverSizes.isEmpty)
             }
 
@@ -229,6 +231,7 @@ private struct FilePreferencesView: View {
                 Button("Restore Default Template") {
                     model.folderTemplate = ArchiveLayout.defaultTemplate
                 }
+                .keyboardShortcut("d", modifiers: [.control, .shift])
                 .disabled(model.folderTemplate == ArchiveLayout.defaultTemplate)
             }
 
@@ -305,18 +308,14 @@ private struct JobPreferencesView: View {
 
             Section("Network") {
                 NumberPreference("Request timeout", value: $model.apiOptions.timeout, range: 0...600, step: 5, unit: "seconds")
-                TextField("Bandwidth per download (bytes/s)", value: $model.apiOptions.bytesPerSecond, format: .number)
-                    .onChange(of: model.apiOptions.bytesPerSecond) {
-                        if model.apiOptions.bytesPerSecond < 0 { model.apiOptions.bytesPerSecond = 0 }
-                    }
-                Text("Enter 0 to turn off the timeout or bandwidth limit.")
+                DownloadBandwidthPicker(bytesPerSecond: $model.apiOptions.bytesPerSecond)
+                Text("Enter 0 seconds to turn off the request timeout.")
                     .foregroundStyle(.secondary)
             }
 
             Section("Batch behavior") {
                 Toggle("Continue after a job fails", isOn: $model.transferPreferences.continueAfterError)
                 Toggle("Show detailed transfer progress", isOn: $model.transferPreferences.showProgress)
-                Toggle("Start downloads with the saved options", isOn: $model.transferPreferences.skipConfirmation)
             }
 
             Section("Transfer log") {
@@ -333,11 +332,13 @@ private struct JobPreferencesView: View {
                                 .truncationMode(.middle)
                                 .help(logFile.path(percentEncoded: false))
                             Button("Choose…", action: model.chooseLogFile)
+                                .keyboardShortcut("g", modifiers: [.control, .shift])
                                 .accessibilityLabel("Choose transfer log file")
                         }
                     }
                     if model.transferPreferences.logFile != nil {
                         Button("Use Default Location") { model.transferPreferences.logFile = nil }
+                            .keyboardShortcut("k", modifiers: [.control, .shift])
                     }
                 }
             }

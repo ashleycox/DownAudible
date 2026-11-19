@@ -1,10 +1,26 @@
 import SwiftUI
 
 struct DownAudibleHelpView: View {
+    var keyboardShortcuts = false
     @State private var selection: HelpChapter.ID? = HelpChapter.all.first?.id
     @State private var search = ""
 
     var body: some View {
+        Group {
+            if keyboardShortcuts {
+                if let chapter = HelpChapter.all.first(where: { $0.id == "help-10-keyboard-shortcuts" }) {
+                    HelpArticleView(chapter: chapter)
+                } else {
+                    unavailable
+                }
+            } else {
+                manual
+            }
+        }
+        .frame(minWidth: 616, minHeight: 360)
+    }
+
+    private var manual: some View {
         NavigationSplitView {
             List(resultChapters, selection: $selection) { chapter in
                 Text(chapter.title).tag(chapter.id)
@@ -17,8 +33,7 @@ struct DownAudibleHelpView: View {
                 HelpArticleView(chapter: chapter)
                     .id(chapter.id)
             } else if HelpChapter.all.isEmpty {
-                ContentUnavailableView("Help Unavailable", systemImage: "book.closed",
-                                       description: Text("Rebuild DownAudible to restore the help chapters."))
+                unavailable
             } else {
                 ContentUnavailableView.search(text: search)
             }
@@ -29,7 +44,11 @@ struct DownAudibleHelpView: View {
                 selection = resultChapters.first?.id
             }
         }
-        .frame(minWidth: 616, minHeight: 360)
+    }
+
+    private var unavailable: some View {
+        ContentUnavailableView("Help Unavailable", systemImage: "book.closed",
+                               description: Text("Rebuild DownAudible to restore the help chapters."))
     }
 
     private var resultChapters: [HelpChapter] {
@@ -70,6 +89,36 @@ private struct HelpArticleView: View {
         case .body(let text):
             Text(text)
                 .lineSpacing(3)
+        case .table(let table):
+            HelpTableView(table: table)
+        }
+    }
+}
+
+private struct HelpTableView: View {
+    let table: HelpChapter.MarkdownTable
+
+    var body: some View {
+        Grid(alignment: .topLeading, horizontalSpacing: 24, verticalSpacing: 0) {
+            GridRow {
+                ForEach(table.header.indices, id: \.self) { column in
+                    Text(table.header[column])
+                        .fontWeight(.semibold)
+                        .accessibilityAddTraits(.isHeader)
+                        .padding(.bottom, 6)
+                }
+            }
+            ForEach(table.rows.indices, id: \.self) { row in
+                Divider()
+                GridRow {
+                    ForEach(table.header.indices, id: \.self) { column in
+                        Text(table.rows[row][column])
+                            .frame(maxWidth: column == 0 ? .infinity : nil, alignment: .leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.vertical, 6)
+                    }
+                }
+            }
         }
     }
 }
@@ -78,6 +127,28 @@ private struct HelpChapter: Identifiable {
     enum Paragraph {
         case heading(String)
         case body(AttributedString)
+        case table(MarkdownTable)
+    }
+
+    struct MarkdownTable {
+        let header: [AttributedString]
+        let rows: [[AttributedString]]
+
+        init?(_ block: String) {
+            let lines = block.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
+            guard lines.count >= 3, lines.allSatisfy({ $0.hasPrefix("|") && $0.hasSuffix("|") }) else { return nil }
+            let cells = lines.map { line in
+                line.dropFirst().dropLast().split(separator: "|", omittingEmptySubsequences: false)
+                    .map { $0.trimmingCharacters(in: .whitespaces) }
+            }
+            let columns = cells[0].count
+            guard columns > 1, cells.allSatisfy({ $0.count == columns }), cells[1].allSatisfy({ separator in
+                let rule = separator.trimmingCharacters(in: CharacterSet(charactersIn: ":"))
+                return rule.count >= 3 && rule.allSatisfy { $0 == "-" }
+            }) else { return nil }
+            header = cells[0].map(HelpChapter.inlineMarkdown)
+            rows = cells.dropFirst(2).map { $0.map(HelpChapter.inlineMarkdown) }
+        }
     }
 
     let id: String
@@ -107,9 +178,14 @@ private struct HelpChapter: Identifiable {
         searchableText = normalized
         paragraphs = blocks.dropFirst().map { block in
             if block.hasPrefix("## ") { return .heading(String(block.dropFirst(3))) }
-            let styled = try? AttributedString(markdown: block, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))
-            return .body(styled ?? AttributedString(block))
+            if let table = MarkdownTable(block) { return .table(table) }
+            return .body(Self.inlineMarkdown(block))
         }
+    }
+
+    private static func inlineMarkdown(_ text: String) -> AttributedString {
+        (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+            ?? AttributedString(text)
     }
 
     func matches(_ query: String) -> Bool {

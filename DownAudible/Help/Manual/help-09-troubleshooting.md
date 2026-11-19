@@ -1,4 +1,4 @@
-# Troubleshooting and Shortcuts
+# Troubleshooting
 
 ## Sign-in or account trouble
 
@@ -24,10 +24,6 @@ Check the error in **Transfers**. Try lowering simultaneous downloads or setting
 
 Find the file with **Show Output in Finder** in Transfers. Books may require authorisation for an original or may refuse that particular Audible format. Use **Convert Files** to create one M4B, then choose **Add to Apple Books** on the result in Transfers. Check Books itself to confirm that it imported the file.
 
-## Useful keys
+## The main window is closed
 
-**Command-O** opens audio files. **Shift-Command-O** opens a folder of audio. Use **Command-1**, **Command-2**, or **Command-3** to show Library, Transfers, or Convert Files.
-
-**Command-R** refreshes the Audible library. **Command-D** downloads the selected books. **Shift-Command-D** opens Download Missing. **Command-comma** opens Settings. **Shift-Command-/** opens this manual.
-
-Choose **Window > Show DownAudible** to bring the main window back if it is hidden or closed. The View menu has the standard sidebar controls.
+Choose **Window > Show DownAudible** to bring the main window back. Use the **View** menu to show or hide the sidebar and the library status bar. Choose **Help > Keyboard Shortcuts** for the full list of keys.

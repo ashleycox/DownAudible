@@ -93,15 +93,18 @@ struct OnboardingView: View {
         HStack(spacing: 8) {
             if page != .welcome {
                 Button("Back") { history.removeLast() }
+                    .keyboardShortcut("b", modifiers: [.control, .shift])
             }
             Spacer()
             switch page {
             case .welcome:
                 Button("Skip Setup") { history.append(.finish) }
+                    .keyboardShortcut("p", modifiers: [.control, .shift])
                 Button("Continue", action: advance)
                     .keyboardShortcut(.defaultAction)
             case .settings(let pane):
                 Button("Skip Configuration") { history.append(.finish) }
+                    .keyboardShortcut("p", modifiers: [.control, .shift])
                 Button(
                     pane == .accounts && !model.signedIn ? "Continue Without an Account" : "Continue",
                     action: advance
@@ -109,6 +112,7 @@ struct OnboardingView: View {
                 .keyboardShortcut(.defaultAction)
             case .finish:
                 Button("Open Manual") { finish(.manual) }
+                    .keyboardShortcut("m", modifiers: [.control, .shift])
                 Button("Open DownAudible") { finish(.app) }
                     .keyboardShortcut(.defaultAction)
             }

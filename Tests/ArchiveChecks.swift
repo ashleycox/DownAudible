@@ -36,6 +36,8 @@ struct ArchiveChecks {
         check(LocalAudioIndex(files: [file]).match(title: "Echo", author: "me", asin: "B000000001") == file)
         check(LocalAudioIndex(files: [file, file]).match(title: "Echo", author: "me", asin: "B000000001") == nil)
         let book = try JSONDecoder().decode(AudibleBook.self, from: Data(#"{"asin":"B000000001","title":"One, \"Two\"","authors":["Me"],"narrators":[],"hasPDF":false,"isDownloadable":true}"#.utf8))
+        check(book.downloadUnavailableReason == nil)
+        checkLibraryAudioCategories()
         let csv = workspace.appending(path: "Library.csv")
         try await LibraryExportFormat.csv.write([book], to: csv)
         check(try String(contentsOf: csv, encoding: .utf8).contains("\"One, \"\"Two\"\"\""))
@@ -54,7 +56,19 @@ struct ArchiveChecks {
         check(contents.split(separator: "\n").count == 2 && contents.contains("Me Test\tFailed: Test"))
         try await checkArchiveWatcher(in: workspace, existsAtStart: true)
         try await checkArchiveWatcher(in: workspace, existsAtStart: false)
-        print("Archive naming, incomplete transfers, queue persistence, file watching, matching, preference migration, CSV export, and logs passed.")
+        print("Archive naming, incomplete transfers, queue persistence, file watching, matching, library status, preference migration, CSV export, and logs passed.")
+    }
+
+    private static func checkLibraryAudioCategories() {
+        for status in [LibraryDownloadStatus.partial, .missing, .notDownloaded] {
+            check(LibraryAudioCategory(status: status, isDownloadable: true) == .toDownload)
+            check(LibraryAudioCategory(status: status, isDownloadable: false) == .unavailable)
+        }
+        for isDownloadable in [true, false] {
+            check(LibraryAudioCategory(status: .downloaded, isDownloadable: isDownloadable) == .downloaded)
+            check(LibraryAudioCategory(status: .matched, isDownloadable: isDownloadable) == .matched)
+        }
+        check(LibraryAudioCategory(status: .unavailable, isDownloadable: false) == .unavailable)
     }
 
     private static func checkOutputNaming(root: URL) throws {

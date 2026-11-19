@@ -52,7 +52,9 @@ struct AccountPreferencesView: View {
 
                 HStack(spacing: 8) {
                     Button("Add Account…") { sheet = .add }
+                        .keyboardShortcut("a", modifiers: [.control, .shift])
                     Button("Import from Audible CLI…") { sheet = .importCLI }
+                        .keyboardShortcut("i", modifiers: [.control, .shift])
                     if model.accountBusy {
                         ProgressView().controlSize(.small)
                             .accessibilityLabel("Updating Audible accounts")
@@ -107,21 +109,26 @@ struct AccountPreferencesView: View {
         if model.activeAccount?.id == account.id {
             if !model.signedIn {
                 Button("Sign In…") { sheet = .reconnect }
+                    .keyboardShortcut("s", modifiers: [.control, .shift])
                     .disabled(!model.canSwitchAccounts)
             } else {
                 Button("Sign Out", action: model.signOut)
+                    .keyboardShortcut("q", modifiers: [.control, .shift])
                     .disabled(!model.canRemoveAccounts)
             }
         } else {
             Button("Switch to This Account") { switchAccount(to: account) }
+                .keyboardShortcut("s", modifiers: [.control, .shift])
                 .disabled(!model.canSwitchAccounts)
         }
         Button("Rename…") { sheet = .rename(account) }
+            .keyboardShortcut("n", modifiers: [.control, .shift])
             .disabled(!model.canSwitchAccounts)
         Button("Remove Account…", role: .destructive) {
             accountToRemove = account
             showingRemove = true
         }
+        .keyboardShortcut(.delete, modifiers: [.control, .shift])
         .disabled(!model.canRemoveAccounts)
     }
 

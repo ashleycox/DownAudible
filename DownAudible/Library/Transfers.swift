@@ -142,6 +142,19 @@ enum LibraryDownloadStatus: CaseIterable, Identifiable, Sendable {
     }
 }
 
+enum LibraryAudioCategory: Sendable {
+    case toDownload, downloaded, matched, unavailable
+
+    init(status: LibraryDownloadStatus, isDownloadable: Bool) {
+        self = switch status {
+        case .downloaded: .downloaded
+        case .matched: .matched
+        case .unavailable: .unavailable
+        case .partial, .missing, .notDownloaded: isDownloadable ? .toDownload : .unavailable
+        }
+    }
+}
+
 struct ArchiveInventoryItem: Sendable {
     var files: [URL] = []
     var originals: [URL] = []
