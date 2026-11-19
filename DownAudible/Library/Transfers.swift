@@ -58,9 +58,9 @@ struct Transfer: Codable, Identifiable, Sendable {
     let title: String
     var status: Status = .waiting
     var files: [URL] = []
-    var canRestart = false
     var partialFolder: URL?
     var restartPending: Bool?
+    var booksImportPending: Bool?
 
     var isFinished: Bool {
         switch status {
@@ -75,6 +75,10 @@ struct Transfer: Codable, Identifiable, Sendable {
         case .done(_, let note): note != nil
         default: false
         }
+    }
+
+    var canRestart: Bool {
+        canRetry && partialFolder.map(IncompleteDownloads.containsAudio(in:)) == true
     }
 }
 

@@ -57,7 +57,7 @@ enum LibraryExportFormat: String, CaseIterable, Identifiable, Sendable {
     }
 
     private static func field(_ value: String, separator: String) -> String {
-        if value.contains(separator) || value.contains("\"") || value.contains("\r") || value.contains("\n") {
+        if value.contains(separator) || value.contains("\"") || value.rangeOfCharacter(from: .newlines) != nil {
             return "\"" + value.replacingOccurrences(of: "\"", with: "\"\"") + "\""
         }
         return value

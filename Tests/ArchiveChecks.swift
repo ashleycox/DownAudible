@@ -16,6 +16,7 @@ struct ArchiveChecks {
         check(try layout.directory(for: title, format: "m4b").path.hasSuffix("/m4b/Me/My Great Book"))
         check(!ArchiveLayout(root: root, template: "../{title}").isValid)
         check(!ArchiveLayout(root: root, template: "{typo}").isValid)
+        try checkMediaChapterBounds()
         let literal = ArchiveTitle(title: "{author}/Book", author: "Name/Name", asin: nil)
         check(try layout.directory(for: literal, format: "m4b").path.hasSuffix("/m4b/Name-Name/{author}-Book"))
         try manager.createSymbolicLink(at: root.appending(path: "aax"), withDestinationURL: outside)
@@ -27,6 +28,7 @@ struct ArchiveChecks {
         check(ArchiveLayout.filename(String(repeating: "é", count: 160), maxBytes: 75).utf8.count == 74)
         try checkOutputNaming(root: root)
         try checkIncompleteStaging(in: workspace)
+        try await checkAudibleHelperExit(in: workspace)
 
         let previous = Data(#"{"convert":false,"keepOriginal":true,"downloadPDF":false,"downloadCover":true}"#.utf8)
         let options = try JSONDecoder().decode(DownloadOptions.self, from: previous)
@@ -42,7 +44,9 @@ struct ArchiveChecks {
         let csv = workspace.appending(path: "Library.csv")
         try await LibraryExportFormat.csv.write([book], to: csv)
         check(try String(contentsOf: csv, encoding: .utf8).contains("\"One, \"\"Two\"\"\""))
+        try await checkMultilineExport(in: workspace)
         try await checkTransferQueue(in: workspace, book: book, file: file, layout: layout)
+        try await checkReplacingMissingAudio(in: workspace, book: book)
 
         var preferences = TransferPreferences()
         preferences.logLevel = .errors
@@ -58,6 +62,49 @@ struct ArchiveChecks {
         try await checkArchiveWatcher(in: workspace, existsAtStart: true)
         try await checkArchiveWatcher(in: workspace, existsAtStart: false)
         print("Archive naming, incomplete transfers, queue persistence, file watching, matching, library status, preference migration, CSV export, and logs passed.")
+    }
+
+    private static func checkMediaChapterBounds() throws {
+        let input = Data("""
+            {
+              "streams": [{"index": 0, "codec_type": "audio", "duration": "2.000"}],
+              "chapters": [
+                {"start_time": "0.000", "end_time": "5.000", "tags": {"title": "Audio"}},
+                {"start_time": "2.500", "end_time": "5.000", "tags": {"title": "Past the Audio"}}
+              ],
+              "format": {"duration": "5.000"}
+            }
+            """.utf8)
+        let probe = try JSONDecoder().decode(AudioProbe.self, from: input)
+        check(probe.durationMilliseconds == 2_000)
+        let chapters = MediaTags.markers(probes: [probe, probe], supplied: [], title: nil)
+        check(chapters == [
+            MediaChapter(startMilliseconds: 0, durationMilliseconds: 2_000, title: "Audio"),
+            MediaChapter(startMilliseconds: 2_000, durationMilliseconds: 2_000, title: "Audio")
+        ])
+
+        let supplied = [
+            MediaChapter(startMilliseconds: 0, durationMilliseconds: 1_000, title: "Opening"),
+            MediaChapter(startMilliseconds: 1_000, durationMilliseconds: 4_000, title: "Closing")
+        ]
+        let catalogChapters = MediaTags.markers(probes: [probe], supplied: supplied, title: nil)
+        check(catalogChapters == [
+            supplied[0], MediaChapter(startMilliseconds: 1_000, durationMilliseconds: 1_000, title: "Closing")
+        ])
+    }
+
+    private static func checkAudibleHelperExit(in workspace: URL) async throws {
+        let helper = workspace.appending(path: "exit-before-reading")
+        try "#!/bin/sh\nexit 1\n".write(to: helper, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: helper.path)
+
+        let client = AudibleClient(helperURL: helper)
+        // A request larger than the pipe buffer forces the write to observe the helper's exit.
+        let config = workspace.appending(path: String(repeating: "x", count: 1024 * 1024))
+        do {
+            _ = try await client.cliProfiles(config: config)
+            fatalError("An early Audible helper exit should fail the request.")
+        } catch AudibleError.service {}
     }
 
     private static func checkLibraryAudioCategories() {
@@ -208,6 +255,48 @@ struct ArchiveChecks {
         check(try Data(contentsOf: sentinel) == bytes)
     }
 
+    private static func checkReplacingMissingAudio(in workspace: URL, book: AudibleBook) async throws {
+        let defaults = UserDefaults.standard
+        let originalIndex = defaults.object(forKey: "ArchiveIndex")
+        defer { defaults.set(originalIndex, forKey: "ArchiveIndex") }
+        let source = workspace.appending(path: "Matched.mp3")
+        let layout = ArchiveLayout(root: workspace.appending(path: "Restored"), template: ArchiveLayout.defaultTemplate)
+        let archive = ArchiveWorker(media: MediaTools(toolDirectory: nil))
+        let account = "archive-check"
+        try Data("First source".utf8).write(to: source)
+        let initial = try await archive.download(
+            book, account: account, audible: AudibleClient(), matches: [source], layout: layout,
+            options: DownloadOptions(), existingFiles: .saveNewCopy, progress: { _, _ in }
+        )
+        try FileManager.default.removeItem(at: initial.url)
+        let missing = await archive.inventory(for: [book.id], account: account, layout: layout)
+        check(missing[book.id]?.missingFiles == [initial.url])
+
+        let replacement = Data("A longer replacement source".utf8)
+        try replacement.write(to: source)
+        let restored = try await archive.download(
+            book, account: account, audible: AudibleClient(), matches: [source], layout: layout,
+            options: DownloadOptions(), existingFiles: .saveNewCopy, progress: { _, _ in }
+        )
+        check(restored.url == initial.url)
+        check(try Data(contentsOf: restored.url) == replacement)
+        let current = await archive.inventory(for: [book.id], account: account, layout: layout)
+        check(current[book.id]?.files == [restored.url])
+        check(current[book.id]?.missingFiles.isEmpty == true)
+    }
+
+    private static func checkMultilineExport(in workspace: URL) async throws {
+        let book = try JSONDecoder().decode(AudibleBook.self, from: Data(
+            #"{"asin":"B000000002","title":"Multiline","description":"Line one\r\nLine two","authors":[],"narrators":[],"hasPDF":false,"isDownloadable":true}"#.utf8
+        ))
+        for format in [LibraryExportFormat.csv, .tsv] {
+            let path = workspace.appending(path: "Multiline.\(format.rawValue)")
+            try await format.write([book], to: path)
+            let contents = try String(contentsOf: path, encoding: .utf8)
+            check(contents.contains("\"Line one\r\nLine two\""))
+        }
+    }
+
     private static func checkTransferQueue(
         in workspace: URL, book: AudibleBook, file: LocalAudioFile, layout: ArchiveLayout
     ) async throws {
@@ -228,10 +317,16 @@ struct ArchiveChecks {
             appleBooks: .off, preferences: TransferPreferences(), jobLimit: 2
         )
         batch.activation = activation
-        let partial = workspace.appending(path: "Resume/Partial")
+        let partialRoot = workspace.appending(path: "Queued")
+        let partial = IncompleteDownloads.folder(for: book.id, account: account.id.uuidString, root: partialRoot)
+        let audioFolder = try IncompleteDownloads.audioFolder(
+            for: book.id, account: account.id.uuidString, root: partialRoot, restart: false
+        )
+        let partialFile = audioFolder.appending(path: "book.aax.partial")
+        try Data("partial".utf8).write(to: partialFile)
         let downloading = Transfer(
             title: book.title, status: .active("Downloading audio", 0.25),
-            canRestart: true, partialFolder: partial, restartPending: true
+            partialFolder: partial, restartPending: true, booksImportPending: true
         )
         let failed = Transfer(title: file.title, status: .failed("Fixture failed"))
         let snapshot = TransferQueueSnapshot(batch: batch, transfers: [downloading, failed])
@@ -255,9 +350,15 @@ struct ArchiveChecks {
         check(savedBatch.layout == layout && savedBatch.options.downloadCover && savedBatch.options.makesConversion)
         check(savedBatch.conversion == conversion && savedBatch.jobLimit == 2)
         check(saved.transfers.map(\.id) == [downloading.id, failed.id])
-        check(saved.transfers[0].partialFolder == partial && saved.transfers[0].canRestart)
+        check(saved.transfers[0].partialFolder == partial && !saved.transfers[0].canRestart)
         check(saved.transfers[0].restartPending == true && saved.transfers[1].restartPending == nil)
+        check(saved.transfers[0].booksImportPending == true && saved.transfers[1].booksImportPending == nil)
         check(saved.transfers[1].canRetry && saved.transfers[1].isFinished)
+        var interrupted = saved.transfers[0]
+        interrupted.status = .interrupted
+        check(interrupted.canRestart)
+        try FileManager.default.removeItem(at: partialFile)
+        check(!interrupted.canRestart)
         guard case .library(let savedBook, let matches) = savedBatch.work[0],
               case .local(let savedFile) = savedBatch.work[1],
               case .active(let label, let progress) = saved.transfers[0].status else {

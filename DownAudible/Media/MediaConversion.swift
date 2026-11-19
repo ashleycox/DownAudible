@@ -85,7 +85,7 @@ extension MediaTools {
         let options: [String]
         let probe: AudioProbe
 
-        var arguments: [String] { options + ["-i", url.path] }
+        var arguments: [String] { MediaTools.audioInput(url, options: options) }
         var legacyClock: Bool { url.pathExtension.lowercased() == "aa" }
     }
 
@@ -240,8 +240,8 @@ extension MediaTools {
     private static func validateVoucher(
         _ ffmpeg: URL, for url: URL, options: [String], directory: URL
     ) async throws {
-        let args = ["-hide_banner", "-loglevel", "error", "-nostdin", "-xerror"] + options + [
-            "-i", url.path, "-map", "0:a:0", "-frames:a", "3", "-f", "null", "-"
+        let args = ["-hide_banner", "-loglevel", "error", "-nostdin", "-xerror"] + audioInput(url, options: options) + [
+            "-map", "0:a:0", "-frames:a", "3", "-f", "null", "-"
         ]
         let (status, _, _) = try await MediaProcess.run(ffmpeg, arguments: args, workingDirectory: directory)
         guard status == 0 else { throw MediaError.voucherRequired }

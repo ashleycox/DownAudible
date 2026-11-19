@@ -10,6 +10,7 @@ struct DownAudibleApp: App {
     @State private var model: WorkspaceModel
     @State private var showingOnboarding = false
     @State private var showingConversionOptions = false
+    @State private var requestingBatchRestart = false
     @State private var sidebarVisibility = NavigationSplitViewVisibility.all
     @State private var helpChapterRequest: String?
 
@@ -23,6 +24,7 @@ struct DownAudibleApp: App {
         Window("DownAudible", id: "workspace") {
             WorkspaceView(model: model, showsStatusBar: showsStatusBar,
                           showingOnboarding: $showingOnboarding, showingConversionOptions: $showingConversionOptions,
+                          requestingBatchRestart: $requestingBatchRestart,
                           sidebarVisibility: $sidebarVisibility, openManual: { openHelp() })
                 .frame(minWidth: 720, minHeight: 440)
                 .onAppear { appDelegate.model = model }
@@ -116,9 +118,9 @@ struct DownAudibleApp: App {
                 }
                 .keyboardShortcut("r", modifiers: [.command, .option])
                 .disabled(!model.canRetry)
-                Button("Restart Incomplete Downloads") {
+                Button("Restart Incomplete Downloads…") {
                     show(.transfers)
-                    model.restartBatch()
+                    requestingBatchRestart = true
                 }
                 .keyboardShortcut("r", modifiers: [.command, .control])
                 .disabled(!model.canRestart)
@@ -232,6 +234,7 @@ private struct WorkspaceView: View {
     let showsStatusBar: Bool
     @Binding var showingOnboarding: Bool
     @Binding var showingConversionOptions: Bool
+    @Binding var requestingBatchRestart: Bool
     @Binding var sidebarVisibility: NavigationSplitViewVisibility
     let openManual: () -> Void
     @State private var openManualAfterSetup = false
@@ -251,7 +254,7 @@ private struct WorkspaceView: View {
                 case .library:
                     LibraryView(model: model, showsStatusBar: showsStatusBar)
                 case .transfers:
-                    TransfersView(model: model)
+                    TransfersView(model: model, requestingBatchRestart: $requestingBatchRestart)
                 case .convert:
                     ConverterView(model: model, showingOptions: $showingConversionOptions)
                 }

@@ -102,8 +102,9 @@ enum MediaTags {
         var offset: Int64 = 0
         var hasKnownDuration = true
         for (index, probe) in probes.enumerated() {
-            let chapters = probe.chapterMarkers(numberingFrom: embedded.count + 1)
-            let duration = probe.durationMilliseconds ?? chapters.last.map {
+            let audioDuration = probe.durationMilliseconds
+            let chapters = normalized(probe.chapterMarkers(numberingFrom: embedded.count + 1), through: audioDuration)
+            let duration = audioDuration ?? chapters.last.map {
                 $0.startMilliseconds + $0.durationMilliseconds
             }
             if chapters.isEmpty, let duration, duration > 0 {
@@ -120,24 +121,28 @@ enum MediaTags {
                     embedded.append(chapter)
                 }
             }
-            if let duration {
-                let end = offset.addingReportingOverflow(duration)
-                guard !end.overflow else { break }
-                offset = end.partialValue
-            } else {
+            guard let duration else {
                 hasKnownDuration = false
                 break
             }
+            let end = offset.addingReportingOverflow(duration)
+            guard !end.overflow else {
+                hasKnownDuration = false
+                break
+            }
+            offset = end.partialValue
         }
 
-        let supplied = normalized(supplied)
+        let suppliedMarkers = normalized(supplied)
+        let suppliedEnd = suppliedMarkers.last.map { $0.startMilliseconds + $0.durationMilliseconds }
+        let supplied = normalized(suppliedMarkers, through: hasKnownDuration ? offset : nil)
         let sourceChaptersAreNamed = probes.allSatisfy { probe in
             !probe.chapters.isEmpty && probe.chapters.allSatisfy { chapter in
                 guard let title = chapter.tags?["title"] else { return false }
                 return !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             }
         }
-        if let end = supplied.last.map({ $0.startMilliseconds + $0.durationMilliseconds }),
+        if let end = suppliedEnd,
            !hasKnownDuration || abs(Double(end) - Double(offset)) <= 15_000,
            supplied.count > embedded.count || (!sourceChaptersAreNamed && supplied.count >= embedded.count) {
             return supplied
@@ -145,12 +150,16 @@ enum MediaTags {
         return normalized(embedded)
     }
 
-    private static func normalized(_ markers: [MediaChapter]) -> [MediaChapter] {
+    private static func normalized(_ markers: [MediaChapter], through duration: Int64? = nil) -> [MediaChapter] {
         var result: [MediaChapter] = []
-        for marker in markers.sorted(by: { $0.startMilliseconds < $1.startMilliseconds }) {
+        for var marker in markers.sorted(by: { $0.startMilliseconds < $1.startMilliseconds }) {
             guard marker.startMilliseconds >= 0, marker.durationMilliseconds > 0,
                   !marker.startMilliseconds.addingReportingOverflow(marker.durationMilliseconds).overflow,
                   result.last?.startMilliseconds != marker.startMilliseconds else { continue }
+            if let duration {
+                guard marker.startMilliseconds < duration else { continue }
+                marker.durationMilliseconds = min(marker.durationMilliseconds, duration - marker.startMilliseconds)
+            }
             result.append(marker)
         }
         return result

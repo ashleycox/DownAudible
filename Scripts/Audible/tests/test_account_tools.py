@@ -1,11 +1,21 @@
 import json
+import tempfile
 import unittest
 import warnings
+from datetime import UTC, datetime
+from pathlib import Path
 
 import httpx
 from audible.aescipher import AESCipher
 from audible.exceptions import NotFoundError
-from audible_helper import catalog_search, edit_wishlist, execute, list_books
+from audible_helper import (
+    catalog_search,
+    chapters_from,
+    cli_profiles,
+    edit_wishlist,
+    execute,
+    list_books,
+)
 from download_transfer import OperationError
 
 ACCOUNT = {
@@ -18,6 +28,48 @@ ASIN = "B000000001"
 
 
 class AccountToolsTests(unittest.IsolatedAsyncioTestCase):
+    def test_cli_profiles_skip_invalid_auth_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            config = folder / "config.toml"
+            config.write_text(
+                '[APP]\nprimary_profile = "saved"\n'
+                '[profile.broken]\nauth_file = "broken.json"\n'
+                '[profile.truncated]\nauth_file = "truncated"\n'
+                '[profile.saved]\nauth_file = "account.json"\n'
+                '[profile.protected]\nauth_file = "account.bin"\n'
+            )
+            (folder / "broken.json").write_text("null")
+            (folder / "truncated").write_bytes(b"\x80\x81")
+            (folder / "account.json").write_text(json.dumps(ACCOUNT))
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", UserWarning)
+                (folder / "account.bin").write_bytes(
+                    AESCipher("fixture-password").to_bytes(json.dumps(ACCOUNT))
+                )
+            profiles = cli_profiles({"file": str(config)})
+        self.assertEqual([profile["name"] for profile in profiles], ["saved", "protected"])
+        self.assertTrue(profiles[0]["isDefault"])
+        self.assertFalse(profiles[0]["requiresPassword"])
+        self.assertTrue(profiles[1]["requiresPassword"])
+
+    def test_chapters_skip_incomplete_metadata(self):
+        def metadata(chapters):
+            return {"content_metadata": {"chapter_info": {"chapters": chapters}}}
+
+        self.assertEqual(chapters_from(metadata(None)), [])
+        chapters = [
+            None,
+            {"start_offset_ms": 0, "length_ms": 1000, "title": 1},
+            {"start_offset_ms": 0, "length_ms": True, "title": "Invalid"},
+            {"start_offset_ms": 0, "length_ms": 2**63, "title": "Out of range"},
+            {"start_offset_ms": 1000, "length_ms": 1000, "title": "Chapter"},
+        ]
+        self.assertEqual(
+            chapters_from(metadata(chapters)),
+            [{"startMilliseconds": 1000, "durationMilliseconds": 1000, "title": "Chapter"}],
+        )
+
     async def test_library_excludes_wishlist_only_items_and_reports_availability(self):
         calls = []
 
@@ -62,6 +114,75 @@ class AccountToolsTests(unittest.IsolatedAsyncioTestCase):
                 ("B000000004", False, "podcastSeries"),
             ],
         )
+
+    async def test_library_keeps_books_with_incomplete_optional_metadata(self):
+        class Service:
+            async def get(self, path, **options):
+                item = {
+                    "asin": ASIN,
+                    "title": "Incomplete optional metadata",
+                    "runtime_length_min": "unknown",
+                    "purchase_date": "",
+                    "publication_datetime": "unknown",
+                    "category_ladders": [{"ladder": None}],
+                }
+                return httpx.Response(
+                    200, json={"items": [item]}, headers={"total-count": "1"}
+                )
+
+        books = await list_books(Service(), {"purchaseStart": 0})
+        self.assertEqual(len(books), 1)
+        self.assertIsNone(books[0]["durationSeconds"])
+        self.assertTrue(books[0]["isDownloadable"])
+        self.assertEqual(books[0]["genres"], [])
+
+    async def test_purchase_range_applies_to_catalogue_podcast_episodes(self):
+        episodes = [
+            {
+                "asin": "B000000002",
+                "title": "Within range",
+                "purchase_date": "2026-02-01T00:00:00Z",
+            },
+            {
+                "asin": "B000000003",
+                "title": "After range",
+                "purchase_date": "2026-03-01T00:00:00Z",
+            },
+        ]
+        calls = []
+
+        class Service:
+            async def get(self, path, **options):
+                calls.append((path, options))
+                if path == "catalog/products":
+                    return {"products": episodes}
+                if options.get("parent_asin"):
+                    items = episodes[:1]
+                else:
+                    items = [
+                        {
+                            "asin": ASIN,
+                            "title": "Podcast",
+                            "content_type": "Podcast",
+                            "content_delivery_type": "PodcastParent",
+                            "has_children": True,
+                            "episode_count": 2,
+                        }
+                    ]
+                return httpx.Response(
+                    200, json={"items": items}, headers={"total-count": "1"}
+                )
+
+        books = await list_books(
+            Service(),
+            {
+                "podcasts": "resolveEpisodes",
+                "purchaseEnd": datetime(2026, 2, 15, tzinfo=UTC).timestamp(),
+            },
+        )
+        self.assertEqual([book["asin"] for book in books], ["B000000002"])
+        self.assertEqual(calls[-1][0], "catalog/products")
+        self.assertNotIn("end_date", calls[-1][1])
 
     async def test_export_encrypts_cli_account(self):
         request = {"command": "exportAuthFile", "session": json.dumps(ACCOUNT)}

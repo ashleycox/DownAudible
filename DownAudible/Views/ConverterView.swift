@@ -160,13 +160,15 @@ private struct ConversionCommandContext {
     let ids: Set<LocalAudioFile.ID>
 
     var files: [LocalAudioFile] { model.localFiles.filter { ids.contains($0.id) } }
+    private var conversionFiles: [LocalAudioFile] { ids.isEmpty ? model.localFiles : files }
     var convertTitle: LocalizedStringKey { ids.isEmpty ? "Convert All" : "Convert Selected" }
     var canConvert: Bool {
-        !model.isTransferring && !model.isPreparingFiles && model.hasValidActivationBytes && model.layout.isValid
-            && !(ids.isEmpty ? model.localFiles : files).isEmpty
+        guard model.didRestoreTransfers, !model.isTransferring, !model.isPreparingFiles, model.layout.isValid else { return false }
+        let inputs = conversionFiles
+        return !inputs.isEmpty && (model.hasValidActivationBytes || !inputs.contains { $0.format == "aax" })
     }
 
-    func convert() { model.startConversion(ids.isEmpty ? model.localFiles : files) }
+    func convert() { model.startConversion(conversionFiles) }
 
     func removeFiles(_ ids: Set<LocalAudioFile.ID>) {
         model.selectedFiles = ids

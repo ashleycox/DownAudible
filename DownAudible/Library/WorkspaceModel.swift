@@ -92,6 +92,9 @@ final class WorkspaceModel {
     private var inventory: [String: ArchiveInventoryItem] = [:]
     private var validLocalMatches: [String: [URL]] = [:]
     private(set) var isTransferring = false
+    private(set) var didRestoreTransfers = false
+
+    private static let booksImportError = "The files were saved. Books couldn’t open them."
 
     private let defaults = UserDefaults.standard
     private let audible = AudibleClient()
@@ -147,12 +150,12 @@ final class WorkspaceModel {
     }
 
     var activeAccount: SavedAudibleAccount? { accounts.first { $0.id == activeAccountID } }
-    var canSwitchAccounts: Bool { !accountBusy && !signInBusy && !isRefreshing && !isScanning }
+    var canSwitchAccounts: Bool { didRestoreTransfers && !accountBusy && !signInBusy && !isRefreshing && !isScanning }
     var canRemoveAccounts: Bool { canSwitchAccounts && !isTransferring }
     var activeAudibleClient: AudibleClient? { signedIn ? client(for: activeAccount) : nil }
     var hasPendingQueueWrite: Bool { queueSaveTask != nil || pendingQueueWrites > 0 }
     var canRetry: Bool { canRetryTransfers && transfers.contains(where: \.canRetry) }
-    var canRestart: Bool { canRetryTransfers && transfers.contains { $0.canRetry && $0.canRestart } }
+    var canRestart: Bool { canRetryTransfers && transfers.contains(where: \.canRestart) }
     var canClearCompleted: Bool {
         !isTransferring && transfers.contains { if case .done(_, nil) = $0.status { true } else { false } }
     }
@@ -186,17 +189,20 @@ final class WorkspaceModel {
         canRequestDownloads && !isRefreshing && !isScanning && !isCheckingFiles && !missingBooks.isEmpty
     }
 
-    var canStartDownloads: Bool { signedIn && !accountBusy && !signInBusy && !isTransferring }
+    var canStartDownloads: Bool { didRestoreTransfers && signedIn && !accountBusy && !signInBusy && !isTransferring }
     var canRequestDownloads: Bool { canStartDownloads && downloadRequest == nil }
     var selectedAudiobooks: [AudibleBook] { books.filter { selectedBooks.contains($0.id) } }
 
     var finishedCount: Int { transfers.count(where: \.isFinished) }
 
-    var hasValidActivationBytes: Bool {
+    private var enteredActivationBytes: String? {
         let value = activationBytes.trimmingCharacters(in: .whitespacesAndNewlines)
-        return value.isEmpty || (value.utf8.count == 8 && value.utf8.allSatisfy {
-            (48...57).contains($0) || (65...70).contains($0) || (97...102).contains($0)
-        })
+        return value.isEmpty ? nil : value
+    }
+
+    var hasValidActivationBytes: Bool {
+        guard let value = enteredActivationBytes else { return true }
+        return MediaCredentials(activationBytes: value).hasActivationBytes
     }
 
     func load() async {
@@ -205,6 +211,7 @@ final class WorkspaceModel {
         watchFiles()
         startFallbackFileCheck()
         await restoreTransfers()
+        didRestoreTransfers = true
         do {
             if accounts.isEmpty, try audible.hasSession() {
                 let account = SavedAudibleAccount(id: UUID(), name: marketplace.displayName, marketplace: marketplace, usesLegacySession: true)
@@ -335,7 +342,9 @@ final class WorkspaceModel {
         activeAccountID = account.id
         if let matches = matchesByAccount[account.id] {
             localMatches = matches
-        } else if !account.usesLegacySession {
+        } else if account.usesLegacySession {
+            localMatches = Self.load("LocalMatches", from: defaults) ?? LocalMatches()
+        } else {
             localMatches = LocalMatches()
         }
         marketplace = account.marketplace
@@ -551,13 +560,27 @@ final class WorkspaceModel {
         defer { isPreparingFiles = false }
         do {
             var new: [LocalAudioFile] = []
+            var failed: [(url: URL, error: any Error)] = []
             for url in urls {
-                new.append(contentsOf: try await media.scan(url, includeConverted: true))
+                do {
+                    new.append(contentsOf: try await media.scan(url, includeConverted: true))
+                } catch is CancellationError {
+                    return
+                } catch MediaError.toolsMissing {
+                    throw MediaError.toolsMissing
+                } catch {
+                    failed.append((url, error))
+                }
             }
-            guard !new.isEmpty else { throw ArchiveError.noAudio }
+            try Task.checkCancellation()
+            guard !new.isEmpty else { throw failed.first?.error ?? ArchiveError.noAudio }
             let existing = Set(localFiles.map(\.id))
             var added = Set<LocalAudioFile.ID>()
             localFiles += new.filter { !existing.contains($0.id) && added.insert($0.id).inserted }
+            if let first = failed.first {
+                let title = failed.count == 1 ? "Couldn’t open \(first.url.lastPathComponent)" : "Couldn’t open some items"
+                show(title, error: first.error)
+            }
         } catch is CancellationError {
             return
         } catch {
@@ -586,8 +609,12 @@ final class WorkspaceModel {
         }
     }
 
+    func hasIncompleteDownload(for book: AudibleBook) -> Bool {
+        inventory[book.id]?.hasPartial == true
+    }
+
     func restartDownloads(_ books: [AudibleBook]) {
-        let resumable = books.filter { inventory[$0.id]?.hasPartial == true }
+        let resumable = books.filter { hasIncompleteDownload(for: $0) }
         guard canRequestDownloads, !resumable.isEmpty else { return }
         downloadRequest = DownloadRequest(books: resumable, restartsIncomplete: true, requestsAudio: true)
     }
@@ -608,7 +635,8 @@ final class WorkspaceModel {
     }
 
     func startDownloads(for books: [AudibleBook], options: DownloadOptions, restartsIncomplete: Bool = false) {
-        guard canStartDownloads, options.hasSelection, let account = activeAccount else { return }
+        guard canStartDownloads, options.hasSelection, !restartsIncomplete || options.downloadAudio,
+              let account = activeAccount else { return }
         let work = books.map { book in
             TransferWork.library(book, matches: restartsIncomplete ? [] : sourceFiles(for: book))
         }
@@ -624,6 +652,13 @@ final class WorkspaceModel {
         )
     }
 
+    func previewSourceFormat(for book: AudibleBook, downloadingAudio: Bool) -> String? {
+        let matched = validLocalMatches[book.id]?.first
+        let usesOriginal = !downloadingAudio || transferPreferences.existingFiles == .reuse
+        let original = usesOriginal ? inventory[book.id]?.originals.first : nil
+        return (original ?? matched)?.pathExtension.lowercased()
+    }
+
     private func sourceFiles(for book: AudibleBook) -> [URL] {
         if let paths = validLocalMatches[book.id], !paths.isEmpty { return paths }
         if transferPreferences.existingFiles == .reuse { return inventory[book.id]?.originals ?? [] }
@@ -631,17 +666,17 @@ final class WorkspaceModel {
     }
 
     func startConversion(_ files: [LocalAudioFile]) {
-        guard hasValidActivationBytes else {
+        let needsActivationBytes = files.contains { $0.format == "aax" }
+        guard !needsActivationBytes || hasValidActivationBytes else {
             show("Check the activation bytes", error: ArchiveError.invalidActivation)
             return
         }
-        let value = activationBytes.trimmingCharacters(in: .whitespacesAndNewlines)
         var batch = TransferBatch(
             work: files.map(TransferWork.local), account: activeAccount, apiOptions: apiOptions,
             layout: layout, options: DownloadOptions(), conversion: conversionPreferences,
             appleBooks: appleBooksDestination, preferences: transferPreferences, jobLimit: transferPreferences.conversionJobLimit
         )
-        batch.activation = value.isEmpty ? nil : value
+        batch.activation = needsActivationBytes ? enteredActivationBytes : nil
         run(batch)
     }
 
@@ -673,7 +708,6 @@ final class WorkspaceModel {
     }
 
     func retryBatch() { retryTransfers(transfers.map(\.id), restartIncomplete: false) }
-    func restartBatch() { retryTransfers(transfers.map(\.id), restartIncomplete: true) }
 
     func retryTransfers(_ ids: [UUID], restartIncomplete: Bool = false) {
         guard canRetryTransfers, var batch = lastBatch else { return }
@@ -687,9 +721,15 @@ final class WorkspaceModel {
                 batch.work[index] = .library(book, matches: restartIncomplete ? [] : sourceFiles(for: book))
             }
         }
-        if batch.activation == nil, hasValidActivationBytes {
-            let value = activationBytes.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !value.isEmpty { batch.activation = value }
+        if selected.contains(where: { index in
+            if case .local(let file) = batch.work[index] { return file.format == "aax" }
+            return false
+        }) {
+            guard hasValidActivationBytes else {
+                show("Check the activation bytes", error: ArchiveError.invalidActivation)
+                return
+            }
+            batch.activation = enteredActivationBytes
         }
         run(batch, indices: selected, restartIncomplete: restartIncomplete)
     }
@@ -714,7 +754,7 @@ final class WorkspaceModel {
 
     private func run(_ batch: TransferBatch, indices: [Int]? = nil, restartIncomplete: Bool = false) {
         let selected = indices ?? Array(batch.work.indices)
-        guard !isTransferring && !selected.isEmpty else { return }
+        guard didRestoreTransfers, !isTransferring, !selected.isEmpty else { return }
         guard batch.layout.isValid else {
             show("Check the folder and filename templates", error: ArchiveError.invalidTemplate)
             return
@@ -724,10 +764,7 @@ final class WorkspaceModel {
         lastBatch = batch
         if indices == nil {
             transfers = batch.work.map { work in
-                Transfer(
-                    title: work.title, canRestart: work.isDownload && batch.options.downloadAudio,
-                    restartPending: restartIncomplete
-                )
+                Transfer(title: work.title, restartPending: restartIncomplete)
             }
         } else {
             for index in selected {
@@ -738,6 +775,10 @@ final class WorkspaceModel {
         page = .transfers
 
         activeTransfer = Task { [self] in
+            let partialFolders = await partialFolders(for: batch)
+            for index in selected {
+                transfers[index].partialFolder = batch.work[index].bookID.flatMap { partialFolders[$0] }
+            }
             await persistQueue()
             await withTaskGroup(of: Void.self) { group in
                 var next = 0
@@ -820,8 +861,8 @@ final class WorkspaceModel {
                 )
             }
 
-            let note = await sendToAppleBooks(receipt, destination: batch.appleBooks)
             transfers[index].files = receipt.audioFiles.isEmpty ? [receipt.url] : receipt.audioFiles
+            let note = await sendToAppleBooks(receipt, destination: batch.appleBooks, at: index)
             transfers[index].status = .done(receipt.url, note: note)
         } catch {
             if Task.isCancelled {
@@ -832,7 +873,7 @@ final class WorkspaceModel {
             }
         }
 
-        if case .library(let book, _) = batch.work[index], let account = batch.account {
+        if case .library(let book, _) = batch.work[index], let account = batch.account, batch.options.downloadAudio {
             let accountID = archiveID(for: account)
             transfers[index].partialFolder = IncompleteDownloads.containsAudio(for: book.id, account: accountID, root: batch.layout.root)
                 ? IncompleteDownloads.folder(for: book.id, account: accountID, root: batch.layout.root)
@@ -853,18 +894,25 @@ final class WorkspaceModel {
         await persistQueue()
     }
 
-    private func sendToAppleBooks(_ receipt: ExportReceipt, destination: AppleBooksDestination) async -> String? {
+    private func sendToAppleBooks(
+        _ receipt: ExportReceipt, destination: AppleBooksDestination, at index: Int
+    ) async -> String? {
+        let retry = transfers[index].booksImportPending == true
         let candidates: [URL] = switch destination {
         case .off: []
-        case .original: receipt.addedOriginal.filter { AppleBooks.supports($0) }
-        case .m4b: receipt.addedConverted.filter { $0.pathExtension.lowercased() == "m4b" }
+        case .original: (retry ? receipt.original : receipt.addedOriginal).filter { AppleBooks.supports($0) }
+        case .m4b: (retry ? receipt.converted : receipt.addedConverted).filter { $0.pathExtension.lowercased() == "m4b" }
         }
-        guard !Task.isCancelled, !candidates.isEmpty else { return receipt.note }
+        guard !candidates.isEmpty else { return receipt.note }
+        transfers[index].booksImportPending = true
+        await persistQueue()
         do {
+            try Task.checkCancellation()
             try await AppleBooks.open(candidates, activate: false)
+            transfers[index].booksImportPending = nil
             return receipt.note
         } catch {
-            let message = "The files were saved. Books couldn’t open them."
+            let message = Task.isCancelled ? "The files were saved. Books import was cancelled." : Self.booksImportError
             return [receipt.note, message].compactMap { $0 }.joined(separator: " ")
         }
     }
@@ -872,16 +920,28 @@ final class WorkspaceModel {
     private func restoreTransfers() async {
         do {
             guard let snapshot = try await queue.load(),
-                  snapshot.batch?.work.count == snapshot.transfers.count else { return }
-            lastBatch = snapshot.batch
-            transfers = snapshot.transfers.map { saved in
+                  let batch = snapshot.batch, batch.work.count == snapshot.transfers.count else { return }
+            let partialFolders = await partialFolders(for: batch)
+            lastBatch = batch
+            transfers = zip(snapshot.transfers, batch.work).map { saved, work in
                 var transfer = saved
                 if !saved.isFinished { transfer.status = .interrupted }
+                transfer.partialFolder = work.bookID.flatMap { partialFolders[$0] }
+                if case .done(_, let note) = saved.status, note?.hasSuffix(Self.booksImportError) == true {
+                    transfer.booksImportPending = true
+                }
                 return transfer
             }
         } catch {
             show("Couldn’t restore the transfer queue", error: error)
         }
+    }
+
+    private func partialFolders(for batch: TransferBatch) async -> [String: URL] {
+        guard batch.options.downloadAudio, let account = batch.account else { return [:] }
+        let ids = Set(batch.work.compactMap(\.bookID))
+        guard !ids.isEmpty else { return [:] }
+        return await archive.partialFolders(for: ids, account: archiveID(for: account), root: batch.layout.root)
     }
 
     private func scheduleQueueSave() {

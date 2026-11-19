@@ -4,7 +4,9 @@
 
 Open **Transfers** to see which titles are waiting, running, finished, or failed. A finished item can show a warning if a companion file or the Apple Books step failed. Use **Show Output in Finder** to see saved files. An error row explains what the app could not finish.
 
-**Cancel Batch** stops the current work. **Retry Incomplete** queues the unfinished items again. **Restart Incomplete Downloads…** begins those audio downloads from the start. A row’s contextual menu can cancel, retry, or restart that transfer, show its partial files, copy its error, or remove the entry from the list. **Clear Completed** clears successful rows from the list. To open the saved audio in Books, choose **Add to Apple Books** from the row’s menu.
+**Cancel Batch** stops the current work. **Retry Incomplete** queues the unfinished items again. **Restart Incomplete Downloads…** discards saved partial audio and downloads those titles from the start. A row’s contextual menu can cancel, retry, or restart that transfer, show its partial files, copy its error, or remove the entry from the list. **Clear Completed** clears successful rows from the list. To open the saved audio in Books, choose **Add to Apple Books** from the row’s menu.
+
+If a finished item warns that Books couldn’t open its files, use **Retry Incomplete** to try the Books step again with the saved audio.
 
 ## Resume after quitting
 
@@ -33,7 +35,7 @@ In **Settings > Jobs**, choose **Errors only** to keep warnings and errors or **
 | Transfers | Command–2 |
 | Cancel Batch | Control–Command–Period |
 | Retry Incomplete | Option–Command–R |
-| Restart Incomplete Downloads | Control–Command–R |
+| Restart Incomplete Downloads… | Control–Command–R |
 | Retry Selected Transfers | Control–Shift–R |
 | Restart Selected Downloads… | Control–Shift–D |
 | Show Output in Finder | Control–Shift–F |

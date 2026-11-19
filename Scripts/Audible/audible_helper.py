@@ -107,10 +107,17 @@ def session_json(auth):
 
 
 def auth_encoding(path):
-    if not path.is_file() or path.stat().st_size > 1024 * 1024:
+    if not path.is_file():
         raise OperationError("authImport")
-    encoding = detect_file_encryption(path)
-    if encoding is None:
+    size = path.stat().st_size
+    if not 0 < size <= 1024 * 1024:
+        raise OperationError("authImport")
+    try:
+        encoding = detect_file_encryption(path)
+    except TypeError as error:
+        raise OperationError("authImport") from error
+    # A binary export contains a salt block, an IV block and ciphertext blocks.
+    if encoding is None or (encoding == "bytes" and (size < 48 or size % 16)):
         raise OperationError("authImport")
     return encoding
 
@@ -228,21 +235,23 @@ def numeric_value(value, convert):
 
 def represent_book(item):
     series = next(iter(item.series or []), {})
-    duration_minutes = item.runtime_length_min
+    duration_minutes = numeric_value(item.runtime_length_min, int)
+    if duration_minutes is not None and not 0 <= duration_minutes <= sys.maxsize // 60:
+        duration_minutes = None
     rights = item.customer_rights or {}
     unavailable_reason = None
     if item.is_parent_podcast():
         unavailable_reason = "podcastSeries"
     elif rights.get("is_consumable_offline") is False:
         unavailable_reason = "offlineRestricted"
-    elif not item.is_published():
+    elif not published_or_unknown(item):
         unavailable_reason = "unpublished"
     library_status = item.library_status or {}
     rating = (item.rating or {}).get("overall_distribution") or {}
     genres = (
         entry["name"]
         for category in item.category_ladders or []
-        for entry in category.get("ladder", [])
+        for entry in category.get("ladder") or []
         if entry.get("name")
     )
     return {
@@ -266,7 +275,7 @@ def represent_book(item):
         "ratingCount": numeric_value(rating.get("num_ratings"), int),
         "isFinished": item.is_finished if isinstance(item.is_finished, bool) else None,
         "percentComplete": numeric_value(item.percent_complete, float),
-        "durationSeconds": int(duration_minutes) * 60
+        "durationSeconds": duration_minutes * 60
         if duration_minutes is not None
         else None,
         "coverURL": image_url(item),
@@ -285,13 +294,24 @@ def date_bounds(options):
     )
 
 
+def published_or_unknown(item):
+    try:
+        return item.is_published()
+    except ValueError:
+        # Treat an invalid publication timestamp like an absent one.
+        return True
+
+
 def acquired_within(item, start, end):
     if start is None and end is None:
         return True
     acquired = item.purchase_date or (item.library_status or {}).get("date_added")
     if acquired is None:
         return True
-    acquired = parse_api_datetime(acquired)
+    try:
+        acquired = parse_api_datetime(acquired)
+    except ValueError:
+        return True
     return (start is None or start <= acquired) and (
         end is None or acquired <= end or item.is_parent_podcast()
     )
@@ -339,13 +359,13 @@ async def list_books(client, options):
         ):
             continue
         if mode == "resolveEpisodes" and item.is_parent_podcast():
-            episodes = await item.get_child_items(
-                start_date=start, end_date=end, image_sizes=pictures
-            )
+            # The CLI can fall back to the catalogue. Apply the range to either
+            # source locally instead of sending library-only arguments there.
+            episodes = await item.get_child_items(image_sizes=pictures)
             books.extend(
                 represent_book(episode)
                 for episode in episodes or []
-                if episode.asin and episode.title
+                if episode.asin and episode.title and acquired_within(episode, start, end)
             )
         else:
             books.append(represent_book(item))
@@ -432,16 +452,20 @@ def chapters_from(metadata):
     if chapter_info.get("is_accurate") is False:
         return []
     chapters = []
-    for chapter in chapter_info.get("chapters", []):
+    for chapter in chapter_info.get("chapters") or []:
+        if not isinstance(chapter, dict):
+            continue
         start = chapter.get("start_offset_ms")
         duration = chapter.get("length_ms")
         title = chapter.get("title")
         if (
-            isinstance(start, int)
-            and isinstance(duration, int)
+            type(start) is int
+            and type(duration) is int
             and start >= 0
             and duration > 0
-            and title
+            and start + duration <= sys.maxsize
+            and isinstance(title, str)
+            and title.strip()
         ):
             chapters.append(
                 {

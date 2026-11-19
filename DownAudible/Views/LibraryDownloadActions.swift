@@ -65,7 +65,7 @@ struct LibraryRestartAction: View {
     var inMenuBar = false
 
     var body: some View {
-        let incomplete = books.filter { model.downloadStatus(for: $0) == .partial }
+        let incomplete = books.filter { model.hasIncompleteDownload(for: $0) }
         if inMenuBar || !incomplete.isEmpty {
             Button("Restart Incomplete Downloads…") { model.restartDownloads(incomplete) }
                 .keyboardShortcut(inMenuBar ? KeyboardShortcut("d", modifiers: [.command, .control, .shift]) : nil)

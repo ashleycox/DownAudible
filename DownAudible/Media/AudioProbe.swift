@@ -78,11 +78,8 @@ struct AudioProbe: Decodable, Sendable {
     }
 
     var durationSeconds: Double? {
-        guard let seconds = (format.duration.flatMap(Double.init) ?? audio?.duration.flatMap(Double.init)),
-              seconds.isFinite, seconds > 0 else {
-            return nil
-        }
-        return seconds
+        [audio?.duration, format.duration].lazy.compactMap { $0.flatMap(Double.init) }
+            .first { $0.isFinite && $0 > 0 }
     }
 
     var durationMilliseconds: Int64? {

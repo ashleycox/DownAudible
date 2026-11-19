@@ -159,8 +159,8 @@ struct LibraryView: View {
             .overlay {
                 if rows.isEmpty { emptyLibrary }
             }
-            .onChange(of: search) {
-                model.selectedBooks.formIntersection(visibleRows.map(\.id))
+            .onChange(of: Set(rows.map(\.id)), initial: true) { _, visibleIDs in
+                model.selectedBooks.formIntersection(visibleIDs)
             }
 
             if showsStatusBar {
@@ -463,6 +463,7 @@ struct DownloadOptionsView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 Toggle("Download audio", isOn: $options.downloadAudio)
+                    .disabled(request.restartsIncomplete)
                 Toggle("Convert to \(model.conversionPreferences.format.displayName)", isOn: $options.convert)
                     .disabled(!options.downloadAudio)
                 if options.downloadAudio && options.convert {
@@ -484,6 +485,7 @@ struct DownloadOptionsView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 DestinationPicker(directory: $directory)
+                    .disabled(request.restartsIncomplete)
                 LabeledContent("Folder template") {
                     TextField("Folder template", text: $template)
                         .labelsHidden()
@@ -523,10 +525,8 @@ struct DownloadOptionsView: View {
 
     private func destinationPreview(for book: AudibleBook) -> some View {
         let preferredFormat = model.apiOptions.format == .aaxcOnly ? "aaxc" : "aax"
-        let matchedFormat = model.localAudio(for: book).first?.pathExtension.lowercased()
-        let archivedFormat = model.exportedFiles[book.id, default: []].map { $0.pathExtension.lowercased() }
-            .first { ["aax", "aaxc", "aa", "mp3"].contains($0) }
-        let existingFormat = matchedFormat ?? archivedFormat
+        let existingFormat = request.restartsIncomplete ? nil
+            : model.previewSourceFormat(for: book, downloadingAudio: options.downloadAudio)
         let sourceFormat = existingFormat ?? preferredFormat
         return VStack(alignment: .leading, spacing: 4) {
             Text("Example paths")

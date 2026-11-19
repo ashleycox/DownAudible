@@ -32,7 +32,7 @@ struct MediaProcess {
 
         let status = try await withThrowingTaskGroup(of: Int32.self, returning: Int32.self) { group in
             group.addTask {
-                try await launch(executable, arguments: arguments, output: output, errors: errors)
+                try await launch(executable, arguments: arguments, directory: workingDirectory, output: output, errors: errors)
             }
             if let progress {
                 group.addTask {
@@ -54,7 +54,7 @@ struct MediaProcess {
     }
 
     private static func launch(
-        _ executable: URL, arguments: [String], output: FileHandle, errors: FileHandle
+        _ executable: URL, arguments: [String], directory: URL, output: FileHandle, errors: FileHandle
     ) async throws -> Int32 {
         let child = Mutex(Child())
         return try await withTaskCancellationHandler {
@@ -62,6 +62,7 @@ struct MediaProcess {
                 let process = Process()
                 process.executableURL = executable
                 process.arguments = arguments
+                process.currentDirectoryURL = directory
                 process.standardInput = FileHandle.nullDevice
                 process.standardOutput = output
                 process.standardError = errors

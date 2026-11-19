@@ -145,13 +145,18 @@ struct MediaTools: Sendable {
         }.first { !$0.isEmpty }
     }
 
+    static func audioInput(_ url: URL, options: [String]) -> [String] {
+        // Allow direct audio containers here. Conversion supplies its own concat manifests.
+        options + ["-format_whitelist", "aa,mov,mp3", "-i", url.path]
+    }
+
     static func probe(
         _ url: URL, options: [String], ffprobe: URL, directory: URL, metadataOnly: Bool = false
     ) async throws -> AudioProbe {
         let mode = metadataOnly ? ["-nofind_stream_info"] : ["-analyzeduration", "1000000", "-probesize", "65536"]
         let args = ["-v", "error"] + mode + [
             "-show_format", "-show_streams", "-show_chapters", "-show_data_hash", "sha256", "-of", "json"
-        ] + options + ["-i", url.path]
+        ] + audioInput(url, options: options)
         let (status, data, diagnostics) = try await MediaProcess.run(ffprobe, arguments: args, workingDirectory: directory)
         let error = String(decoding: diagnostics, as: UTF8.self)
         if error.contains("[aax] mismatch in checksums") || error.contains("[aax] error in drm blob decryption") {

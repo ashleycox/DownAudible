@@ -71,7 +71,7 @@ The **Audiobooks** menu groups download commands under **Download** and library 
 | --- | --- |
 | Cancel Batch | Control–Command–Period |
 | Retry Incomplete | Option–Command–R |
-| Restart Incomplete Downloads | Control–Command–R |
+| Restart Incomplete Downloads… | Control–Command–R |
 | Clear Completed | Control–Command–K |
 | Cancel Transfer / Cancel Selected Transfers | Control–Shift–X |
 | Retry Selected Transfers | Control–Shift–R |

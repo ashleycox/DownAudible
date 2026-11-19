@@ -31,7 +31,23 @@ if [[ ! -f "$cache_root/built-hash" || $(cat "$cache_root/built-hash") != "$sour
 fi
 
 if [[ ! -f "$destination/built-hash" || $(cat "$destination/built-hash") != "$source_hash" || ! -x "$destination/audible-helper" ]]; then
-    mkdir -p "$destination"
-    ditto "$cache_root/out/audible-helper" "$destination"
-    printf '%s\n' "$source_hash" > "$destination/built-hash"
+    parent="$(dirname -- "$destination")"
+    mkdir -p "$parent"
+    staging="$(mktemp -d "$parent/.audible-support.XXXXXX")"
+    trap 'rm -rf "$staging"' EXIT
+    ditto "$cache_root/out/audible-helper" "$staging/new"
+    printf '%s\n' "$source_hash" > "$staging/new/built-hash"
+    # Replacing the directory removes libraries that a newer helper no longer ships.
+    if [[ -e "$destination" || -L "$destination" ]]; then
+        mv "$destination" "$staging/previous"
+    fi
+    if ! mv "$staging/new" "$destination"; then
+        if [[ -e "$staging/previous" || -L "$staging/previous" ]]; then
+            if ! mv "$staging/previous" "$destination"; then
+                trap - EXIT
+                echo "error: Previous Audible helper is at $staging/previous" >&2
+            fi
+        fi
+        exit 1
+    fi
 fi

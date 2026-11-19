@@ -14,8 +14,8 @@ xcrun swiftc -warnings-as-errors -swift-version 6 -strict-concurrency=complete \
     -target arm64-apple-macosx15.0 \
     DownAudible/App/DownAudibleIdentity.swift \
     DownAudible/Audible/AudibleClient.swift \
-    DownAudible/Media/{MediaModels,ConversionPreferences}.swift \
-    DownAudible/Library/{AppleBooks,ArchiveLayout,ArchiveWatcher,IncompleteDownloads,LibraryExport}.swift \
+    DownAudible/Media/*.swift \
+    DownAudible/Library/{AppleBooks,ArchiveLayout,ArchiveWatcher,ArchiveWorker,IncompleteDownloads,LibraryExport}.swift \
     DownAudible/Library/{Preferences,TransferLog,TransferQueue,Transfers}.swift \
     Tests/ArchiveChecks.swift -o "$scratch/checks"
 "$scratch/checks"

@@ -3,6 +3,7 @@ import SwiftUI
 
 struct TransfersView: View {
     var model: WorkspaceModel
+    @Binding var requestingBatchRestart: Bool
     @State private var selection: Set<UUID> = []
     @State private var restartIDs: [UUID] = []
     @State private var confirmingRestart = false
@@ -30,10 +31,8 @@ struct TransfersView: View {
             if !model.transfers.isEmpty {
                 ToolbarItem {
                     Menu("Transfer Actions", systemImage: "ellipsis.circle") {
-                        Button("Restart Incomplete Downloads…") {
-                            askToRestart(model.transfers.filter { $0.canRetry && $0.canRestart })
-                        }
-                        .disabled(!model.canRestart)
+                        Button("Restart Incomplete Downloads…", action: askToRestartBatch)
+                            .disabled(!model.canRestart)
                         Button("Clear Completed", action: model.clearCompletedTransfers)
                             .disabled(!model.canClearCompleted)
                     }
@@ -52,6 +51,15 @@ struct TransfersView: View {
         } message: { _ in
             Text("DownAudible will discard the temporary audio for these incomplete downloads. Files already saved in the archive stay available.")
         }
+        .onChange(of: requestingBatchRestart, initial: true) {
+            guard requestingBatchRestart else { return }
+            requestingBatchRestart = false
+            askToRestartBatch()
+        }
+    }
+
+    private func askToRestartBatch() {
+        askToRestart(model.transfers.filter(\.canRestart))
     }
 
     private func askToRestart(_ transfers: [Transfer]) {
@@ -114,7 +122,7 @@ private struct TransferSelectionActions: View {
         let items = selection.items
         let ids = items.map(\.id)
         let incomplete = items.filter(\.canRetry)
-        let restartable = incomplete.filter(\.canRestart)
+        let restartable = items.filter(\.canRestart)
         let files = items.flatMap(\.files).filter { FileManager.default.fileExists(atPath: $0.path) }
         let partial = items.compactMap(\.partialFolder).filter { FileManager.default.fileExists(atPath: $0.path) }
         let errors = items.compactMap { transfer -> String? in

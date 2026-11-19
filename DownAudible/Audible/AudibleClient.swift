@@ -1,4 +1,5 @@
 import CryptoKit
+import Darwin
 import Foundation
 import Security
 import Synchronization
@@ -422,9 +423,10 @@ nonisolated struct AudibleClient: Sendable {
         switch audio.pathExtension.lowercased() {
         case "aaxc":
             let keychainKey = try voucherID(for: audio)
-            if let data = try vault.load(keychainKey) {
-                let voucher = try JSONDecoder().decode(KeyAndIV.self, from: data)
-                if voucher.isValid { return voucher.asCredentials }
+            if let data = try vault.load(keychainKey),
+               let voucher = try? JSONDecoder().decode(KeyAndIV.self, from: data),
+               voucher.isValid {
+                return voucher.asCredentials
             }
             let sidecar = audio.deletingPathExtension().appendingPathExtension("voucher")
             if let data = try? Data(contentsOf: sidecar),
@@ -617,8 +619,11 @@ private nonisolated final class AudibleProcess: Sendable {
             let process = Process()
             let exit = ProcessExit()
             let input = Pipe()
+            let writer = input.fileHandleForWriting
             let output = Pipe()
             let reader = output.fileHandleForReading
+            // The helper can exit during cancellation or startup while the request is being written.
+            guard fcntl(writer.fileDescriptor, F_SETNOSIGPIPE, 1) != -1 else { throw AudibleError.service }
             process.executableURL = executable
             process.standardInput = input
             process.standardOutput = output
@@ -647,7 +652,7 @@ private nonisolated final class AudibleProcess: Sendable {
                 if didLaunch { await exit.wait() }
                 reader.readabilityHandler = nil
                 try? reader.close()
-                try? input.fileHandleForWriting.close()
+                try? writer.close()
             }
 
             try child.withLock { active in
@@ -659,20 +664,24 @@ private nonisolated final class AudibleProcess: Sendable {
             encoder.dateEncodingStrategy = .secondsSince1970
             do {
                 try Task.checkCancellation()
-                try input.fileHandleForWriting.write(contentsOf: encoder.encode(request))
-                try input.fileHandleForWriting.close()
+                try writer.write(contentsOf: encoder.encode(request))
+                try writer.close()
             } catch {
                 try Task.checkCancellation()
-                throw error
+                throw AudibleError.service
             }
 
+            let decoder = JSONDecoder()
             var pending = Data()
             for await chunk in chunks {
                 try Task.checkCancellation()
                 pending.append(chunk)
                 while let lineEnd = pending.firstIndex(of: 0x0A) {
                     let line = pending[..<lineEnd]
-                    let message = try JSONDecoder().decode(WireMessage<Result>.self, from: line)
+                    try Task.checkCancellation()
+                    guard let message = try? decoder.decode(WireMessage<Result>.self, from: line) else {
+                        throw AudibleError.service
+                    }
                     if let error = message.error { throw error }
                     if let result = message.result { return result }
                     if let fraction = message.progress { await progress(fraction) }

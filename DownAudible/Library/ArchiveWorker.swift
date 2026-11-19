@@ -156,7 +156,7 @@ actor ArchiveWorker {
                     sources = try saveOriginals(sources, title: title, layout: layout)
                     record.originals = sources.map(\.audio)
                     addedOriginal = record.originals.map(\.url)
-                    save(&record, for: key)
+                    save(&record, for: key, written: addedOriginal)
                     try IncompleteDownloads.clear(for: book.id, account: account, root: layout.root)
                     usesAudioStaging = false
                 }
@@ -167,7 +167,7 @@ actor ArchiveWorker {
                     sources = try saveOriginals(sources, title: title, layout: layout, copy: true)
                     record.originals = sources.map(\.audio)
                     addedOriginal = record.originals.map(\.url)
-                    save(&record, for: key)
+                    save(&record, for: key, written: addedOriginal)
                 }
             }
         }
@@ -213,7 +213,7 @@ actor ArchiveWorker {
             )
             addedConverted = converted
             record.addConversion(converted, key: recipe)
-            save(&record, for: key)
+            save(&record, for: key, written: converted)
             if usesAudioStaging {
                 try IncompleteDownloads.clear(for: book.id, account: account, root: layout.root)
             }
@@ -224,8 +224,9 @@ actor ArchiveWorker {
             do {
                 let extras = try await audible.downloadExtras(book, to: staging, pdf: true, cover: false)
                 if let pdf = extras.pdf {
-                    record.pdf = try saveExtra(pdf, title: title, layout: layout, format: extrasFormat)
-                    save(&record, for: key)
+                    let destination = try saveExtra(pdf, title: title, layout: layout, format: extrasFormat)
+                    record.pdf = destination
+                    save(&record, for: key, written: [destination])
                 } else {
                     issues.append("Audible didn’t return the PDF.")
                 }
@@ -297,7 +298,7 @@ actor ArchiveWorker {
         )
         guard let first = converted.first else { throw ArchiveError.noAudio }
         record.addConversion(converted, key: recipe)
-        save(&record, for: key)
+        save(&record, for: key, written: converted)
         return ExportReceipt(url: first, converted: converted, addedConverted: converted)
     }
 
@@ -365,16 +366,23 @@ actor ArchiveWorker {
             item.missingFiles.append(contentsOf: record.knownFiles.filter { !record.contains($0) })
             inventory[parts.asin] = item
         }
-        let incomplete = IncompleteDownloads.folders(in: layout.root)
-        if !incomplete.isEmpty {
-            for id in ids {
-                let folder = IncompleteDownloads.folder(for: id, account: account, root: layout.root)
-                if incomplete.contains(folder.lastPathComponent), IncompleteDownloads.containsAudio(in: folder) {
-                    inventory[id, default: ArchiveInventoryItem()].hasPartial = true
-                }
-            }
+        for id in partialFolders(for: ids, account: account, root: layout.root).keys {
+            inventory[id, default: ArchiveInventoryItem()].hasPartial = true
         }
         return inventory
+    }
+
+    func partialFolders(for ids: Set<String>, account: String, root: URL) -> [String: URL] {
+        let incomplete = IncompleteDownloads.folders(in: root)
+        guard !incomplete.isEmpty else { return [:] }
+        var folders: [String: URL] = [:]
+        for id in ids {
+            let folder = IncompleteDownloads.folder(for: id, account: account, root: root)
+            if incomplete.contains(folder.lastPathComponent), IncompleteDownloads.containsAudio(in: folder) {
+                folders[id] = folder
+            }
+        }
+        return folders
     }
 
     func validMatches(_ matches: [String: [URL]]) -> [String: [URL]] {
@@ -412,7 +420,7 @@ actor ArchiveWorker {
                     let destination = try saveExtra(source, title: title, layout: layout, format: format, suffix: suffix)
                     saved[name] = destination
                     record.covers = saved
-                    save(&record, for: key)
+                    save(&record, for: key, written: [destination])
                     if artwork == source { artwork = destination }
                 }
                 if extras.failed.contains("cover") {
@@ -471,7 +479,7 @@ actor ArchiveWorker {
                         var saved = record.chapters ?? [:]
                         saved[chapterStyle] = destination
                         record.chapters = saved
-                        save(&record, for: key)
+                        save(&record, for: key, written: [destination])
                     } else if extras.failed.contains("chapters") {
                         issues.append("Couldn’t download the chapter list.")
                     }
@@ -483,10 +491,11 @@ actor ArchiveWorker {
             if annotations {
                 do {
                     if let source = extras.annotations {
-                        record.annotations = try saveExtra(
+                        let destination = try saveExtra(
                             source, title: title, layout: layout, format: format, suffix: " - Notes"
                         )
-                        save(&record, for: key)
+                        record.annotations = destination
+                        save(&record, for: key, written: [destination])
                     } else if extras.failed.contains("annotations") {
                         issues.append("Couldn’t download the notes.")
                     }
@@ -697,8 +706,9 @@ actor ArchiveWorker {
         return records[key] ?? Record()
     }
 
-    private func save(_ record: inout Record, for key: String) {
+    private func save(_ record: inout Record, for key: String, written: [URL]) {
         var sizes = record.fileSizes ?? [:]
+        for url in written { sizes[url] = Self.fileSize(url) }
         for url in record.knownFiles where sizes[url] == nil { sizes[url] = Self.fileSize(url) }
         record.fileSizes = sizes
         records[key] = record

@@ -22,6 +22,8 @@ Under **Settings > Downloads**, choose what to save, which cover sizes to reques
 
 **Download Missing** includes audio even if your saved options only include companion material. Set your default destination and folder template under **Settings > Files**.
 
+To start a partial download from the beginning, Control-click the book and choose **Restart Incomplete Downloads…**. The restart keeps audio selected and uses the destination that holds the partial download.
+
 ## Related chapters
 
 [Converting Audio](help-05-conversion.md)

@@ -11,10 +11,12 @@ enum TransferWork: Codable, Sendable {
         }
     }
 
-    var isDownload: Bool {
-        if case .library = self { return true }
-        return false
+    var bookID: AudibleBook.ID? {
+        if case .library(let book, _) = self { return book.id }
+        return nil
     }
+
+    var isDownload: Bool { bookID != nil }
 }
 
 struct TransferBatch: Codable, Sendable {
