@@ -6,10 +6,11 @@ struct DownAudibleApp: App {
     @Environment(\.openWindow) private var openWindow
     @NSApplicationDelegateAdaptor(DownAudibleAppDelegate.self) private var appDelegate
     @State private var model = WorkspaceModel()
+    @State private var showingOnboarding = false
 
     var body: some Scene {
         Window("DownAudible", id: "workspace") {
-            WorkspaceView(model: model)
+            WorkspaceView(model: model, showingOnboarding: $showingOnboarding)
                 .frame(minWidth: 720, minHeight: 440)
                 .onAppear { appDelegate.model = model }
         }
@@ -54,18 +55,18 @@ struct DownAudibleApp: App {
                     model.requestDownloads(model.books.filter { model.selectedBooks.contains($0.id) })
                 }
                 .keyboardShortcut("d")
-                .disabled(model.selectedBooks.isEmpty || model.isTransferring)
+                .disabled(showingOnboarding || model.selectedBooks.isEmpty || model.isTransferring)
                 Button("Download Missing…") {
                     show(.library)
                     model.requestMissingDownloads()
                 }
                 .keyboardShortcut("d", modifiers: [.command, .shift])
-                .disabled(!model.canDownloadMissing)
+                .disabled(showingOnboarding || !model.canDownloadMissing)
                 Button("Download Entire Library…") {
                     show(.library)
                     model.requestDownloads(model.books)
                 }
-                .disabled(model.books.isEmpty || model.isTransferring)
+                .disabled(showingOnboarding || model.books.isEmpty || model.isTransferring)
 
                 Divider()
                 Menu("Export Library") {
@@ -106,6 +107,11 @@ struct DownAudibleApp: App {
             CommandGroup(replacing: .help) {
                 Button("DownAudible Help") { openWindow(id: "help") }
                     .keyboardShortcut("/", modifiers: [.command, .shift])
+                Button("Set Up DownAudible…") {
+                    openWindow(id: "workspace")
+                    showingOnboarding = true
+                }
+                .disabled(showingOnboarding || model.downloadRequest != nil)
             }
         }
 
@@ -162,7 +168,11 @@ struct DownAudibleApp: App {
 }
 
 private struct WorkspaceView: View {
+    @Environment(\.openWindow) private var openWindow
+    @AppStorage("HasFinishedOnboarding") private var hasFinishedOnboarding = false
     @Bindable var model: WorkspaceModel
+    @Binding var showingOnboarding: Bool
+    @State private var openManualAfterSetup = false
 
     var body: some View {
         NavigationSplitView {
@@ -186,7 +196,10 @@ private struct WorkspaceView: View {
             }
             .navigationTitle((model.page ?? .library).rawValue)
         }
-        .task { await model.load() }
+        .task {
+            if !hasFinishedOnboarding { showingOnboarding = true }
+            await model.load()
+        }
         .onChange(of: model.layout) {
             Task { await model.refreshExportStatus() }
         }
@@ -197,8 +210,29 @@ private struct WorkspaceView: View {
         .sheet(item: $model.downloadRequest) { request in
             DownloadOptionsView(model: model, request: request)
         }
-        .alert(item: $model.notice) { notice in
+        .sheet(isPresented: $showingOnboarding, onDismiss: openSetupManualIfRequested) {
+            OnboardingView(model: model) { destination in
+                hasFinishedOnboarding = true
+                openManualAfterSetup = destination == .manual
+                showingOnboarding = false
+            }
+        }
+        .alert(item: workspaceNotice) { notice in
             Alert(title: Text(notice.title), message: Text(notice.message))
         }
+    }
+
+    private var workspaceNotice: Binding<WorkspaceModel.Notice?> {
+        Binding {
+            showingOnboarding ? nil : model.notice
+        } set: { notice in
+            if !showingOnboarding { model.notice = notice }
+        }
+    }
+
+    private func openSetupManualIfRequested() {
+        guard openManualAfterSetup else { return }
+        openManualAfterSetup = false
+        openWindow(id: "help")
     }
 }

@@ -1,30 +1,67 @@
 import SwiftUI
 
+// The order and content here apply to both Settings and the setup assistant.
+enum SettingsPane: CaseIterable, Identifiable {
+    case accounts, library, downloads, conversion, files, jobs
+
+    var id: Self { self }
+
+    var title: LocalizedStringKey {
+        switch self {
+        case .accounts: "Accounts"
+        case .library: "Library"
+        case .downloads: "Downloads"
+        case .conversion: "Conversion"
+        case .files: "Files"
+        case .jobs: "Jobs"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .accounts: "person.crop.circle"
+        case .library: "books.vertical"
+        case .downloads: "arrow.down.to.line"
+        case .conversion: "waveform"
+        case .files: "folder"
+        case .jobs: "clock"
+        }
+    }
+
+    @MainActor @ViewBuilder
+    func content(for model: WorkspaceModel) -> some View {
+        @Bindable var model = model
+        switch self {
+        case .accounts:
+            AccountPreferencesView(model: model)
+        case .library:
+            LibraryPreferencesView(model: model)
+        case .downloads:
+            DownloadPreferencesView(model: model)
+        case .conversion:
+            Form {
+                ConversionPreferencesView(preferences: $model.conversionPreferences)
+            }
+            .formStyle(.grouped)
+        case .files:
+            FilePreferencesView(model: model)
+        case .jobs:
+            JobPreferencesView(model: model)
+        }
+    }
+}
+
 struct PreferencesView: View {
-    @Bindable var model: WorkspaceModel
+    let model: WorkspaceModel
 
     var body: some View {
         TabView {
-            Tab("Accounts", systemImage: "person.crop.circle") {
-                AccountPreferencesView(model: model)
-            }
-            Tab("Library", systemImage: "books.vertical") {
-                LibraryPreferencesView(model: model)
-            }
-            Tab("Downloads", systemImage: "arrow.down.to.line") {
-                DownloadPreferencesView(model: model)
-            }
-            Tab("Conversion", systemImage: "waveform") {
-                Form {
-                    ConversionPreferencesView(preferences: $model.conversionPreferences)
+            ForEach(SettingsPane.allCases) { pane in
+                Tab {
+                    pane.content(for: model)
+                } label: {
+                    Label(pane.title, systemImage: pane.systemImage)
                 }
-                .formStyle(.grouped)
-            }
-            Tab("Files", systemImage: "folder") {
-                FilePreferencesView(model: model)
-            }
-            Tab("Jobs", systemImage: "clock") {
-                JobPreferencesView(model: model)
             }
         }
         .frame(width: 640, height: 550)

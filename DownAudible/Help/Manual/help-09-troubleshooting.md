@@ -18,11 +18,11 @@ Reconnect the disk, make sure the destination still points to the archive, and c
 
 ## A download keeps failing or restarts at zero
 
-Check the error in **Transfers**. Try lowering simultaneous downloads or setting a longer request timeout. **Retry** uses any valid partial file. Audible can supply a different file or a server that does not support byte ranges, in which case DownAudible starts from zero. Use **Restart Download** from the transfer’s contextual menu if you want to discard the partial audio yourself.
+Check the error in **Transfers**. Try lowering simultaneous downloads or setting a longer request timeout. **Retry** uses any valid partial file. Audible can supply a different file or a server that does not support byte ranges, in which case DownAudible starts from zero. Use **Restart Download…** from the transfer’s contextual menu to discard the partial audio and start again.
 
 ## Books opens without the audiobook
 
-Find the file with **Show Audio in Finder**. Books may require authorization for an original or may not accept that particular Audible format. Use **Convert Files** to create one M4B, then choose **Add to Apple Books** on the result in Transfers. Check Books itself to confirm that it imported the file.
+Find the file with **Show Output in Finder** in Transfers. Books may require authorisation for an original or may refuse that particular Audible format. Use **Convert Files** to create one M4B, then choose **Add to Apple Books** on the result in Transfers. Check Books itself to confirm that it imported the file.
 
 ## Useful keys
 
