@@ -35,6 +35,8 @@ To convert existing files, drag them into **Convert Files** or choose **Add File
 
 Folder and filename templates are independent. The default folder template, `{format}/{author}/{title}`, groups original and converted formats separately. For chapter filenames you might use `{title} - {chapterNumber} - {chapter}`. Settings shows a preview as you edit.
 
+Turn on **Keep Audible’s AAX filename** in **Settings → Files** to save new AAX downloads under the name Audible supplies when available.
+
 ## Manual and keyboard shortcuts
 
 Open **Help → DownAudible Help** for the manual, including steps for recovering a batch, fixing missing files, and using Audible CLI profiles. **Help → Keyboard Shortcuts** opens the keyboard reference. [Browse manual chapters](DownAudible/Help/Manual) · [Keyboard shortcuts](DownAudible/Help/Manual/help-10-keyboard-shortcuts.md)

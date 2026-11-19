@@ -6,11 +6,22 @@ import hashlib
 import json
 import re
 from dataclasses import asdict, dataclass, replace
+from pathlib import Path
+from unicodedata import category
+from urllib.parse import unquote
 
 import httpx
 from audible_cli.constants import AAX_CONTENT_TYPES, AAXC_CONTENT_TYPES
 
 CHUNK_SIZE = 256 * 1024
+HTTP_TOKEN = r"[!#$%&'*+.\-^_`|~0-9A-Za-z]+"
+DISPOSITION_PARAMETER = re.compile(
+    rf"[ \t]*;[ \t]*({HTTP_TOKEN})[ \t]*=[ \t]*"
+    rf'(?:"((?:[^"\\\r\n]|\\[^\r\n])*)"|({HTTP_TOKEN}))'
+)
+EXTENDED_FILENAME = re.compile(
+    r"([a-zA-Z0-9_-]+)'[a-zA-Z0-9-]*'((?:[!#$&+.\-^_`|~a-zA-Z0-9]|%[0-9a-fA-F]{2})+)"
+)
 
 
 class OperationError(Exception):
@@ -37,11 +48,18 @@ def fingerprint(*values):
 
 
 @dataclass(frozen=True)
+class DownloadedFile:
+    path: Path
+    original_filename: str | None = None
+
+
+@dataclass(frozen=True)
 class TransferState:
     representation: str
     resource: str
     etag: str | None
     length: int | None
+    original_filename: str | None = None
 
     @classmethod
     def load(cls, path, representation):
@@ -133,6 +151,67 @@ def resource_hash(response):
     return fingerprint(str(response.url.copy_with(query=None, fragment=None)))
 
 
+def is_aax_filename(value):
+    return (
+        isinstance(value, str)
+        and value.lower().endswith(".aax")
+        and not value.startswith(".")
+        and bool(value[:-4].strip())
+        and not any(
+            char in "/:\\" or category(char) in ("Cc", "Cf", "Cs") for char in value
+        )
+        and len(value.encode("utf-8")) <= 255
+    )
+
+
+def disposition_filename(header):
+    header = header.strip(" \t")
+    disposition, _, _ = header.partition(";")
+    if not re.fullmatch(HTTP_TOKEN, disposition.strip(" \t")):
+        return None
+    parameters = {}
+    start = len(disposition)
+    while start < len(header):
+        parameter = DISPOSITION_PARAMETER.match(header, start)
+        if parameter is None:
+            return None
+        key, quoted, token = parameter.groups()
+        key = key.lower()
+        if key in parameters:
+            return None
+        parameters[key] = token if quoted is None else re.sub(r'\\(["\\])', r"\1", quoted)
+        start = parameter.end()
+
+    # Prefer the encoded name when the response supplies an ASCII fallback as well.
+    extended = EXTENDED_FILENAME.fullmatch(parameters.get("filename*", ""))
+    if extended:
+        charset, encoded = extended.groups()
+        if charset.lower() in ("utf-8", "iso-8859-1"):
+            try:
+                name = unquote(encoded, encoding=charset, errors="strict")
+            except UnicodeError:
+                pass
+            else:
+                if is_aax_filename(name):
+                    return name
+    name = parameters.get("filename")
+    return name if is_aax_filename(name) else None
+
+
+def aax_filename(response):
+    name = disposition_filename(response.headers.get("content-disposition", ""))
+    if name is not None:
+        return name
+    raw = response.url.raw_path.partition(b"?")[0].rsplit(b"/", 1)[-1]
+    if re.search(rb"%(?![0-9a-fA-F]{2})", raw):
+        return None
+    try:
+        name = unquote(raw, errors="strict")
+    except UnicodeError:
+        return None
+    return name if is_aax_filename(name) else None
+
+
 def strong_etag(value):
     return (
         value
@@ -211,11 +290,18 @@ async def receive(
 ):
     if response.status_code in (400, 403, 404, 410):
         raise FormatUnavailable()
+    filename = None
     if response.status_code in (206, 416):
         if resume is None:
             raise OperationError("network")
         state, offset = resume
         expected = append_range(response, state, offset)
+        if kind == "aax":
+            filename = (
+                state.original_filename
+                if is_aax_filename(state.original_filename)
+                else aax_filename(response)
+            )
         if progress:
             progress(min(0.99, offset / expected))
     else:
@@ -224,12 +310,15 @@ async def receive(
             raise OperationError("network")
         offset = 0
         expected = identity_length(response)
+        if kind == "aax":
+            filename = aax_filename(response)
         state = (
             TransferState(
                 representation,
                 resource_hash(response),
                 strong_etag(response.headers.get("etag")),
                 expected,
+                filename,
             )
             if representation is not None
             else None
@@ -275,13 +364,15 @@ async def receive(
                 progress,
                 bandwidth,
             )
-        if state is not None and state.length != written:
-            replace(state, length=written).save(state_path)
+        if state is not None:
+            updated = replace(state, length=written, original_filename=filename)
+            if updated != state:
+                updated.save(state_path)
         partial.replace(target)
     finally:
         if kind not in ("aax", "aaxc", "mp3"):
             partial.unlink(missing_ok=True)
-    return target
+    return DownloadedFile(target, filename)
 
 
 async def stream_file(
@@ -298,7 +389,10 @@ async def stream_file(
             if target.is_file() and target.stat().st_size == state.length:
                 if progress:
                     progress(1.0)
-                return target
+                name = state.original_filename
+                return DownloadedFile(
+                    target, name if kind == "aax" and is_aax_filename(name) else None
+                )
             if partial.is_file() and strong_etag(state.etag):
                 offset = partial.stat().st_size
                 if 0 < offset <= state.length:

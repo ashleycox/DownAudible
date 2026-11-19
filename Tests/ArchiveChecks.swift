@@ -157,6 +157,12 @@ struct ArchiveChecks {
         check(previous.filenameStem(for: title, format: "aax", partNumber: 2) == "B000000001 - My Great Book - Part 2")
         check(previous.filenameStem(for: title, format: "m4b", chapterNumber: 1, chapterTitle: "Opening")
               == "My Great Book - 01 - Opening")
+        check(previous.originalAAXFilename("AudibleTitle.AAX") == nil)
+
+        let savedNaming = Data(#"{"filenameTemplate":"{title}","chapterFilenameTemplate":"{chapter}","whitespace":"underscores","letterCase":"uppercase","transliterate":true}"#.utf8)
+        let migratedNaming = try JSONDecoder().decode(OutputNaming.self, from: savedNaming)
+        check(!migratedNaming.keepOriginalAAXFilename && migratedNaming.filenameTemplate == "{title}")
+        check(migratedNaming.whitespace == .underscores && migratedNaming.letterCase == .uppercase)
 
         let named = ArchiveTitle(
             title: "Écho du Monde", author: "Zoë  Bell", asin: "B000000002",
@@ -180,6 +186,14 @@ struct ArchiveChecks {
             for: named, format: "mp3", chapterNumber: 4, chapterTitle: "First/Chapter"
         )
         check(ArchiveLayout.filename(chapter) == "04_-_FIRST-CHAPTER_-_MP3")
+        custom.naming.keepOriginalAAXFilename = true
+        check(custom.originalAAXFilename("Écho du Monde.AAX") == "Écho du Monde.AAX")
+        for invalid in ["../Book.aax", "folder\\Book.aax", ".Book.aax", " \n.aax", "Book.mp3"] {
+            check(custom.originalAAXFilename(invalid) == nil)
+        }
+        check(custom.originalAAXFilename(String(repeating: "é", count: 120) + ".aax") == nil)
+        check(custom.filenameStem(for: named, format: "aax", partNumber: 3) == "2_ECHO_DU_MONDE_03")
+        check(try JSONDecoder().decode(ArchiveLayout.self, from: JSONEncoder().encode(custom)) == custom)
         custom.naming.chapterFilenameTemplate = "{chapter}/{chapterNumber}"
         check(!custom.isValid)
         custom.naming.chapterFilenameTemplate = "{unrecognised}"

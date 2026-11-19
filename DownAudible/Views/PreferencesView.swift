@@ -236,6 +236,9 @@ private struct FilePreferencesView: View {
             }
 
             Section("Filenames") {
+                Toggle("Keep Audible’s AAX filename", isOn: $model.outputNaming.keepOriginalAAXFilename)
+                Text("Use the filename supplied by Audible when saving a new AAX download.")
+                    .foregroundStyle(.secondary)
                 TextField("Filename template", text: $model.outputNaming.filenameTemplate,
                           prompt: Text("Use the filename style"))
                     .font(.body.monospaced())

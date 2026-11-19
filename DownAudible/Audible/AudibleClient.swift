@@ -166,6 +166,7 @@ nonisolated struct AudibleAudioPart: Sendable {
     let audio: URL
     let credentials: AudibleConversionCredentials
     let asin: String
+    let originalFilename: String?
 }
 
 nonisolated struct AudibleDownload: Sendable {
@@ -369,7 +370,9 @@ nonisolated struct AudibleClient: Sendable {
             if let key = part.credentials.contentKey, let iv = part.credentials.contentIV {
                 try cacheVoucher(KeyAndIV(key: key, iv: iv), for: audio)
             }
-            return AudibleAudioPart(audio: audio, credentials: part.credentials, asin: part.asin)
+            return AudibleAudioPart(
+                audio: audio, credentials: part.credentials, asin: part.asin, originalFilename: part.originalFilename
+            )
         }
         return try AudibleDownload(parts: parts)
     }
@@ -562,6 +565,7 @@ private nonisolated struct DownloadResponse: Decodable, Sendable {
         let file: String
         let asin: String
         let credentials: AudibleConversionCredentials
+        let originalFilename: String?
     }
 
     let parts: [Part]

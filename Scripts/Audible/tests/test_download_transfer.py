@@ -39,10 +39,12 @@ class PausedBody(httpx.AsyncByteStream):
         await asyncio.Future()
 
 
-def whole(body=ORIGINAL, etag='"version-1"', stream=None):
+def whole(body=ORIGINAL, etag='"version-1"', stream=None, disposition=None):
     headers = {"content-type": "audio/aax", "content-length": str(len(body))}
     if etag is not None:
         headers["etag"] = etag
+    if disposition is not None:
+        headers["content-disposition"] = disposition
     return httpx.Response(
         200, headers=headers, content=body if stream is None else None, stream=stream
     )
@@ -73,17 +75,19 @@ class DownloadTransferTests(unittest.IsolatedAsyncioTestCase):
                 client, url, self.target, "aax", representation=identity
             )
 
-    async def disconnect(self, etag='"version-1"', offset=CHUNK_SIZE):
+    async def disconnect(self, etag='"version-1"', offset=CHUNK_SIZE, disposition=None):
         with self.assertRaises(httpx.ReadError):
             await self.transfer(
-                lambda request: whole(etag=etag, stream=BrokenBody(ORIGINAL, offset))
+                lambda request: whole(
+                    etag=etag, stream=BrokenBody(ORIGINAL, offset), disposition=disposition
+                )
             )
         self.assertTrue(self.partial.is_file())
         self.assertEqual(self.partial.stat().st_size, offset)
         self.assertFalse(self.target.exists())
 
     async def test_resumes_with_matching_strong_validator_and_renews_signed_query(self):
-        await self.disconnect()
+        await self.disconnect(disposition='attachment; filename="Audible Title.AAX"')
         self.assertNotIn("ticket=previous", self.state.read_text())
 
         def resume(request):
@@ -92,10 +96,50 @@ class DownloadTransferTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(request.headers["Accept-Encoding"], "identity")
             return ranged()
 
-        await self.transfer(resume, NEW_URL)
+        result = await self.transfer(resume, NEW_URL)
+        self.assertEqual(result.path, self.target)
+        self.assertEqual(result.original_filename, "Audible Title.AAX")
         self.assertEqual(self.target.read_bytes(), ORIGINAL)
         self.assertFalse(self.partial.exists())
-        await self.transfer(lambda request: self.fail("Completed stage fetched again"))
+        cached = await self.transfer(lambda request: self.fail("Completed stage fetched again"))
+        self.assertEqual(cached, result)
+
+    async def test_aax_name_prefers_disposition_then_uses_a_safe_url_basename(self):
+        cases = [
+            ('attachment; filename="Book; Volume II.AAX"', "generic", "Book; Volume II.AAX"),
+            ("inline; FILENAME=Book.aax", "generic", "Book.aax"),
+            (
+                'attachment; filename="Alternate.aax"; filename*=UTF-8\'\'%C3%89cho.aax',
+                "Streaming.aax",
+                "Écho.aax",
+            ),
+            (
+                'attachment; filename*=UTF-8\'\'%FF.aax; filename="Alternate.aax"',
+                "Streaming.aax",
+                "Alternate.aax",
+            ),
+            (
+                'attachment; filename="../Escape.aax"',
+                "Streaming%20Title.aax",
+                "Streaming Title.aax",
+            ),
+            ('attachment; filename*=UTF-8\'\'folder%5Cescape.aax', "generic", None),
+            ('attachment; filename="Different.mp3"', "folder%2Fescape.aax", None),
+            ('attachment; filename="Unterminated.aax', "Streaming.aax", "Streaming.aax"),
+            ('attachment; filename*=UTF-8\'\'Bad%GG.aax', "Bad%GG.aax", None),
+            ('attachment; filename=First.aax; filename=Second.aax', "generic", None),
+            ('attachment; filename="Book.aax.transfer.json"', "generic", None),
+            ('attachment; filename="Book.aax.partial"', "generic", None),
+        ]
+        for disposition, path, expected in cases:
+            with self.subTest(disposition=disposition, path=path):
+                result = await self.transfer(
+                    lambda request: whole(disposition=disposition),
+                    url=f"https://cdn.example.test/{path}?ticket=hidden.aax",
+                    identity=None,
+                )
+                self.assertEqual(result.original_filename, expected)
+                self.assertEqual(result.path, self.target)
 
     async def test_cancellation_keeps_written_prefix(self):
         paused = asyncio.Event()

@@ -54,11 +54,16 @@ actor ArchiveWorker {
         let audio: StoredAudio
         let credentials: AudibleConversionCredentials?
         let originalURL: URL?
+        let originalFilename: String?
 
-        init(audio: StoredAudio, credentials: AudibleConversionCredentials? = nil, originalURL: URL? = nil) {
+        init(
+            audio: StoredAudio, credentials: AudibleConversionCredentials? = nil,
+            originalURL: URL? = nil, originalFilename: String? = nil
+        ) {
             self.audio = audio
             self.credentials = credentials
             self.originalURL = originalURL
+            self.originalFilename = originalFilename
         }
     }
 
@@ -149,7 +154,10 @@ actor ArchiveWorker {
                     await progress("Downloading audio", fraction)
                 }
                 sources = download.parts.map {
-                    Source(audio: StoredAudio(url: $0.audio, asin: $0.asin), credentials: $0.credentials)
+                    Source(
+                        audio: StoredAudio(url: $0.audio, asin: $0.asin), credentials: $0.credentials,
+                        originalFilename: $0.originalFilename
+                    )
                 }
                 guard !sources.isEmpty else { throw ArchiveError.noAudio }
                 if options.savesOriginal {
@@ -571,7 +579,10 @@ actor ArchiveWorker {
                 let format = source.audio.url.pathExtension.lowercased()
                 let directory = try layout.directory(for: title, format: format, partNumber: part)
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-                let destination = try availableURL(in: directory, title: title, layout: layout, extension: format, partNumber: part)
+                let destination = try availableURL(
+                    in: directory, title: title, layout: layout, extension: format, partNumber: part,
+                    originalFilename: source.originalFilename
+                )
                 if copy {
                     try FileManager.default.copyItem(at: source.audio.url, to: destination)
                 } else {
@@ -627,11 +638,13 @@ actor ArchiveWorker {
 
     private func availableURL(
         in directory: URL, title: ArchiveTitle, layout: ArchiveLayout, extension ext: String, suffix: String = "",
-        chapterNumber: Int? = nil, chapterTitle: String? = nil, partNumber: Int? = nil
+        chapterNumber: Int? = nil, chapterTitle: String? = nil, partNumber: Int? = nil, originalFilename: String? = nil
     ) throws -> URL {
-        let base = layout.filenameStem(
+        let original = ext == "aax" ? layout.originalAAXFilename(originalFilename) : nil
+        let base = original.map { String($0.dropLast(4)) } ?? layout.filenameStem(
             for: title, format: ext, chapterNumber: chapterNumber, chapterTitle: chapterTitle, partNumber: partNumber
         )
+        let extensionPart = original.map { String($0.suffix(4)) } ?? (ext.isEmpty ? "" : ".\(ext)")
         let asin = ArchiveLayout.filename(title.asin, maxBytes: 12)
         let maxLength = min(layout.filenameLength, 255)
         for number in 0...1_000 {
@@ -640,7 +653,6 @@ actor ArchiveWorker {
             case 1: " (\(asin))"
             default: " (\(asin)) \(number)"
             }
-            let extensionPart = ext.isEmpty ? "" : ".\(ext)"
             if number > 0 && (title.asin == ArchiveTitle.unknownASIN ||
                               maxLength - (suffix + collision + extensionPart).utf8.count < 7) {
                 collision = " (\(number + 1))"
@@ -648,7 +660,7 @@ actor ArchiveWorker {
             let tail = suffix + collision + extensionPart
             let budget = maxLength - tail.utf8.count
             guard budget >= "Unknown".utf8.count else { throw ArchiveError.filenameExhausted }
-            let name = ArchiveLayout.filename(base, maxBytes: budget) + tail
+            let name = (number == 0 ? original : nil) ?? (ArchiveLayout.filename(base, maxBytes: budget) + tail)
             let path = directory.appending(component: name)
             let info = try? path.resourceValues(forKeys: [.isSymbolicLinkKey])
             if !reservedFilenames.contains(Self.reservationKey(path)),

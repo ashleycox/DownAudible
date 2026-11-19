@@ -534,7 +534,12 @@ async def download_part(item, client, web, folder, progress, options):
                 bandwidth=bandwidth,
                 representation=fingerprint("aax", quality, codec),
             )
-            return {"file": target.name, "asin": item.asin, "credentials": {}}
+            return {
+                "file": target.path.name,
+                "asin": item.asin,
+                "credentials": {},
+                "originalFilename": target.original_filename,
+            }
         except NotDownloadableAsAAX:
             break
         except (AudibleCliException, FormatUnavailable):
@@ -561,7 +566,7 @@ async def download_part(item, client, web, folder, progress, options):
         representation=representation,
     )
     return {
-        "file": target.name,
+        "file": target.path.name,
         "asin": item.asin,
         "credentials": credentials,
     }
@@ -641,7 +646,7 @@ async def download_extras(client, web, request, options):
                 cover = await stream_file(
                     web, url, folder / basename, "cover", bandwidth=bandwidth
                 )
-                result["covers"].append(cover.name)
+                result["covers"].append(cover.path.name)
             except (FormatUnavailable, httpx.HTTPError, OperationError):
                 if "cover" not in result["failed"]:
                     result["failed"].append("cover")
@@ -658,7 +663,7 @@ async def download_extras(client, web, request, options):
                 api=client,
                 bandwidth=bandwidth,
             )
-            result["pdf"] = pdf.name
+            result["pdf"] = pdf.path.name
         except (FormatUnavailable, httpx.HTTPError, OperationError):
             result["failed"].append("PDF")
     return result

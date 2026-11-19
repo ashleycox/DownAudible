@@ -6,6 +6,19 @@ struct OutputNaming: Codable, Equatable, Sendable {
     var whitespace = NamingWhitespace.preserve
     var letterCase = NamingLetterCase.preserve
     var transliterate = false
+    var keepOriginalAAXFilename = false
+
+    init() {}
+
+    init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        filenameTemplate = try values.decode(String.self, forKey: .filenameTemplate)
+        chapterFilenameTemplate = try values.decode(String.self, forKey: .chapterFilenameTemplate)
+        whitespace = try values.decode(NamingWhitespace.self, forKey: .whitespace)
+        letterCase = try values.decode(NamingLetterCase.self, forKey: .letterCase)
+        transliterate = try values.decode(Bool.self, forKey: .transliterate)
+        keepOriginalAAXFilename = try values.decodeIfPresent(Bool.self, forKey: .keepOriginalAAXFilename) ?? false
+    }
 
     func apply(to text: String) -> String {
         var text = transliterate ? FilenameStyle.ascii(text) : text
@@ -50,6 +63,7 @@ enum NamingLetterCase: String, Codable, CaseIterable, Identifiable, Sendable {
 
 struct ArchiveLayout: Codable, Equatable, Sendable {
     static let defaultTemplate = "{format}/{author}/{title}"
+    private static let invalidFilenameCharacters = CharacterSet(charactersIn: "/:\\").union(.controlCharacters)
     static let tokens = [
         "title", "subtitle", "author", "authors", "narrator", "narrators", "series", "seriesNumber",
         "publisher", "year", "language", "asin", "format", "chapter", "chapterNumber", "partNumber"
@@ -116,6 +130,15 @@ struct ArchiveLayout: Codable, Equatable, Sendable {
             : cleaned
     }
 
+    func originalAAXFilename(_ name: String?) -> String? {
+        guard naming.keepOriginalAAXFilename, let name,
+              name.lowercased().hasSuffix(".aax"), !name.hasPrefix("."),
+              name.utf8.count <= min(filenameLength, 255),
+              name.rangeOfCharacter(from: Self.invalidFilenameCharacters) == nil,
+              !name.dropLast(4).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return name
+    }
+
     private func substitutions(
         _ book: ArchiveTitle, format: String, chapterNumber: Int?, chapterTitle: String?, partNumber: Int?
     ) -> [String: String] {
@@ -158,8 +181,7 @@ struct ArchiveLayout: Codable, Equatable, Sendable {
     }
 
     static func filename(_ value: String, maxBytes: Int = 180) -> String {
-        let invalid = CharacterSet(charactersIn: "/:\\").union(.controlCharacters)
-        var name = value.components(separatedBy: invalid).joined(separator: "-")
+        var name = value.components(separatedBy: invalidFilenameCharacters).joined(separator: "-")
         let trim = CharacterSet(charactersIn: ". ").union(.whitespacesAndNewlines)
         name = name.trimmingCharacters(in: trim)
         var bytes = 0

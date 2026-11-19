@@ -21,6 +21,8 @@ Use **Filename template** to name the files themselves. Leave it blank to use **
 
 Choose how to handle spaces and letter case. Leave them alone to keep the source spelling, or use hyphens, underscores, lowercase, or uppercase. **Use ASCII characters** can help with older players. The filename length limit is measured in bytes and includes the extension. **If a file is already saved** controls whether DownAudible reuses it or saves another copy.
 
+Turn on **Keep Audible’s AAX filename** in **Settings > Files** to use the filename Audible supplies for newly saved AAX downloads. The name comes from the download response or its URL. If the name is missing, cannot be used as a Mac filename, or exceeds your length limit, DownAudible uses your filename rules. When a name is already taken, DownAudible adds a suffix to save the new file. The folder template still determines where the AAX goes. Converted audio uses your filename rules.
+
 ## Apple Books
 
 Choose **Settings > Downloads > Apple Books** to send newly saved files to the Books app after a transfer. Select **Original Audible file** or **M4B**. For M4B, enable conversion and select M4B in **Settings > Conversion**. Books may ask you to authorise an original Audible file. Check the transfer result if Books cannot open it.

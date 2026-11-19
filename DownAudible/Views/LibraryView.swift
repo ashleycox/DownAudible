@@ -528,21 +528,27 @@ struct DownloadOptionsView: View {
         let existingFormat = request.restartsIncomplete ? nil
             : model.previewSourceFormat(for: book, downloadingAudio: options.downloadAudio)
         let sourceFormat = existingFormat ?? preferredFormat
+        let usesAudibleFilename = layout.naming.keepOriginalAAXFilename && sourceFormat == "aax" && existingFormat == nil
         return VStack(alignment: .leading, spacing: 4) {
             Text("Example paths")
                 .font(.callout.bold())
-            if options.savesOriginal, let path = previewPath(for: book, format: sourceFormat) {
-                Text(path)
+            if options.savesOriginal, let path = previewPath(for: book, format: sourceFormat, folderOnly: usesAudibleFilename) {
+                Text(path).help(path)
+                if usesAudibleFilename {
+                    Text("Uses Audible’s AAX filename when available.")
+                        .font(.callout)
+                        .lineLimit(nil)
+                }
             }
             if options.makesConversion, let path = previewPath(
                 for: book, format: model.conversionPreferences.format.fileExtension,
                 separateChapter: model.conversionPreferences.chapterMode == .separate
             ) {
-                Text(path)
+                Text(path).help(path)
             }
             if !options.downloadAudio && options.hasSelection,
                let path = previewPath(for: book, format: existingFormat ?? "extras", folderOnly: true) {
-                Text(path)
+                Text(path).help(path)
             }
         }
         .font(.callout.monospaced())
