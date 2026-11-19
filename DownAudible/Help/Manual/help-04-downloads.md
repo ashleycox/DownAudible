@@ -30,7 +30,7 @@ To start a partial download from the beginning, Control-click the book and choos
 
 [Naming and Folders](help-06-files.md)
 
-[Transfers and Recovery](help-07-transfers.md)
+[Downloads and Recovery](help-07-transfers.md)
 
 ## Keyboard Shortcuts
 

@@ -45,7 +45,7 @@ struct AudibleWishlistView: View {
                     }
                 }
             if let issue {
-                Text(issue)
+                Label(issue, systemImage: "exclamationmark.circle")
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -232,7 +232,7 @@ private struct AudibleCatalogSearchView: View {
                     }
                 }
             if let issue {
-                Text(issue)
+                Label(issue, systemImage: "exclamationmark.circle")
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -249,7 +249,7 @@ private struct AudibleCatalogSearchView: View {
             }
         }
         .padding(16)
-        .frame(minWidth: 580, minHeight: 360)
+        .frame(minWidth: 512, idealWidth: 600, minHeight: 320, idealHeight: 400)
         .onDisappear { work?.cancel() }
     }
 
@@ -284,13 +284,13 @@ private struct AudibleCatalogTable: View {
     var body: some View {
         Table(books, selection: $selection) {
             TableColumn("Title", value: \.title)
-                .width(min: 170, ideal: 255)
+                .width(min: 140, ideal: 148)
             TableColumn("Author") { Text($0.authors.formatted(.list(type: .and))) }
-                .width(min: 100, ideal: 160)
+                .width(min: 84, ideal: 92)
             TableColumn("Series") { Text($0.series ?? "") }
-                .width(min: 65, ideal: 100)
+                .width(min: 60, ideal: 64)
             TableColumn("ASIN", value: \.asin)
-                .width(min: 78, ideal: 90)
+                .width(min: 78, ideal: 82)
         }
     }
 }

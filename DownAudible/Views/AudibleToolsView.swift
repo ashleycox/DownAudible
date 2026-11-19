@@ -22,13 +22,14 @@ struct AudibleToolsView: View {
                 Label(accountName, systemImage: "person.crop.circle")
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                    .help(accountName)
                 Spacer()
                 Button("Done") { dismiss() }
                     .keyboardShortcut(.cancelAction)
             }
         }
         .padding(20)
-        .frame(minWidth: 660, idealWidth: 720, minHeight: 440, idealHeight: 500)
+        .frame(minWidth: 576, idealWidth: 720, minHeight: 400, idealHeight: 500)
     }
 }
 
@@ -57,43 +58,43 @@ private struct AudibleAccountToolsView: View {
                 }
                 HStack(spacing: 8) {
                     if bytes == nil {
-                        Button("Show") { load() }
+                        Button("Show", systemImage: "eye") { load() }
                             .keyboardShortcut("h", modifiers: [.control, .shift])
                     } else {
-                        Button("Hide") {
+                        Button("Hide", systemImage: "eye.slash") {
                             bytes = nil
                             isCopied = false
                         }
                         .keyboardShortcut("h", modifiers: [.control, .shift])
-                        Button("Copy") { copyBytes() }
+                        Button("Copy", systemImage: "doc.on.doc", action: copyBytes)
                             .keyboardShortcut("c", modifiers: [.control, .shift])
                     }
-                    Button("Reload from Audible") { load(refresh: true) }
+                    Button("Reload from Audible", systemImage: "arrow.clockwise") { load(refresh: true) }
                         .keyboardShortcut("l", modifiers: [.control, .shift])
                     if work != nil {
                         ProgressView()
                             .controlSize(.small)
                             .accessibilityLabel("Getting activation bytes")
                     }
-                    if isCopied {
-                        Text("Copied")
-                            .foregroundStyle(.secondary)
-                    }
                 }
                 .disabled(work != nil)
+                if isCopied {
+                    Label("Copied", systemImage: "checkmark.circle")
+                        .foregroundStyle(.secondary)
+                }
                 if let issue {
-                    Text(issue)
+                    Label(issue, systemImage: "exclamationmark.circle")
                         .foregroundStyle(.secondary)
                 }
             }
             Section("Account File") {
-                Button("Export Encrypted Account File…") {
+                Button("Export Encrypted Account File…", systemImage: "lock.doc") {
                     showingExport = true
                     didExport = false
                 }
                 .keyboardShortcut("e", modifiers: [.control, .shift])
                 if didExport {
-                    Text("Account file saved.")
+                    Label("Account file saved.", systemImage: "checkmark.circle")
                         .foregroundStyle(.secondary)
                 } else {
                     Text("Save a password-protected file for use with Audible CLI or another copy of DownAudible.")

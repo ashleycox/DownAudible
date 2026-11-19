@@ -35,16 +35,19 @@ struct DestinationPicker: View {
     var body: some View {
         LabeledContent("Save to") {
             HStack(spacing: 8) {
-                Image(systemName: "folder")
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-                Text(directory.path(percentEncoded: false))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .help(directory.path(percentEncoded: false))
+                Label {
+                    Text(directory.path(percentEncoded: false))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                } icon: {
+                    Image(systemName: "folder")
+                        .foregroundStyle(.secondary)
+                }
+                .help(directory.path(percentEncoded: false))
                 Button("Choose…") {
                     if let selected = Panels.openFolder(allowCreation: true) { directory = selected }
                 }
+                .fixedSize()
                 .keyboardShortcut("y", modifiers: [.control, .shift])
                 .accessibilityLabel("Choose destination folder")
             }

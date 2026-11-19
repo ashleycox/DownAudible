@@ -2,7 +2,7 @@ import Foundation
 
 enum WorkspacePage: String, CaseIterable, Identifiable {
     case library = "Library"
-    case transfers = "Transfers"
+    case transfers = "Downloads"
     case convert = "Convert Files"
 
     var id: Self { self }

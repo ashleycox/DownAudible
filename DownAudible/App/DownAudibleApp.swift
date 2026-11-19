@@ -30,6 +30,7 @@ struct DownAudibleApp: App {
                 .onAppear { appDelegate.model = model }
         }
         .defaultSize(width: 1_080, height: 640)
+        .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(replacing: .appInfo) {
                 Button("About DownAudible") { openWindow(id: "about") }
@@ -53,7 +54,7 @@ struct DownAudibleApp: App {
                 Divider()
                 Button("Library") { show(.library) }
                     .keyboardShortcut("1")
-                Button("Transfers") { show(.transfers) }
+                Button(WorkspacePage.transfers.rawValue) { show(.transfers) }
                     .keyboardShortcut("2")
                 Button("Convert Files") { show(.convert) }
                     .keyboardShortcut("3")
@@ -105,7 +106,7 @@ struct DownAudibleApp: App {
                 }
                 .disabled(showingOnboarding || model.downloadRequest != nil)
             }
-            CommandMenu("Transfers") {
+            CommandMenu(WorkspacePage.transfers.rawValue) {
                 Button("Cancel Batch") {
                     show(.transfers)
                     model.cancelBatch()
@@ -242,8 +243,7 @@ private struct WorkspaceView: View {
     var body: some View {
         NavigationSplitView(columnVisibility: $sidebarVisibility) {
             List(WorkspacePage.allCases, selection: $model.page) { page in
-                Label(page.rawValue, systemImage: page.icon)
-                    .badge(page == .transfers && model.isTransferring ? model.transfers.count - model.finishedCount : 0)
+                SidebarPageRow(page: page, remaining: page == .transfers ? remainingJobs : 0)
                     .tag(page)
             }
             .listStyle(.sidebar)
@@ -287,6 +287,10 @@ private struct WorkspaceView: View {
         }
     }
 
+    private var remainingJobs: Int {
+        model.isTransferring ? model.transfers.count - model.finishedCount : 0
+    }
+
     private var workspaceNotice: Binding<WorkspaceModel.Notice?> {
         Binding {
             showingOnboarding ? nil : model.notice
@@ -299,5 +303,33 @@ private struct WorkspaceView: View {
         guard openManualAfterSetup else { return }
         openManualAfterSetup = false
         openManual()
+    }
+}
+
+private struct SidebarPageRow: View {
+    let page: WorkspacePage
+    let remaining: Int
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Label(page.rawValue, systemImage: page.icon)
+                .accessibilityLabel(accessibleTitle)
+                .accessibilityInputLabels([Text(page.rawValue)])
+            if remaining > 0 {
+                Spacer(minLength: 4)
+                Text(remaining, format: .number)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+
+    private var accessibleTitle: String {
+        switch remaining {
+        case 0: page.rawValue
+        case 1: "\(page.rawValue), 1 job remaining"
+        default: "\(page.rawValue), \(remaining.formatted()) jobs remaining"
+        }
     }
 }

@@ -39,7 +39,7 @@ struct OnboardingView: View {
             controls
                 .padding(16)
         }
-        .frame(width: 640, height: 540)
+        .frame(minWidth: 520, idealWidth: 640, minHeight: 360, idealHeight: 540)
         .interactiveDismissDisabled()
         .alert(item: $model.notice) { notice in
             Alert(title: Text(notice.title), message: Text(notice.message))
@@ -71,15 +71,19 @@ struct OnboardingView: View {
 
     private func settings(_ pane: SettingsPane) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
+            HStack(spacing: 12) {
                 Label(pane.title, systemImage: pane.systemImage)
                     .font(.title2.bold())
                     .accessibilityAddTraits(.isHeader)
                 Spacer()
                 let current = (SettingsPane.allCases.firstIndex(of: pane) ?? 0) + 1
-                Text("Step \(current) of \(SettingsPane.allCases.count)")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                ProgressView(value: Double(current), total: Double(SettingsPane.allCases.count)) {
+                    Text("Step \(current) of \(SettingsPane.allCases.count)")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                .progressViewStyle(.linear)
+                .frame(width: 100)
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 16)

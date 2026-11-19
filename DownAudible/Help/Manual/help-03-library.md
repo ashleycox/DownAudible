@@ -36,7 +36,7 @@ Use **Show Audio in Finder** to locate a selected book’s files. **Add to Apple
 
 [Downloading Books](help-04-downloads.md)
 
-[Transfers and Recovery](help-07-transfers.md)
+[Downloads and Recovery](help-07-transfers.md)
 
 [Audible Tools](help-08-audible-tools.md)
 

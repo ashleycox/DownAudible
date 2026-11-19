@@ -33,7 +33,7 @@ Choose **Settings > Downloads > Apple Books** to send newly saved files to the B
 
 [Converting Audio](help-05-conversion.md)
 
-[Transfers and Recovery](help-07-transfers.md)
+[Downloads and Recovery](help-07-transfers.md)
 
 ## Keyboard Shortcuts
 
@@ -42,8 +42,8 @@ Choose **Settings > Downloads > Apple Books** to send newly saved files to the B
 | Settings… | Command–Comma |
 | Choose a destination folder in Files settings | Control–Shift–Y |
 | Restore Default Template | Control–Shift–D |
-| Show Output in Finder from Transfers | Control–Shift–F |
-| Add to Apple Books from Transfers | Control–Shift–B |
+| Show Output in Finder from Downloads | Control–Shift–F |
+| Add to Apple Books from Downloads | Control–Shift–B |
 
 [See all keyboard shortcuts](help-10-keyboard-shortcuts.md)
 

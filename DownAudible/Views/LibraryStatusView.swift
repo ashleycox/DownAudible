@@ -16,7 +16,7 @@ struct LibraryStatusView: View {
                 )
             }
         }
-        .frame(minWidth: 760, minHeight: 400)
+        .frame(minWidth: 768, minHeight: 400)
         .onChange(of: model.activeAccountID) { selection = .all }
     }
 
@@ -56,7 +56,7 @@ struct LibraryStatusView: View {
                     showsTransfers: !transfers.isEmpty
                 )
             }
-            .frame(minWidth: 520)
+            .frame(minWidth: 540)
         }
     }
 
@@ -75,14 +75,16 @@ struct LibraryStatusView: View {
     private func header(_ scope: Scope) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text(scope.title)
+                Label(scope.title, systemImage: scope.icon)
                     .font(.title2.bold())
                     .accessibilityAddTraits(.isHeader)
-                Spacer()
+                    .layoutPriority(1)
+                Spacer(minLength: 8)
                 if let account = model.activeAccount {
                     Label(account.name, systemImage: "person.crop.circle")
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                        .help(account.name)
                 }
             }
             Text(scope.explanation)
@@ -107,16 +109,18 @@ struct LibraryStatusView: View {
             TableColumn("Title", value: \.title) { row in
                 Text(row.title).help(row.title)
             }
-            .width(min: 140, ideal: 184)
-            TableColumn("Author", value: \.author)
-                .width(min: 76, ideal: 100)
+            .width(min: 116, ideal: 184)
+            TableColumn("Author", value: \.author) { row in
+                Text(row.author).help(row.author)
+            }
+            .width(min: 64, ideal: 104)
             TableColumn("Local Audio", value: \.localAudio) { row in
                 Label(row.localAudio, systemImage: row.audioIcon)
                     .lineLimit(1)
-                    .help(row.audioDetails)
+                    .help(row.audioDetails.isEmpty ? row.localAudio : row.audioDetails)
                     .accessibilityValue(row.audioDetails)
             }
-            .width(min: 100, ideal: 112)
+            .width(min: 140, ideal: 152)
             TableColumn("Audible Download", value: \.availability) { row in
                 Text(row.availability)
                     .help(row.availabilityDetails)
@@ -127,7 +131,7 @@ struct LibraryStatusView: View {
                 TableColumn("Transfer") { row in
                     Text(row.transferStage)
                 }
-                .width(min: 76, ideal: 88)
+                .width(min: 84, ideal: 96)
             }
         }
         .overlay {

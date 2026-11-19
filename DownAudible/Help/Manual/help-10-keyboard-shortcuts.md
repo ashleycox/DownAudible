@@ -13,7 +13,7 @@ Menu shortcuts work when their commands are available. Open the named page, wind
 | Hide Sidebar / Show Sidebar | Control–Command–S |
 | Hide Status Bar / Show Status Bar | Option–Command–S |
 | Library | Command–1 |
-| Transfers | Command–2 |
+| Downloads | Command–2 |
 | Convert Files | Command–3 |
 | Library Status | Command–4 |
 | Audible Tools… | Command–5 |
@@ -65,7 +65,7 @@ The **Audiobooks** menu groups download commands under **Download** and library 
 | Add M4B Files to Apple Books | Control–Shift–2 |
 | Add Other Audio to Apple Books | Control–Shift–3 |
 
-## Transfers
+## Downloads
 
 | Command | Shortcut |
 | --- | --- |
@@ -194,7 +194,7 @@ Your keyboard may label Fn with a globe. Dictation and emoji shortcuts can depen
 
 [Converting Audio](help-05-conversion.md)
 
-[Transfers and Recovery](help-07-transfers.md)
+[Downloads and Recovery](help-07-transfers.md)
 
 ## Keyboard navigation
 

@@ -50,11 +50,14 @@ struct LibraryView: View {
                         LibraryDownloadActions(model: model)
                     }
                     .disabled(model.books.isEmpty || !model.canRequestDownloads)
+                    .labelStyle(.iconOnly)
                     .help("Download audiobooks")
 
                     Menu("Library Actions", systemImage: "ellipsis.circle") {
-                        Button("Library Status") { openWindow(id: "library-status") }
-                        Button("Recheck Saved Files") { Task { await model.recheckFiles() } }
+                        Button("Library Status", systemImage: "info.circle") { openWindow(id: "library-status") }
+                        Button("Recheck Saved Files", systemImage: "arrow.clockwise") {
+                            Task { await model.recheckFiles() }
+                        }
                             .disabled(model.isScanning || model.isRefreshing || model.isCheckingFiles)
                         Divider()
                         LibraryFolderActions(model: model)
@@ -65,9 +68,12 @@ struct LibraryView: View {
                         }
                         if model.activeAudibleClient != nil {
                             Divider()
-                            Button("Audible Tools…") { openWindow(id: "audible-tools") }
+                            Button("Audible Tools…", systemImage: "wrench.and.screwdriver") {
+                                openWindow(id: "audible-tools")
+                            }
                         }
                     }
+                    .labelStyle(.iconOnly)
                     .help("Library Actions")
                 }
             }
@@ -109,7 +115,7 @@ struct LibraryView: View {
                 .disabled(!model.canSwitchAccounts)
             Button("Import from Audible CLI…") { showingImport = true }
                 .disabled(!model.canSwitchAccounts)
-            SettingsLink { Text("Settings…") }
+            SettingsLink { Label("Settings…", systemImage: "gearshape") }
             if model.signedIn {
                 Button("Sign Out", action: model.signOut)
                     .disabled(!model.canRemoveAccounts)
@@ -117,7 +123,9 @@ struct LibraryView: View {
         } label: {
             Label(model.activeAccount?.name ?? "Audible Accounts", systemImage: "person.crop.circle")
         }
+        .labelStyle(.iconOnly)
         .accessibilityLabel("Audible Accounts")
+        .accessibilityValue(model.activeAccount?.name ?? "")
         .help(model.activeAccount?.name ?? "Audible Accounts")
     }
 
@@ -129,11 +137,11 @@ struct LibraryView: View {
                     Text(row.title)
                         .help(row.title)
                 }
-                .width(min: 150, ideal: 280)
+                .width(min: 128, ideal: 280)
                 TableColumn("Author", value: \.authors)
-                    .width(min: 100, ideal: 144)
+                    .width(min: 80, ideal: 144)
                 TableColumn("Narrator", value: \.narrators)
-                    .width(min: 100, ideal: 144)
+                    .width(min: 80, ideal: 144)
                 TableColumn("Download Status", value: \.statusLabel) { row in
                     Label(row.statusLabel, systemImage: row.statusSymbol)
                         .labelStyle(.titleAndIcon)
@@ -184,15 +192,35 @@ struct LibraryView: View {
 
     private func libraryStatus(visibleCount: Int) -> some View {
         HStack(spacing: 8) {
-            if model.isScanning {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    statusSummary(visibleCount: visibleCount)
+                    Spacer(minLength: 12)
+                    matchedFolder
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    statusSummary(visibleCount: visibleCount)
+                    matchedFolder
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Button("Library Status", systemImage: "info.circle") { openWindow(id: "library-status") }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+                .help("Library Status")
+        }
+        .foregroundStyle(.secondary)
+        .font(.callout)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(.bar)
+    }
+
+    private func statusSummary(visibleCount: Int) -> some View {
+        HStack(spacing: 8) {
+            if let activity {
                 ProgressView().controlSize(.small).accessibilityHidden(true)
-                Text("Matching audio files…")
-            } else if model.isRefreshing {
-                ProgressView().controlSize(.small).accessibilityHidden(true)
-                Text("Refreshing library…")
-            } else if model.isCheckingFiles {
-                ProgressView().controlSize(.small).accessibilityHidden(true)
-                Text("Checking saved files…")
+                Text(activity)
             } else {
                 if visibleCount == model.books.count {
                     Text(visibleCount == 1 ? "1 audiobook" : "\(visibleCount.formatted()) audiobooks")
@@ -204,24 +232,25 @@ struct LibraryView: View {
                 Text("·").accessibilityHidden(true)
                 Text("\(model.missingBooks.count.formatted()) to download")
             }
-            Spacer()
-            if let folder = model.localMatches.directory {
-                Label(folder.lastPathComponent, systemImage: "folder")
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .accessibilityLabel("Matched folder \(folder.lastPathComponent)")
-                    .help(folder.path(percentEncoded: false))
-            }
-            Button("Library Status", systemImage: "info.circle") { openWindow(id: "library-status") }
-                .labelStyle(.iconOnly)
-                .buttonStyle(.borderless)
-                .help("Library Status")
         }
-        .foregroundStyle(.secondary)
-        .font(.callout)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .background(.bar)
+    }
+
+    private var activity: String? {
+        if model.isScanning { return "Matching audio files…" }
+        if model.isRefreshing { return "Refreshing library…" }
+        if model.isCheckingFiles { return "Checking saved files…" }
+        return nil
+    }
+
+    @ViewBuilder
+    private var matchedFolder: some View {
+        if let folder = model.localMatches.directory {
+            Label(folder.lastPathComponent, systemImage: "folder")
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .accessibilityLabel("Matched folder \(folder.lastPathComponent)")
+                .help(folder.path(percentEncoded: false))
+        }
     }
 
     private var visibleRows: [LibraryRow] {
@@ -445,7 +474,29 @@ struct DownloadOptionsView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(spacing: 0) {
+            ViewThatFits(in: .vertical) {
+                form.padding(24)
+                ScrollView { form.padding(24) }
+            }
+            Divider()
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button(request.restartsIncomplete ? "Restart" : "Download", action: startDownload)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!layout.isValid || !options.hasSelection || !model.canStartDownloads)
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 16)
+        }
+        .frame(width: 560)
+        .frame(minHeight: 280, maxHeight: 520)
+    }
+
+    private var form: some View {
+        VStack(alignment: .leading, spacing: 16) {
             if request.books.count == 1, let book = request.books.first {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(request.restartsIncomplete ? "Restart Download" : "Download Audiobook")
@@ -503,19 +554,8 @@ struct DownloadOptionsView: View {
                     destinationPreview(for: book)
                 }
             }
-
-            HStack {
-                Spacer()
-                Button("Cancel") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                Button(request.restartsIncomplete ? "Restart" : "Download", action: startDownload)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(!layout.isValid || !options.hasSelection || !model.canStartDownloads)
-            }
         }
-        .padding(24)
-        .frame(width: 560)
-        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var layout: ArchiveLayout {

@@ -14,15 +14,15 @@ Check that the source is still in the folder you added or matched. If it is AAX,
 
 ## The archive is on a disk that has been disconnected
 
-Reconnect the disk, make sure the destination still points to the archive, and choose **Recheck Saved Files**. If you moved files inside or outside the archive, use **Match Existing Folder** again or update individual matches. Use **Download Missing** if the files are gone and you want to replace them.
+Reconnect the disk, make sure the destination still points to the archive, and choose **Recheck Saved Files**. If you moved files inside or outside the archive, use **Match Existing Folder…** again or update individual matches. Use **Download Missing** if the files are gone and you want to replace them.
 
 ## A download keeps failing or restarts at zero
 
-Check the error in **Transfers**. Try lowering simultaneous downloads or setting a longer request timeout. **Retry** uses any valid partial file. Audible can supply a different file or a server that does not support byte ranges, in which case DownAudible starts from zero. Use **Restart Download…** from the transfer’s contextual menu to discard the partial audio and start again.
+Check the error in **Downloads**. Try lowering simultaneous downloads or setting a longer request timeout. **Retry** uses any valid partial file. Audible can supply a different file or a server that does not support byte ranges, in which case DownAudible starts from zero. Use **Restart Download…** from the transfer’s contextual menu to discard the partial audio and start again.
 
 ## Books opens without the audiobook
 
-Find the file with **Show Output in Finder** in Transfers. Books may require authorisation for an original or may refuse that particular Audible format. Use **Convert Files** to create one M4B, then choose **Add to Apple Books** on the result in Transfers. Check Books itself to confirm that it imported the file.
+Find the file with **Show Output in Finder** in **Downloads**. Books may require authorisation for an original or may refuse that particular Audible format. Use **Convert Files** to create one M4B, then choose **Add to Apple Books** on the result in **Downloads**. Check Books itself to confirm that it imported the file.
 
 ## The main window is closed
 
@@ -36,7 +36,7 @@ Choose **Window > Show DownAudible** to bring the main window back. Use the **Vi
 
 [Converting Audio](help-05-conversion.md)
 
-[Transfers and Recovery](help-07-transfers.md)
+[Downloads and Recovery](help-07-transfers.md)
 
 ## Keyboard Shortcuts
 
@@ -49,7 +49,7 @@ Choose **Window > Show DownAudible** to bring the main window back. Use the **Vi
 | Download Missing | Shift–Command–D |
 | Retry Selected Transfers | Control–Shift–R |
 | Restart Selected Downloads… | Control–Shift–D |
-| Show Output in Finder from Transfers | Control–Shift–F |
+| Show Output in Finder from Downloads | Control–Shift–F |
 | Show DownAudible | Control–Command–0 |
 
 [See all keyboard shortcuts](help-10-keyboard-shortcuts.md)

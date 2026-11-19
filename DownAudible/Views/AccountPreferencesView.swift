@@ -36,11 +36,12 @@ struct AccountPreferencesView: View {
                         TableColumn("Marketplace") { account in Text(account.marketplace.displayName) }
                         TableColumn("Status") { account in
                             if model.activeAccount?.id == account.id {
-                                Text(model.signedIn ? "Active" : "Signed out")
+                                Label(model.signedIn ? "Active" : "Signed out",
+                                      systemImage: model.signedIn ? "checkmark.circle" : "person.crop.circle.badge.exclamationmark")
                                     .foregroundStyle(.secondary)
                             }
                         }
-                        .width(min: 80, ideal: 92, max: 100)
+                        .width(min: 96, ideal: 112, max: 132)
                     }
                     .frame(minHeight: 160)
                     .contextMenu(forSelectionType: SavedAudibleAccount.ID.self) { ids in
@@ -51,9 +52,9 @@ struct AccountPreferencesView: View {
                 }
 
                 HStack(spacing: 8) {
-                    Button("Add Account…") { sheet = .add }
+                    Button("Add Account…", systemImage: "person.badge.plus") { sheet = .add }
                         .keyboardShortcut("a", modifiers: [.control, .shift])
-                    Button("Import from Audible CLI…") { sheet = .importCLI }
+                    Button("Import from Audible CLI…", systemImage: "square.and.arrow.down") { sheet = .importCLI }
                         .keyboardShortcut("i", modifiers: [.control, .shift])
                     if model.accountBusy {
                         ProgressView().controlSize(.small)
@@ -121,7 +122,7 @@ struct AccountPreferencesView: View {
                 .keyboardShortcut("s", modifiers: [.control, .shift])
                 .disabled(!model.canSwitchAccounts)
         }
-        Button("Rename…") { sheet = .rename(account) }
+        Button("Rename…", systemImage: "pencil") { sheet = .rename(account) }
             .keyboardShortcut("n", modifiers: [.control, .shift])
             .disabled(!model.canSwitchAccounts)
         Button("Remove Account…", role: .destructive) {

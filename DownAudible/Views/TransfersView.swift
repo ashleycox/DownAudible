@@ -11,7 +11,10 @@ struct TransfersView: View {
     var body: some View {
         Group {
             if model.transfers.isEmpty {
-                ContentUnavailableView("No Transfers", systemImage: "arrow.down.circle")
+                ContentUnavailableView(
+                    "No Downloads", systemImage: WorkspacePage.transfers.icon,
+                    description: Text("Downloads and conversions appear here when you start them.")
+                )
             } else {
                 VStack(spacing: 0) {
                     List(model.transfers, selection: $selection) { transfer in
@@ -30,13 +33,15 @@ struct TransfersView: View {
         .toolbar {
             if !model.transfers.isEmpty {
                 ToolbarItem {
-                    Menu("Transfer Actions", systemImage: "ellipsis.circle") {
-                        Button("Restart Incomplete Downloads…", action: askToRestartBatch)
+                    Menu("Download Actions", systemImage: "ellipsis.circle") {
+                        Button("Restart Incomplete Downloads…", systemImage: "arrow.counterclockwise",
+                               action: askToRestartBatch)
                             .disabled(!model.canRestart)
-                        Button("Clear Completed", action: model.clearCompletedTransfers)
+                        Button("Clear Completed", systemImage: "checkmark.circle", action: model.clearCompletedTransfers)
                             .disabled(!model.canClearCompleted)
                     }
-                    .help("Transfer Actions")
+                    .labelStyle(.iconOnly)
+                    .help("Download Actions")
                 }
             }
         }
@@ -72,15 +77,18 @@ struct TransfersView: View {
     }
 
     private var footer: some View {
-        HStack {
-            if model.isTransferring && model.transferPreferences.showProgress {
-                ProgressView(value: Double(model.finishedCount), total: Double(model.transfers.count))
-                    .labelsHidden()
-                    .accessibilityLabel("Batch progress")
-                    .frame(maxWidth: 160)
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("\(model.finishedCount.formatted()) of \(model.transfers.count.formatted()) finished")
+                    .foregroundStyle(.secondary)
+                    .font(.callout)
+                if model.isTransferring && model.transferPreferences.showProgress {
+                    ProgressView(value: Double(model.finishedCount), total: Double(model.transfers.count))
+                        .labelsHidden()
+                        .accessibilityLabel("Batch progress")
+                        .frame(maxWidth: 160)
+                }
             }
-            Text("\(model.finishedCount) of \(model.transfers.count) finished")
-                .foregroundStyle(.secondary)
             Spacer()
             if model.isTransferring {
                 Button("Cancel Batch", role: .cancel) { model.cancelBatch() }
@@ -88,7 +96,9 @@ struct TransfersView: View {
                 Button("Retry Incomplete") { model.retryBatch() }
             }
         }
-        .padding(12)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(.bar)
     }
 }
 
@@ -152,12 +162,12 @@ private struct TransferSelectionActions: View {
                 .disabled(restartable.isEmpty || !model.canRestart)
         }
         if inMenuBar || !files.isEmpty {
-            Button("Show Output in Finder") { NSWorkspace.shared.activateFileViewerSelecting(files) }
+            Button("Show Output in Finder", systemImage: "folder") { NSWorkspace.shared.activateFileViewerSelecting(files) }
                 .keyboardShortcut(shortcut("f"))
                 .disabled(files.isEmpty)
         }
         if inMenuBar || canAddToBooks {
-            Button("Add to Apple Books") { Task { await model.addToAppleBooks(files) } }
+            Button("Add to Apple Books", systemImage: "books.vertical") { Task { await model.addToAppleBooks(files) } }
                 .keyboardShortcut(shortcut("b"))
                 .disabled(!canAddToBooks)
         }
@@ -192,21 +202,36 @@ private struct TransferRow: View {
     let showProgress: Bool
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Image(systemName: statusSymbol)
+                .imageScale(.large)
+                .frame(width: 20)
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+
             VStack(alignment: .leading, spacing: 4) {
-                Text(transfer.title).fontWeight(.medium)
+                Text(transfer.title)
+                    .font(.headline)
                 switch transfer.status {
                 case .waiting:
                     status("Waiting")
                 case .active(let name, let progress):
                     status(name)
                     if showProgress, let progress, progress.isFinite {
-                        ProgressView(value: min(1, max(0, progress))).labelsHidden().accessibilityLabel(name)
+                        ProgressView(value: min(1, max(0, progress)))
+                            .labelsHidden()
+                            .accessibilityLabel("Job progress")
                     }
                 case .done(_, let note):
-                    status(note ?? "Done")
+                    if let note {
+                        status(note).accessibilityLabel("Finished with a warning. \(note)")
+                    } else {
+                        status("Done")
+                    }
                 case .failed(let reason):
-                    status(reason).textSelection(.enabled)
+                    status(reason)
+                        .textSelection(.enabled)
+                        .accessibilityLabel("Failed. \(reason)")
                 case .cancelled:
                     status("Cancelled")
                 case .interrupted:
@@ -216,27 +241,29 @@ private struct TransferRow: View {
                 }
             }
             Spacer()
-            if case .done(let url, let note) = transfer.status {
-                if note != nil {
-                    Image(systemName: "exclamationmark.triangle")
-                        .foregroundStyle(.secondary)
-                        .accessibilityLabel("Finished with a warning")
-                }
-                Button {
+            if case .done(let url, _) = transfer.status {
+                Button("Show in Finder", systemImage: "folder") {
                     let paths = transfer.files.isEmpty ? [url] : transfer.files
                     NSWorkspace.shared.activateFileViewerSelecting(paths)
-                } label: {
-                    Label("Show in Finder", systemImage: "folder").labelStyle(.iconOnly)
                 }
-                .buttonStyle(.bordered)
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
                 .help("Show in Finder")
-            } else if case .failed = transfer.status {
-                Image(systemName: "exclamationmark.circle")
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel("Failed")
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 8)
+    }
+
+    private var statusSymbol: String {
+        switch transfer.status {
+        case .waiting: "clock"
+        case .active: "circle.dotted"
+        case .done(_, nil): "checkmark.circle"
+        case .done, .failed: "exclamationmark.triangle"
+        case .cancelled: "xmark.circle"
+        case .interrupted: "pause.circle"
+        case .stopped: "stop.circle"
+        }
     }
 
     private func status(_ text: String) -> some View {

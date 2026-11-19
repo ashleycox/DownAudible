@@ -15,11 +15,11 @@ Choose **Help > Set Up DownAudible…** to run setup again with your saved setti
 1. Open **Library**. If you need to connect an account, click **Sign In…** and choose the marketplace where you bought your books. You can also choose **Import from Audible CLI…**.
 2. Select a book in the table. From the **Download** toolbar menu, choose **Download Selected As…**.
 3. Choose a destination folder. Keep **Download audio** on and choose whether to convert it. To save the original and a converted copy, turn on **Keep the original after conversion**.
-4. Click **Download**. Follow the job in **Transfers**. When it finishes, use **Show Output in Finder** to see the file. Use **Download Selected** for the next book to start with the saved settings.
+4. Click **Download**. Follow the job in **Downloads**. When it finishes, use **Show Output in Finder** to see the file. Use **Download Selected** for the next book to start with the saved settings.
 
 ## The sidebar
 
-**Library** shows the current Audible account. **Convert Files** works on files you already have. **Transfers** shows work in progress, results, and errors. The **View** menu opens any of these pages even when the sidebar is hidden.
+**Library** shows the current Audible account. **Convert Files** works on files you already have. **Downloads** shows work in progress, results, and errors. The number next to **Downloads** is the number of jobs still running or queued. The **View** menu opens any of these pages even when the sidebar is hidden.
 
 Use **View > Hide Sidebar** or **Show Sidebar** to change the layout. The **View** menu also opens **Library Status** and controls the status bar at the bottom of the library window.
 
@@ -31,7 +31,7 @@ Choose **DownAudible > Settings** to change the app’s defaults.
 
 [Downloading Books](help-04-downloads.md)
 
-[Transfers and Recovery](help-07-transfers.md)
+[Downloads and Recovery](help-07-transfers.md)
 
 [Credits](help-11-credits.md)
 
@@ -41,7 +41,7 @@ Choose **DownAudible > Settings** to change the app’s defaults.
 | --- | --- |
 | Settings… | Command–Comma |
 | Library | Command–1 |
-| Transfers | Command–2 |
+| Downloads | Command–2 |
 | Convert Files | Command–3 |
 | Download Selected As… | Option–Command–D |
 | Set Up DownAudible… | Option–Command–Comma |

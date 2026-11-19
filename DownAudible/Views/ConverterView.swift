@@ -14,8 +14,10 @@ struct ConverterView: View {
                 } description: {
                     Text("Choose an audio file or folder, or drag files here from Finder.")
                 } actions: {
-                    Button("Add Files…", action: pickFiles).disabled(model.isPreparingFiles)
-                    Button("Add Folder…", action: pickFolder).disabled(model.isPreparingFiles)
+                    Button("Add Files…", systemImage: "plus", action: pickFiles)
+                        .disabled(model.isPreparingFiles)
+                    Button("Add Folder…", systemImage: "folder", action: pickFolder)
+                        .disabled(model.isPreparingFiles)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -26,16 +28,16 @@ struct ConverterView: View {
 
             Form {
                 DestinationPicker(directory: $model.outputDirectory)
-                HStack(spacing: 8) {
-                    Picker("Format", selection: $model.conversionPreferences.format) {
-                        ForEach(ConversionFormat.allCases) { format in
-                            Text(format.displayName).tag(format)
-                        }
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 12) {
+                        formatPicker
+                        Spacer(minLength: 0)
+                        conversionOptions
                     }
-                    .fixedSize()
-                    Text(model.conversionPreferences.chapterMode.displayName)
-                        .foregroundStyle(.secondary)
-                    Button("Conversion Options…") { showingOptions = true }
+                    VStack(alignment: .leading, spacing: 8) {
+                        formatPicker
+                        conversionOptions
+                    }
                 }
                 if model.localFiles.contains(where: { $0.format == "aax" }) {
                     SecureField("Activation bytes (optional)", text: $model.activationBytes)
@@ -47,6 +49,7 @@ struct ConverterView: View {
                     }
                 }
             }
+            .formStyle(.columns)
             .padding(12)
 
             HStack {
@@ -74,11 +77,9 @@ struct ConverterView: View {
         }
         .toolbar {
             ToolbarItemGroup {
-                Menu {
-                    Button("Add Files…", action: pickFiles)
-                    Button("Add Folder…", action: pickFolder)
-                } label: {
-                    Label("Add Audio", systemImage: "plus")
+                Menu("Add Audio", systemImage: "plus") {
+                    Button("Add Files…", systemImage: "doc.badge.plus", action: pickFiles)
+                    Button("Add Folder…", systemImage: "folder", action: pickFolder)
                 }
                 .help("Add audio files or a folder")
                 .disabled(model.isPreparingFiles)
@@ -98,7 +99,24 @@ struct ConverterView: View {
                 }
                 .padding(12)
             }
-            .frame(width: 520, height: 460)
+            .frame(minWidth: 416, idealWidth: 520, minHeight: 320, idealHeight: 460)
+        }
+    }
+
+    private var formatPicker: some View {
+        Picker("Format", selection: $model.conversionPreferences.format) {
+            ForEach(ConversionFormat.allCases) { format in
+                Text(format.displayName).tag(format)
+            }
+        }
+        .fixedSize()
+    }
+
+    private var conversionOptions: some View {
+        HStack(spacing: 8) {
+            Text(model.conversionPreferences.chapterMode.displayName)
+                .foregroundStyle(.secondary)
+            Button("Conversion Options…", systemImage: "slider.horizontal.3") { showingOptions = true }
         }
     }
 
@@ -107,10 +125,12 @@ struct ConverterView: View {
             TableColumn("Title", value: \.title) { file in
                 Text(file.title).help(file.url.path(percentEncoded: false))
             }
+            .width(min: 132, ideal: 260)
             TableColumn("Author") { file in
                 Text(file.author ?? "—")
                     .foregroundStyle(file.author == nil ? .secondary : .primary)
             }
+            .width(min: 88, ideal: 150)
             TableColumn("Format", value: \.format) { file in
                 Text(file.format.uppercased()).foregroundStyle(.secondary)
             }
@@ -192,20 +212,20 @@ private struct ConversionActions: View {
 
         if inMenuBar || !urls.isEmpty {
             Divider()
-            Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting(urls) }
+            Button("Show in Finder", systemImage: "folder") { NSWorkspace.shared.activateFileViewerSelecting(urls) }
                 .keyboardShortcut(shortcut("s"))
                 .disabled(urls.isEmpty)
             if inMenuBar || canAddToBooks {
-                Button("Add to Apple Books") { Task { await context.model.addToAppleBooks(urls) } }
+                Button("Add to Apple Books", systemImage: "book") { Task { await context.model.addToAppleBooks(urls) } }
                     .keyboardShortcut(shortcut("b"))
                     .disabled(!canAddToBooks)
             }
-            Button("Copy Path") { copyPaths(urls) }
+            Button("Copy Path", systemImage: "doc.on.doc") { copyPaths(urls) }
                 .keyboardShortcut(shortcut("c"))
                 .disabled(urls.isEmpty)
         }
         Divider()
-        Button("Remove from List") { context.removeFiles(Set(files.map(\.id))) }
+        Button("Remove from List", systemImage: "minus.circle") { context.removeFiles(Set(files.map(\.id))) }
             .keyboardShortcut(shortcut(.delete))
             .disabled(files.isEmpty)
         Button("Clear List") { context.removeFiles(Set(allFiles.map(\.id))) }

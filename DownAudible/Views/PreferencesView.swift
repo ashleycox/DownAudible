@@ -24,7 +24,7 @@ enum SettingsPane: CaseIterable, Identifiable {
         case .downloads: "arrow.down.to.line"
         case .conversion: "waveform"
         case .files: "folder"
-        case .jobs: "clock"
+        case .jobs: "list.bullet.rectangle"
         }
     }
 
@@ -113,14 +113,28 @@ private struct PurchaseDateOption: View {
     @Binding var date: Date?
 
     var body: some View {
-        HStack {
-            Toggle(title, isOn: enabled)
-                .toggleStyle(.checkbox)
-            Spacer()
-            if date != nil {
-                DatePicker(title, selection: selectedDate, displayedComponents: .date)
-                    .labelsHidden()
+        ViewThatFits(in: .horizontal) {
+            HStack {
+                dateToggle
+                Spacer(minLength: 8)
+                datePicker
             }
+            VStack(alignment: .leading, spacing: 8) {
+                dateToggle
+                datePicker
+            }
+        }
+    }
+
+    private var dateToggle: some View {
+        Toggle(title, isOn: enabled)
+            .toggleStyle(.checkbox)
+    }
+
+    @ViewBuilder private var datePicker: some View {
+        if date != nil {
+            DatePicker(title, selection: selectedDate, displayedComponents: .date)
+                .labelsHidden()
         }
     }
 
@@ -176,7 +190,7 @@ private struct DownloadPreferencesView: View {
             }
 
             Section("Cover sizes") {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading), count: 4), spacing: 8) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 108), alignment: .leading)], spacing: 8) {
                     ForEach(AudibleAPIOptions.availableCoverSizes, id: \.self) { size in
                         Toggle(isOn: selectedCoverSize(size)) {
                             Text("\(size, format: .number.grouping(.never)) px")
@@ -272,6 +286,7 @@ private struct FilePreferencesView: View {
                 if let path = examplePath {
                     Text(path)
                         .monospaced()
+                        .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                 } else {
                     Label("Check the folder and filename templates.", systemImage: "exclamationmark.circle")
