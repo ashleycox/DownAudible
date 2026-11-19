@@ -8,7 +8,7 @@ INFOPLIST_FILE = App-Info.plist
 INFOPLIST_KEY_CFBundleDisplayName = DownAudible
 INFOPLIST_KEY_LSApplicationCategoryType = public.app-category.utilities
 INFOPLIST_KEY_NSHumanReadableCopyright = Copyright © 2026 Ashley Cox
-MARKETING_VERSION = 0.1.0
+MARKETING_VERSION = 0.2.0
 PRODUCT_BUNDLE_IDENTIFIER = com.tbmw.downaudible
 PRODUCT_NAME = DownAudible
 

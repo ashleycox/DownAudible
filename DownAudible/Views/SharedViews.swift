@@ -92,8 +92,10 @@ struct AboutView: View {
                 .accessibilityHidden(true)
             Text("DownAudible")
                 .font(.title2.bold())
-            Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0")")
-                .foregroundStyle(.secondary)
+            if let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String {
+                Text("Version \(version)")
+                    .foregroundStyle(.secondary)
+            }
             Link("Developed by Ashley Cox", destination: DownAudibleLinks.website)
                 .keyboardShortcut("w", modifiers: [.control, .shift])
                 .padding(.top, 8)
