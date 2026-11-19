@@ -1,5 +1,7 @@
 # DownAudible
 
+<img src="AppAssets/DownAudible.png" alt="DownAudible icon showing a mint-green arrow pointing into an open book" width="96" height="96" align="right">
+
 DownAudible backs up your Audible library on a Mac. Keep the original DRM-protected Audible files, or convert them to M4B, M4A, or MP3 and play them on any device. You can keep a book in one file or save each chapter separately.
 
 ## Why I built DownAudible
@@ -7,6 +9,12 @@ DownAudible backs up your Audible library on a Mac. Keep the original DRM-protec
 I built DownAudible one morning after discovering Audible had removed the download button from their website, removing access to the books we bought and paid for. I have been an Audible user for years and have amassed a library of thousands of books.
 
 I refuse to use the Audible app. It is an atrocity, especially on macOS. We must all fight against our right to ownership being stripped from us. I have spent thousands of pounds over many years building a library of books, and I will do with them as I please within the remit of legal personal use. If you pay for something without the explicit knowledge that you are renting it, you should own access to it, even if the product is digital.
+
+## Download
+
+[**Download DownAudible for Mac (.zip)**](https://github.com/ashleycox/DownAudible/releases/latest/download/DownAudible.zip)
+
+DownAudible requires an Apple silicon Mac running macOS 15 or later. Unzip the download and drag DownAudible to Applications.
 
 ## Build and run
 
@@ -32,7 +40,7 @@ Setup opens the first time you run DownAudible. Use it to connect an account, ch
 3. In **Audiobooks → Download**, choose **Download Missing** to fetch eligible titles without a complete audio copy, or select books and choose **Download Selected**. Use the corresponding **As…** command to review the destination, audio, conversion, and optional PDFs, cover images, chapters, and notes.
 4. If a batch is interrupted, open **Transfers** and choose **Retry Incomplete**. DownAudible resumes partial audio when Audible can confirm it is the same file. Choose **Restart Download…** from a transfer’s contextual menu to discard its temporary bytes and download it from the start.
 
-**Audiobooks → Audible Tools** opens the wish list, catalogue search, activation bytes, and encrypted Audible CLI account export for the current account. Use **Audiobooks → Library → Export Library** to save the displayed library as JSON, CSV, or TSV.
+**Audiobooks → Audible Tools** opens the wish list, catalogue search, activation bytes, and encrypted Audible CLI account export for the current account. Use **Audiobooks → Library → Export Library** to save the loaded library as JSON, CSV, or TSV.
 
 **View → Library Status** shows which books need audio, which are downloaded or matched, and which Audible lists as unavailable. The **View** menu also controls the sidebar and the library status bar.
 
