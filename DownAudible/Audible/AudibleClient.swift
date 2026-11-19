@@ -495,8 +495,13 @@ nonisolated struct AudibleClient: Sendable {
         _ request: Request,
         progress: @escaping @Sendable (Double) async -> Void = { _ in }
     ) async throws -> Result {
+        #if arch(x86_64)
+        let helperArchitecture = "x86_64"
+        #else
+        let helperArchitecture = "arm64"
+        #endif
         let executable = helperURL ?? Bundle.main.resourceURL?
-            .appending(path: "AudibleSupport/audible-helper", directoryHint: .notDirectory)
+            .appending(path: "AudibleSupport/\(helperArchitecture)/audible-helper", directoryHint: .notDirectory)
         guard let executable, FileManager.default.isExecutableFile(atPath: executable.path) else {
             throw AudibleError.helperMissing
         }

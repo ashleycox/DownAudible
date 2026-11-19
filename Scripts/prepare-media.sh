@@ -1,7 +1,19 @@
 #!/bin/bash
 set -euo pipefail
 
-destination=${1:?Usage: prepare-media.sh destination}
+destination=${1:?Usage: prepare-media.sh destination [arm64|x86_64 ...]}
+shift
+if [[ $# -eq 0 ]]; then
+    set -- "$(uname -m)"
+fi
+case "$#:$*" in
+    1:arm64|1:x86_64|"2:arm64 x86_64"|"2:x86_64 arm64") ;;
+    *)
+        echo "error: Expected arm64, x86_64, or both for DownAudible's media tools." >&2
+        exit 2
+        ;;
+esac
+
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 version=8.1.2
 archive="ffmpeg-$version.tar.xz"
@@ -15,12 +27,25 @@ minimum_macos=15.0
 build_id="$(shasum -a 256 "$script_dir/prepare-media.sh" "$script_dir/Media/"*.patch "$script_dir/Media/LAME/"*.patch | awk '{print $1}' | shasum -a 256 | cut -c 1-16)"
 sdk_version="$(xcrun --sdk macosx --show-sdk-version)"
 cache_root="${DOWNAUDIBLE_MEDIA_CACHE:-$HOME/Library/Caches/DownAudible/FFmpeg}"
-cache="$cache_root/$version-$sdk_version-$build_id"
-mkdir -p "$cache" "$destination"
+cache_base="$cache_root/$version-$sdk_version-$build_id"
 
-if [ ! -x "$cache/ffmpeg" ] || [ ! -x "$cache/ffprobe" ] ||
-    [ ! -f "$cache/COPYING.LGPLv2.1" ] || [ ! -f "$cache/LAME-COPYING" ]; then
-    echo "Building FFmpeg $version and LAME $lame_version for DownAudible (first build only)"
+prepare_architecture() (
+    architecture=$1
+    cache="$cache_base/$architecture"
+    mkdir -p "$cache"
+    # Several Xcode builds can share the media cache.
+    exec 9>"$cache/.lock"
+    /usr/bin/lockf 9
+    if [[ -x "$cache/ffmpeg" && -x "$cache/ffprobe" &&
+        -f "$cache/COPYING.LGPLv2.1" && -f "$cache/LAME-COPYING" ]]; then
+        exit 0
+    fi
+
+    ffmpeg_arch=$architecture
+    if [[ $architecture == arm64 ]]; then
+        ffmpeg_arch=aarch64
+    fi
+    echo "Building FFmpeg $version and LAME $lame_version for $architecture (first build only)"
     build_dir="$(mktemp -d "$cache_root/.build.XXXXXX")"
     trap 'rm -rf "$build_dir"' EXIT
     jobs="$(sysctl -n hw.logicalcpu)"
@@ -33,9 +58,10 @@ if [ ! -x "$cache/ffmpeg" ] || [ ! -x "$cache/ffprobe" ] ||
         cd "$build_dir/lame-$lame_version" &&
         patch -p1 < "$script_dir/Media/LAME/optional-pkg-config.patch" &&
         CC="$compiler" ac_cv_prog_cc_c23=no \
-            CFLAGS="-O2 -std=gnu17 -Wno-implicit-function-declaration -isysroot $sdk -arch arm64 -mmacosx-version-min=$minimum_macos" \
-            LDFLAGS="-isysroot $sdk -arch arm64 -mmacosx-version-min=$minimum_macos" \
-            ./configure --prefix="$lame_prefix" --disable-frontend --disable-decoder \
+            CFLAGS="-O2 -std=gnu17 -Wno-implicit-function-declaration -isysroot $sdk -arch $architecture -mmacosx-version-min=$minimum_macos" \
+            LDFLAGS="-isysroot $sdk -arch $architecture -mmacosx-version-min=$minimum_macos" \
+            /usr/bin/arch "-$architecture" /bin/bash ./configure \
+                --prefix="$lame_prefix" --disable-frontend --disable-decoder \
                 --disable-shared --enable-static --disable-dependency-tracking --disable-debug &&
         make -j "$jobs" &&
         make install
@@ -48,11 +74,13 @@ if [ ! -x "$cache/ffmpeg" ] || [ ! -x "$cache/ffprobe" ] ||
     for patch_file in "$script_dir/Media/"*.patch; do
         patch -p1 < "$patch_file"
     done
-    ./configure \
-        --arch=aarch64 --target-os=darwin --cc="$compiler" --sysroot="$sdk" \
+    # Run configure's executable checks under the same architecture as the resulting tools.
+    # Disabling x86 assembly avoids adding NASM as a build dependency.
+    /usr/bin/arch "-$architecture" /bin/bash ./configure \
+        --arch="$ffmpeg_arch" --target-os=darwin --cc="$compiler" --sysroot="$sdk" --disable-x86asm \
         --host-cflags="-isysroot $sdk" --host-ldflags="-isysroot $sdk" \
-        --extra-cflags="-arch arm64 -mmacosx-version-min=$minimum_macos -I$lame_prefix/include" \
-        --extra-ldflags="-arch arm64 -mmacosx-version-min=$minimum_macos -L$lame_prefix/lib" \
+        --extra-cflags="-arch $architecture -mmacosx-version-min=$minimum_macos -I$lame_prefix/include" \
+        --extra-ldflags="-arch $architecture -mmacosx-version-min=$minimum_macos -L$lame_prefix/lib" \
         --disable-autodetect --enable-zlib --enable-libmp3lame --disable-debug --disable-doc --disable-ffplay \
         --disable-network --disable-everything --disable-devices \
         --enable-protocol=file,pipe \
@@ -68,10 +96,27 @@ if [ ! -x "$cache/ffmpeg" ] || [ ! -x "$cache/ffprobe" ] ||
         tail -n 80 "$build_dir/build.log"
         exit 1
     }
-    cp "$build_dir/lame-$lame_version/COPYING" "$cache/LAME-COPYING"
-    mv ffmpeg ffprobe COPYING.LGPLv2.1 "$cache/"
-fi
+    xcrun lipo -verify_arch "$architecture" ffmpeg
+    xcrun lipo -verify_arch "$architecture" ffprobe
+    cp "$build_dir/lame-$lame_version/COPYING" LAME-COPYING
+    mv -f ffmpeg ffprobe COPYING.LGPLv2.1 LAME-COPYING "$cache/"
+)
 
-install -m 755 "$cache/ffmpeg" "$cache/ffprobe" "$destination/"
-install -m 644 "$cache/COPYING.LGPLv2.1" "$destination/"
-install -m 644 "$cache/LAME-COPYING" "$destination/"
+for architecture in "$@"; do
+    prepare_architecture "$architecture"
+done
+
+mkdir -p "$destination"
+staging="$(mktemp -d "$(dirname "$destination")/.media-support.XXXXXX")"
+trap 'rm -rf "$staging"' EXIT
+cache="$cache_base/$1"
+if [[ $# -eq 1 ]]; then
+    install -m 755 "$cache/ffmpeg" "$cache/ffprobe" "$staging/"
+else
+    for tool in ffmpeg ffprobe; do
+        xcrun lipo -create "$cache/$tool" "$cache_base/$2/$tool" -output "$staging/$tool"
+        chmod 755 "$staging/$tool"
+    done
+fi
+install -m 644 "$cache/COPYING.LGPLv2.1" "$cache/LAME-COPYING" "$staging/"
+mv -f "$staging/ffmpeg" "$staging/ffprobe" "$staging/COPYING.LGPLv2.1" "$staging/LAME-COPYING" "$destination/"

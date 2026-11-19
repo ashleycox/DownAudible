@@ -14,7 +14,7 @@ I refuse to use the Audible app. It is an atrocity, especially on macOS. We must
 
 [**Download DownAudible for Mac (.zip)**](https://github.com/ashleycox/DownAudible/releases/latest/download/DownAudible.zip)
 
-DownAudible requires an Apple silicon Mac running macOS 15 or later. Unzip the download and drag DownAudible to Applications.
+DownAudible runs on Apple silicon and Intel Macs with macOS 15 or later. Unzip the download and drag DownAudible to Applications.
 
 Choose **DownAudible → Check for Updates…** to check for a new release. Enable automatic checks and installation in **Settings → General** or on the General page in setup.
 
@@ -47,7 +47,7 @@ From an Applications folder, these commands open macOS Help. From a build folder
 
 ## Build and run
 
-If you wish to build from source, you’ll need an Apple silicon Mac, Xcode 27.2, and uv. DownAudible targets macOS 15 and later. The first build downloads the Audible helper’s dependencies and compiles FFmpeg and LAME. Later builds reuse the tools. [Xcode](https://developer.apple.com/xcode/) · [Install uv](https://docs.astral.sh/uv/getting-started/installation/)
+To build from source, you’ll need an Apple silicon Mac with Xcode 27.2, uv, and Rosetta. The build produces a universal app for macOS 15 and later. The first build downloads the Audible helper’s dependencies and compiles FFmpeg and LAME for both architectures. Later builds reuse the tools. [Xcode](https://developer.apple.com/xcode/) · [Install uv](https://docs.astral.sh/uv/getting-started/installation/) · [Install Rosetta](https://support.apple.com/en-gb/102527)
 
 Xcode resolves the pinned Sparkle update framework through Swift Package Manager.
 
