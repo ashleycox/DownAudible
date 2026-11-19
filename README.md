@@ -2,7 +2,7 @@
 
 <img src="AppAssets/DownAudible.png" alt="DownAudible icon showing a mint-green arrow pointing into an open book" width="96" height="96" align="right">
 
-DownAudible backs up your Audible library on a Mac. Keep the original DRM-protected Audible files, or convert them to M4B, M4A, or MP3 and play them on any device, with support for embedded and split chapters and embedded cover art.
+DownAudible backs up your Audible library on a Mac. Keep the original DRM-protected Audible files, which can still be played in Apple's Books app, or convert them to M4B, M4A, or MP3 and play them on any device, with support for embedded and split chapters and embedded cover art.
 
 ## Why I built DownAudible
 
@@ -14,13 +14,13 @@ I refuse to use the Audible app. It is an atrocity, especially on macOS. We must
 
 [**Download DownAudible for Mac (.zip)**](https://github.com/ashleycox/DownAudible/releases/latest/download/DownAudible.zip)
 
-DownAudible runs on Apple silicon and Intel Macs with macOS 15 or later. Unzip the download and drag DownAudible to Applications.
+DownAudible runs on Apple silicon and Intel Macs, running MacOS 15 Catalina or later. Unzip the download and drag DownAudible to your Applications folder.
 
-Choose **DownAudible → Check for Updates…** to check for a new release. Enable automatic checks and installation in **Settings → General** or on the General page in setup.
+Choose **DownAudible → Check for Updates…** to check for a new release. Enable automatic updates in **Settings → General** or on the General page during setup.
 
-## Start with your library
+## Getting Started
 
-Setup opens the first time you run DownAudible. Use it to connect an account, choose the destination, and set your download and conversion defaults. On the Accounts page, choose **Continue Without an Account** to work with local files. **Help → Set Up DownAudible…** opens setup again with your saved settings.
+The setup wizard opens the first time you run DownAudible. Use it to connect an account, choose the destination, and set your download and conversion defaults. On the Accounts page, choose **Continue Without an Account** to work with local files. **Help → Set Up DownAudible…** opens setup again with your saved settings.
 
 1. On the Accounts page in setup or in **Settings → Accounts**, click **Add Account…**. Sign in through your browser, then paste the resulting address into DownAudible. You can also choose **Import from Audible CLI…**. Each account has a separate session in Keychain.
 2. If you already have files, use **Match Existing Folder…** to scan your archive or a folder from another app. You can fix an individual match from its contextual menu.
