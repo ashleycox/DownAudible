@@ -690,6 +690,16 @@ final class WorkspaceModel {
         await persistQueue()
     }
 
+    func waitForTransfersBeforeUpdating() async {
+        while let activeTransfer {
+            await activeTransfer.value
+        }
+        await queueSaveTask?.value
+        if hasPendingQueueWrite {
+            await persistQueue()
+        }
+    }
+
     func addToAppleBooks(_ files: [URL]) async {
         do {
             try await AppleBooks.open(files, activate: true)

@@ -15,6 +15,7 @@ struct OnboardingView: View {
     }
 
     @Bindable var model: WorkspaceModel
+    let softwareUpdater: SoftwareUpdater
     let finish: (Destination) -> Void
 
     @State private var history: [Page] = [.welcome]
@@ -88,7 +89,7 @@ struct OnboardingView: View {
             .padding(.horizontal, 20)
             .padding(.vertical, 16)
 
-            pane.content(for: model)
+            pane.content(for: model, softwareUpdater: softwareUpdater)
                 .id(pane)
         }
     }

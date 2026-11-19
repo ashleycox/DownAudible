@@ -4,11 +4,17 @@ DownAudible keeps a copy of your Audible books on your Mac. You can save the aud
 
 ## Set up DownAudible
 
-DownAudible opens setup on first launch. Click **Continue** to step through Accounts, Library, Downloads, Conversion, Files, and Jobs. On the Accounts page, choose **Add Account…** to sign in through your browser or **Import from Audible CLI…** to use a saved profile or authentication file. For local conversion, choose **Continue Without an Account**.
+DownAudible opens setup on first launch. Click **Continue** to step through General, Accounts, Library, Downloads, Conversion, Files, and Jobs. On the Accounts page, choose **Add Account…** to sign in through your browser or **Import from Audible CLI…** to use a saved profile or authentication file. For local conversion, choose **Continue Without an Account**.
 
 Use **Continue** to move to the next page or **Back** to return to a setting. Setup saves your choices as you edit them. **Skip Setup** on the welcome page and **Skip Configuration** on a settings page take you to the finish with your current settings. At the end, choose **Open DownAudible** to return to the app or **Open Manual** to finish with this guide open.
 
 Choose **Help > Set Up DownAudible…** to run setup again with your saved settings.
+
+## Software updates
+
+Choose **DownAudible > Check for Updates…** to check GitHub for a new release. The same button is in **Settings > General** and on the General page in setup.
+
+Turn on **Check for updates automatically** in General to let DownAudible check while it’s open. If you haven’t chosen a setting, DownAudible asks the next time you launch it after setup. Turn on **Install updates automatically** to download updates in the background and install them when you quit.
 
 ## Your first download
 

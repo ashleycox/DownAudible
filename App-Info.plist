@@ -6,5 +6,13 @@
     <string>DownAudible.help</string>
     <key>CFBundleHelpBookName</key>
     <string>$(PRODUCT_BUNDLE_IDENTIFIER).help</string>
+    <key>SUFeedURL</key>
+    <string>https://github.com/ashleycox/DownAudible/releases/latest/download/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>sCXfeVP9ZkvF3FvE/i+EuzHPzdgZiY5Q0amjCyQ5jxg=</string>
+    <key>SURequireSignedFeed</key>
+    <true/>
+    <key>SUVerifyUpdateBeforeExtraction</key>
+    <true/>
 </dict>
 </plist>

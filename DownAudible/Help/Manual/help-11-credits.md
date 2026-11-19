@@ -10,6 +10,14 @@ Ashley Cox develops DownAudible. The source is available under version 3 of the 
 
 [DownAudible licence](https://github.com/ashleycox/DownAudible/blob/main/LICENSE)
 
+## Software updates
+
+DownAudible uses Sparkle to check for and install updates. Sparkle is available under the MIT licence. The app includes Sparkle’s licence and third-party notices.
+
+[Sparkle project](https://sparkle-project.org/)
+
+[Sparkle 2.10.1 licence and notices](https://github.com/sparkle-project/Sparkle/blob/2.10.1/LICENSE)
+
 ## Audio and conversion
 
 DownAudible uses its bundled FFmpeg 8.1.2 tools to inspect and convert audio. The build includes `ffmpeg` and `ffprobe` under the GNU Lesser General Public License, version 2.1 or later.

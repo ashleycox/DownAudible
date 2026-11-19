@@ -2,12 +2,13 @@ import SwiftUI
 
 // The order and content here apply to both Settings and the setup assistant.
 enum SettingsPane: CaseIterable, Identifiable {
-    case accounts, library, downloads, conversion, files, jobs
+    case general, accounts, library, downloads, conversion, files, jobs
 
     var id: Self { self }
 
     var title: LocalizedStringKey {
         switch self {
+        case .general: "General"
         case .accounts: "Accounts"
         case .library: "Library"
         case .downloads: "Downloads"
@@ -19,6 +20,7 @@ enum SettingsPane: CaseIterable, Identifiable {
 
     var systemImage: String {
         switch self {
+        case .general: "gearshape"
         case .accounts: "person.crop.circle"
         case .library: "books.vertical"
         case .downloads: "arrow.down.to.line"
@@ -29,9 +31,11 @@ enum SettingsPane: CaseIterable, Identifiable {
     }
 
     @MainActor @ViewBuilder
-    func content(for model: WorkspaceModel) -> some View {
+    func content(for model: WorkspaceModel, softwareUpdater: SoftwareUpdater) -> some View {
         @Bindable var model = model
         switch self {
+        case .general:
+            GeneralPreferencesView(softwareUpdater: softwareUpdater)
         case .accounts:
             AccountPreferencesView(model: model)
         case .library:
@@ -53,12 +57,13 @@ enum SettingsPane: CaseIterable, Identifiable {
 
 struct PreferencesView: View {
     let model: WorkspaceModel
+    let softwareUpdater: SoftwareUpdater
 
     var body: some View {
         TabView {
             ForEach(SettingsPane.allCases) { pane in
                 Tab {
-                    pane.content(for: model)
+                    pane.content(for: model, softwareUpdater: softwareUpdater)
                 } label: {
                     Label(pane.title, systemImage: pane.systemImage)
                 }

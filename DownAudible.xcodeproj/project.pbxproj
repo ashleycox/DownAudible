@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		DA0000000000000000000018 /* DownAudible.icon in Resources */ = {isa = PBXBuildFile; fileRef = DA0000000000000000000019 /* DownAudible.icon */; };
+		DA000000000000000000001C /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = DA000000000000000000001B /* Sparkle */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -25,6 +26,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				DA000000000000000000001C /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -77,6 +79,9 @@
 				DA0000000000000000000006 /* DownAudible */,
 			);
 			name = DownAudible;
+			packageProductDependencies = (
+				DA000000000000000000001B /* Sparkle */,
+			);
 			productName = DownAudible;
 			productReference = DA0000000000000000000007 /* DownAudible.app */;
 			productType = "com.apple.product-type.application";
@@ -100,6 +105,9 @@
 			);
 			mainGroup = DA0000000000000000000003;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				DA000000000000000000001A /* XCRemoteSwiftPackageReference "Sparkle" */,
+			);
 			productRefGroup = DA0000000000000000000004 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -218,6 +226,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		DA000000000000000000001A /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = exactVersion;
+				version = 2.10.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		DA000000000000000000001B /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = DA000000000000000000001A /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = DA0000000000000000000001 /* Project object */;
 }

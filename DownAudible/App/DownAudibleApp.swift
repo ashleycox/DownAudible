@@ -22,7 +22,7 @@ struct DownAudibleApp: App {
 
     var body: some Scene {
         Window("DownAudible", id: "workspace") {
-            WorkspaceView(model: model, showsStatusBar: showsStatusBar,
+            WorkspaceView(model: model, softwareUpdater: appDelegate.softwareUpdater, showsStatusBar: showsStatusBar,
                           showingOnboarding: $showingOnboarding, showingConversionOptions: $showingConversionOptions,
                           requestingBatchRestart: $requestingBatchRestart,
                           sidebarVisibility: $sidebarVisibility, openManual: { openHelp() })
@@ -35,6 +35,8 @@ struct DownAudibleApp: App {
             CommandGroup(replacing: .appInfo) {
                 Button("About DownAudible") { openWindow(id: "about") }
                     .keyboardShortcut("a", modifiers: [.command, .control, .shift])
+                Button("Check for Updates…", action: appDelegate.softwareUpdater.checkForUpdates)
+                    .disabled(!appDelegate.softwareUpdater.canCheckForUpdates)
             }
             CommandGroup(replacing: .newItem) {
                 Button("Open Audio Files…", action: openAudioFiles)
@@ -156,7 +158,7 @@ struct DownAudibleApp: App {
         }
 
         Settings {
-            PreferencesView(model: model)
+            PreferencesView(model: model, softwareUpdater: appDelegate.softwareUpdater)
         }
 
         Window("About DownAudible", id: "about") {
@@ -232,6 +234,7 @@ struct DownAudibleApp: App {
 private struct WorkspaceView: View {
     @AppStorage("HasFinishedOnboarding") private var hasFinishedOnboarding = false
     @Bindable var model: WorkspaceModel
+    let softwareUpdater: SoftwareUpdater
     let showsStatusBar: Bool
     @Binding var showingOnboarding: Bool
     @Binding var showingConversionOptions: Bool
@@ -276,7 +279,7 @@ private struct WorkspaceView: View {
             DownloadOptionsView(model: model, request: request)
         }
         .sheet(isPresented: $showingOnboarding, onDismiss: openSetupManualIfRequested) {
-            OnboardingView(model: model) { destination in
+            OnboardingView(model: model, softwareUpdater: softwareUpdater) { destination in
                 hasFinishedOnboarding = true
                 openManualAfterSetup = destination == .manual
                 showingOnboarding = false

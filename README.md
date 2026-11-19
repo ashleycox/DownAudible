@@ -16,6 +16,8 @@ I refuse to use the Audible app. It is an atrocity, especially on macOS. We must
 
 DownAudible requires an Apple silicon Mac running macOS 15 or later. Unzip the download and drag DownAudible to Applications.
 
+Choose **DownAudible → Check for Updates…** to check for a new release. Enable automatic checks and installation in **Settings → General** or on the General page in setup.
+
 ## Start with your library
 
 Setup opens the first time you run DownAudible. Use it to connect an account, choose the destination, and set your download and conversion defaults. On the Accounts page, choose **Continue Without an Account** to work with local files. **Help → Set Up DownAudible…** opens setup again with your saved settings.
@@ -46,6 +48,8 @@ From an Applications folder, these commands open macOS Help. From a build folder
 ## Build and run
 
 If you wish to build from source, you’ll need an Apple silicon Mac, Xcode 27.2, and uv. DownAudible targets macOS 15 and later. The first build downloads the Audible helper’s dependencies and compiles FFmpeg and LAME. Later builds reuse the tools. [Xcode](https://developer.apple.com/xcode/) · [Install uv](https://docs.astral.sh/uv/getting-started/installation/)
+
+Xcode resolves the pinned Sparkle update framework through Swift Package Manager.
 
 Open `DownAudible.xcodeproj`, choose the **DownAudible** scheme, and choose product>run or press Command-R. To build from Terminal, run
 
