@@ -1,0 +1,5 @@
+--- a/configure
++++ b/configure
+@@ -5811 +5811 @@
+-if test -z "$PKG_CONFIG"; then
++if test -z "$PKG_CONFIG" && test "$enable_decoder" != no; then

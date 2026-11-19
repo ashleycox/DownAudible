@@ -21,9 +21,10 @@ struct AudioProbe: Decodable, Sendable {
         let channels: Int?
         let extradataHash: String?
         let disposition: Disposition?
+        let tags: [String: String]?
 
         private enum CodingKeys: String, CodingKey {
-            case index, profile, width, height, duration, channels, disposition
+            case index, profile, width, height, duration, channels, disposition, tags
             case codecName = "codec_name"
             case codecType = "codec_type"
             case sampleRate = "sample_rate"

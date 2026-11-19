@@ -1,0 +1,6 @@
+--- a/libavformat/id3v2enc.c
++++ b/libavformat/id3v2enc.c
+@@ -266 +266,2 @@
+-    if (s->nb_chapters == 0)
++    /* A CTOC frame can list at most 255 children. CHAP frames are independent. */
++    if (s->nb_chapters == 0 || s->nb_chapters > UINT8_MAX)

@@ -38,35 +38,40 @@ struct DownloadOptions: Codable, Sendable {
         downloadAnnotations = try values.decodeIfPresent(Bool.self, forKey: .downloadAnnotations) ?? false
     }
 
-    var makesM4B: Bool { downloadAudio && convert }
+    var makesConversion: Bool { downloadAudio && convert }
     var savesOriginal: Bool { downloadAudio && (!convert || keepOriginal) }
     var hasSelection: Bool { downloadAudio || downloadPDF || downloadCover || downloadChapters || downloadAnnotations }
 }
 
-struct Transfer: Identifiable, Sendable {
-    enum Status: Sendable {
+struct Transfer: Codable, Identifiable, Sendable {
+    enum Status: Codable, Sendable {
         case waiting
         case active(String, Double?)
         case done(URL, note: String?)
         case failed(String)
         case cancelled
+        case interrupted
         case stopped
     }
 
-    let id = UUID()
+    var id = UUID()
     let title: String
     var status: Status = .waiting
+    var files: [URL] = []
+    var canRestart = false
+    var partialFolder: URL?
+    var restartPending: Bool?
 
     var isFinished: Bool {
         switch status {
         case .waiting, .active: false
-        case .done, .failed, .cancelled, .stopped: true
+        case .done, .failed, .cancelled, .interrupted, .stopped: true
         }
     }
 
     var canRetry: Bool {
         switch status {
-        case .failed, .cancelled, .stopped: true
+        case .failed, .cancelled, .interrupted, .stopped: true
         case .done(_, let note): note != nil
         default: false
         }
@@ -76,6 +81,8 @@ struct Transfer: Identifiable, Sendable {
 struct DownloadRequest: Identifiable {
     let id = UUID()
     let books: [AudibleBook]
+    var restartsIncomplete = false
+    var requestsAudio = false
 }
 
 struct StoredAudio: Codable, Sendable {
@@ -99,5 +106,46 @@ struct LocalMatches: Codable {
 struct ExportReceipt: Sendable {
     let url: URL
     var original: [URL] = []
+    var converted: [URL] = []
+    var addedOriginal: [URL] = []
+    var addedConverted: [URL] = []
     var note: String?
+
+    var audioFiles: [URL] { original + converted }
+}
+
+enum LibraryDownloadStatus: CaseIterable, Identifiable, Sendable {
+    case downloaded, matched, partial, missing, notDownloaded, unavailable
+
+    var id: Self { self }
+
+    var displayName: String {
+        switch self {
+        case .downloaded: "Downloaded"
+        case .matched: "Matched"
+        case .partial: "Incomplete"
+        case .missing: "Files missing"
+        case .notDownloaded: "Not downloaded"
+        case .unavailable: "Unavailable"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .downloaded: "checkmark.circle"
+        case .matched: "link"
+        case .partial: "arrow.down.circle.dotted"
+        case .missing: "exclamationmark.triangle"
+        case .notDownloaded: "arrow.down.circle"
+        case .unavailable: "minus.circle"
+        }
+    }
+}
+
+struct ArchiveInventoryItem: Sendable {
+    var files: [URL] = []
+    var originals: [URL] = []
+    var missingFiles: [URL] = []
+    var hadAudio = false
+    var hasPartial = false
 }

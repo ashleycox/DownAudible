@@ -4,13 +4,13 @@ import UniformTypeIdentifiers
 
 @MainActor
 enum Panels {
-    private static let extensions = ["aax", "aaxc", "aa", "mp3"]
+    private static let extensions = ["aax", "aaxc", "aa", "mp3", "m4a", "m4b"]
 
-    static func openFolder() -> URL? {
+    static func openFolder(allowCreation: Bool = false) -> URL? {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
-        panel.canCreateDirectories = true
+        panel.canCreateDirectories = allowCreation
         panel.allowsMultipleSelection = false
         panel.prompt = "Choose"
         return panel.runModal() == .OK ? panel.url : nil
@@ -43,11 +43,32 @@ struct DestinationPicker: View {
                     .truncationMode(.middle)
                     .help(directory.path(percentEncoded: false))
                 Button("Choose…") {
-                    if let selected = Panels.openFolder() { directory = selected }
+                    if let selected = Panels.openFolder(allowCreation: true) { directory = selected }
                 }
                 .accessibilityLabel("Choose destination folder")
             }
         }
+    }
+}
+
+extension ArchiveLayout {
+    func previewPath(
+        for book: ArchiveTitle, format: String, chapterNumber: Int? = nil,
+        chapterTitle: String? = nil, folderOnly: Bool = false
+    ) -> String? {
+        guard let location = try? directory(
+            for: book, format: format, chapterNumber: chapterNumber, chapterTitle: chapterTitle
+        ) else { return nil }
+        let baseURL = root.standardizedFileURL.resolvingSymlinksInPath()
+        let folders = Array(location.pathComponents.dropFirst(baseURL.pathComponents.count))
+        if folderOnly { return folders.joined(separator: "/") + "/" }
+
+        let stem = filenameStem(for: book, format: format, chapterNumber: chapterNumber, chapterTitle: chapterTitle)
+        let suffix = "." + format
+        let budget = min(filenameLength, 255) - suffix.utf8.count
+        guard budget >= "Unknown".utf8.count else { return nil }
+        let filename = Self.filename(stem, maxBytes: budget) + suffix
+        return (folders + [filename]).joined(separator: "/")
     }
 }
 

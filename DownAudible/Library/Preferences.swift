@@ -64,7 +64,7 @@ enum FilenameStyle: String, Codable, Sendable, CaseIterable, Identifiable {
         }
     }
 
-    private static func ascii(_ value: String) -> String {
+    static func ascii(_ value: String) -> String {
         let latin = value.applyingTransform(.toLatin, reverse: false) ?? value
         let plain = latin.folding(options: .diacriticInsensitive, locale: nil)
         return plain.unicodeScalars.map { $0.isASCII ? String($0) : "" }.joined()

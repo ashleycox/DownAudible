@@ -2,9 +2,10 @@ import AppKit
 import SwiftUI
 
 struct LibraryView: View {
+    @Environment(\.openWindow) private var openWindow
     @Bindable var model: WorkspaceModel
     @State private var search = ""
-    @State private var sortOrder = [KeyPathComparator(\AudibleBook.title, comparator: .localizedStandard)]
+    @State private var sortOrder = [KeyPathComparator(\LibraryRow.title, comparator: .localizedStandard)]
     @State private var showingSignIn = false
     @State private var addingAccount = false
     @State private var showingImport = false
@@ -44,6 +45,8 @@ struct LibraryView: View {
                     Menu("Download", systemImage: "arrow.down.to.line") {
                         Button("Download Selected…", action: downloadSelection)
                             .disabled(model.selectedBooks.isEmpty)
+                        Button("Download Missing…", action: model.requestMissingDownloads)
+                            .disabled(!model.canDownloadMissing)
                         Button("Download Entire Library…", action: downloadLibrary)
                     }
                     .disabled(model.books.isEmpty || model.isTransferring)
@@ -51,6 +54,10 @@ struct LibraryView: View {
 
                     Menu("Library Actions", systemImage: "ellipsis.circle") {
                         matchingFolderActions
+                        if model.activeAudibleClient != nil {
+                            Divider()
+                            Button("Audible Tools…") { openWindow(id: "audible-tools") }
+                        }
                     }
                     .help("Library Actions")
                 }
@@ -98,41 +105,45 @@ struct LibraryView: View {
     }
 
     private var library: some View {
-        let books = visibleBooks
+        let rows = visibleRows
         return VStack(spacing: 0) {
-            Table(books, selection: $model.selectedBooks, sortOrder: $sortOrder) {
-                TableColumn("Title", value: \.title) { book in
-                    Text(book.title)
-                        .help(book.title)
+            Table(rows, selection: $model.selectedBooks, sortOrder: $sortOrder) {
+                TableColumn("Title", value: \.title) { row in
+                    Text(row.title)
+                        .help(row.title)
                 }
                 .width(min: 150, ideal: 280)
-                TableColumn("Author", value: \.tableAuthors)
+                TableColumn("Author", value: \.authors)
                     .width(min: 100, ideal: 144)
-                TableColumn("Narrator", value: \.tableNarrators)
+                TableColumn("Narrator", value: \.narrators)
                     .width(min: 100, ideal: 144)
-                TableColumn("Status") { book in
-                    Text(status(for: book))
+                TableColumn("Download Status", value: \.statusLabel) { row in
+                    Label(row.statusLabel, systemImage: row.statusSymbol)
+                        .labelStyle(.titleAndIcon)
+                        .lineLimit(1)
                         .foregroundStyle(.secondary)
+                        .help(row.statusDetails)
+                        .accessibilityValue(row.missingFilesDescription)
                 }
-                .width(min: 84, ideal: 104, max: 140)
+                .width(min: 124, ideal: 144, max: 180)
             }
             .contextMenu(forSelectionType: AudibleBook.ID.self) { ids in
-                Button("Download…") { download(ids) }
-                    .disabled(ids.isEmpty || model.isTransferring)
-                if ids.count == 1, let book = books.first(where: { ids.contains($0.id) }) {
+                let books = rows.filter { ids.contains($0.id) }.map(\.book)
+                if !books.isEmpty {
+                    downloadActions(books)
                     Divider()
-                    bookActions(book)
+                    bookActions(books)
                 }
             }
             .overlay {
-                if books.isEmpty { emptyLibrary }
+                if rows.isEmpty { emptyLibrary }
             }
             .onChange(of: search) {
-                model.selectedBooks.formIntersection(visibleBooks.map(\.id))
+                model.selectedBooks.formIntersection(visibleRows.map(\.id))
             }
 
             Divider()
-            libraryStatus(visibleCount: books.count)
+            libraryStatus(visibleCount: rows.count)
         }
     }
 
@@ -156,6 +167,9 @@ struct LibraryView: View {
             } else if model.isRefreshing {
                 ProgressView().controlSize(.small).accessibilityHidden(true)
                 Text("Refreshing library…")
+            } else if model.isCheckingFiles {
+                ProgressView().controlSize(.small).accessibilityHidden(true)
+                Text("Checking saved files…")
             } else {
                 if visibleCount == model.books.count {
                     Text(visibleCount == 1 ? "1 audiobook" : "\(visibleCount.formatted()) audiobooks")
@@ -165,6 +179,10 @@ struct LibraryView: View {
                 if !model.selectedBooks.isEmpty {
                     Text("·").accessibilityHidden(true)
                     Text("\(model.selectedBooks.count.formatted()) selected")
+                }
+                if !model.missingBooks.isEmpty {
+                    Text("·").accessibilityHidden(true)
+                    Text("\(model.missingBooks.count.formatted()) to download")
                 }
             }
             Spacer()
@@ -184,6 +202,9 @@ struct LibraryView: View {
 
     @ViewBuilder
     private var matchingFolderActions: some View {
+        Button("Recheck Saved Files", action: recheckFiles)
+            .disabled(model.isScanning || model.isRefreshing || model.isCheckingFiles)
+        Divider()
         Button("Match Existing Folder…", action: chooseMatchFolder)
             .disabled(model.isScanning || model.isRefreshing)
 
@@ -195,51 +216,93 @@ struct LibraryView: View {
                 .disabled(model.isScanning || model.isRefreshing)
         }
 
-        if model.selectedBooks.count == 1, let book = model.books.first(where: { model.selectedBooks.contains($0.id) }) {
+        let selection = visibleRows.filter { model.selectedBooks.contains($0.id) }.map(\.book)
+        if !selection.isEmpty {
             Divider()
-            bookActions(book)
+            bookActions(selection)
         }
     }
 
     @ViewBuilder
-    private func bookActions(_ book: AudibleBook) -> some View {
-        let matches = model.localAudio(for: book)
-        let files = matches.isEmpty ? model.exportedFiles[book.id, default: []] : matches
-        Button(matches.isEmpty ? "Match to Audio Files…" : "Change Matched Files…") {
+    private func downloadActions(_ books: [AudibleBook]) -> some View {
+        Button("Download…") { model.requestDownloads(books) }
+            .disabled(model.isTransferring)
+        let incomplete = books.filter { model.downloadStatus(for: $0) == .partial }
+        if !incomplete.isEmpty {
+            Button("Restart Incomplete Downloads…") { model.restartDownloads(incomplete) }
+                .disabled(model.isTransferring)
+        }
+    }
+
+    @ViewBuilder
+    private func bookActions(_ books: [AudibleBook]) -> some View {
+        if books.count == 1, let book = books.first {
+            matchActions(book)
+        }
+        let files = Array(Set(books.flatMap { model.localAudio(for: $0) + model.exportedFiles[$0.id, default: []] }))
+            .filter { FileManager.default.fileExists(atPath: $0.path) }
+            .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+        if !files.isEmpty {
+            Button("Show Audio in Finder") { NSWorkspace.shared.activateFileViewerSelecting(files) }
+            let supported = files.filter { AppleBooks.supports($0) }
+            if !supported.isEmpty {
+                appleBooksActions(supported, originals: Set(books.flatMap { model.originalFiles(for: $0) }))
+            }
+        }
+        Divider()
+        if books.count == 1, let book = books.first {
+            Button("Copy Title") { copy(book.title) }
+        }
+        Button(books.count == 1 ? "Copy ASIN" : "Copy ASINs") {
+            copy(books.map(\.asin).joined(separator: "\n"))
+        }
+    }
+
+    private func appleBooksActions(_ urls: [URL], originals: Set<URL>) -> some View {
+        let original = urls.filter { originals.contains($0) }
+        let m4b = urls.filter { !originals.contains($0) && $0.pathExtension.lowercased() == "m4b" }
+        let other = urls.filter { !originals.contains($0) && $0.pathExtension.lowercased() != "m4b" }
+        return Menu("Add to Apple Books") {
+            if !original.isEmpty {
+                Button("Original Files") { Task { await model.addToAppleBooks(original) } }
+            }
+            if !m4b.isEmpty {
+                Button("M4B Files") { Task { await model.addToAppleBooks(m4b) } }
+            }
+            if !other.isEmpty {
+                Button("Other Audio") { Task { await model.addToAppleBooks(other) } }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func matchActions(_ book: AudibleBook) -> some View {
+        let hasMatch = !model.localAudio(for: book).isEmpty
+        Button(hasMatch ? "Change Matched Files…" : "Match to Audio Files…") {
             let urls = Panels.openAudio(allowFolders: false)
             if !urls.isEmpty { model.match(book, to: urls) }
         }
         .disabled(model.isScanning)
-
-        if !files.isEmpty {
-            Button("Show Audio in Finder") { NSWorkspace.shared.activateFileViewerSelecting(files) }
-        }
-
-        if !matches.isEmpty {
+        if hasMatch {
             Button("Remove File Match") { model.removeMatch(book) }
                 .disabled(model.isScanning)
         }
     }
 
-    private var visibleBooks: [AudibleBook] {
+    private var visibleRows: [LibraryRow] {
         let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
-        let books = query.isEmpty ? model.books : model.books.filter { book in
-            book.title.localizedStandardContains(query)
-                || book.tableAuthors.localizedStandardContains(query)
-                || book.tableNarrators.localizedStandardContains(query)
-                || book.asin.localizedStandardContains(query)
-        }
-        return books.sorted(using: sortOrder)
-    }
-
-    private func status(for book: AudibleBook) -> String {
-        if !model.exportedFiles[book.id, default: []].isEmpty { return "Saved" }
-        if !model.localAudio(for: book).isEmpty { return "Matched" }
-        return book.isDownloadable ? "Available" : "Unavailable"
+        return model.books
+            .map { LibraryRow(book: $0, status: model.downloadStatus(for: $0), missingFiles: model.missingOutputFiles(for: $0)) }
+            .filter { query.isEmpty || $0.matches(query) }
+            .sorted(using: sortOrder)
     }
 
     private func refresh() {
         Task { await model.refresh() }
+    }
+
+    private func recheckFiles() {
+        Task { await model.recheckFiles() }
     }
 
     private func openSignIn(adding: Bool) {
@@ -247,14 +310,12 @@ struct LibraryView: View {
         showingSignIn = true
     }
 
-    private func downloadSelection() { download(model.selectedBooks) }
-
-    private func download(_ ids: Set<AudibleBook.ID>) {
-        model.requestDownloads(visibleBooks.filter { ids.contains($0.id) })
+    private func downloadSelection() {
+        model.requestDownloads(visibleRows.filter { model.selectedBooks.contains($0.id) }.map(\.book))
     }
 
     private func downloadLibrary() {
-        model.requestDownloads(model.books.sorted(using: sortOrder))
+        model.requestDownloads(model.books)
     }
 
     private func chooseMatchFolder() {
@@ -264,11 +325,39 @@ struct LibraryView: View {
     private func scan(_ folder: URL) {
         Task { await model.scanMatches(in: folder) }
     }
+
+    private func copy(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
 }
 
-private extension AudibleBook {
-    var tableAuthors: String { authors.isEmpty ? "—" : authors.joined(separator: ", ") }
-    var tableNarrators: String { narrators.isEmpty ? "—" : narrators.joined(separator: ", ") }
+private struct LibraryRow: Identifiable {
+    let book: AudibleBook
+    let status: LibraryDownloadStatus
+    let missingFiles: [URL]
+
+    var id: String { book.id }
+    var title: String { book.title }
+    var authors: String { book.authors.isEmpty ? "—" : book.authors.formatted(.list(type: .and)) }
+    var narrators: String { book.narrators.isEmpty ? "—" : book.narrators.formatted(.list(type: .and)) }
+    var statusLabel: String { status.displayName }
+    var statusSymbol: String { missingFiles.isEmpty ? status.systemImage : "exclamationmark.triangle" }
+    var missingFilesDescription: String {
+        switch missingFiles.count {
+        case 0: ""
+        case 1: "1 saved file missing"
+        default: "\(missingFiles.count.formatted()) saved files missing"
+        }
+    }
+    var statusDetails: String {
+        guard !missingFiles.isEmpty else { return statusLabel }
+        return "\(missingFilesDescription). \(missingFiles.map(\.lastPathComponent).formatted(.list(type: .and)))"
+    }
+
+    func matches(_ query: String) -> Bool {
+        [title, authors, narrators, book.asin].contains { $0.localizedStandardContains(query) }
+    }
 }
 
 struct AudibleSignInView: View {
@@ -436,7 +525,9 @@ struct DownloadOptionsView: View {
     init(model: WorkspaceModel, request: DownloadRequest) {
         self.model = model
         self.request = request
-        _options = State(initialValue: model.downloadOptions)
+        var options = model.downloadOptions
+        if request.requestsAudio { options.downloadAudio = true }
+        _options = State(initialValue: options)
         _directory = State(initialValue: model.outputDirectory)
         _template = State(initialValue: model.folderTemplate)
     }
@@ -445,23 +536,29 @@ struct DownloadOptionsView: View {
         VStack(alignment: .leading, spacing: 20) {
             if request.books.count == 1, let book = request.books.first {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Download Audiobook")
+                    Text(request.restartsIncomplete ? "Restart Download" : "Download Audiobook")
                         .font(.title2.bold())
                         .accessibilityAddTraits(.isHeader)
                     Text(book.title).foregroundStyle(.secondary)
                 }
             } else {
-                Text("Download \(request.books.count.formatted()) Audiobooks")
+                Text(request.restartsIncomplete
+                     ? "Restart \(request.books.count.formatted()) Downloads"
+                     : "Download \(request.books.count.formatted()) Audiobooks")
                     .font(.title2.bold())
                     .accessibilityAddTraits(.isHeader)
             }
 
             VStack(alignment: .leading, spacing: 8) {
                 Toggle("Download audio", isOn: $options.downloadAudio)
-                Toggle("Convert to M4B", isOn: $options.convert)
+                Toggle("Convert to \(model.conversionPreferences.format.displayName)", isOn: $options.convert)
                     .disabled(!options.downloadAudio)
                 if options.downloadAudio && options.convert {
                     Toggle("Keep the original after conversion", isOn: $options.keepOriginal)
+                        .padding(.leading, 20)
+                    Text(model.conversionPreferences.chapterMode.displayName)
+                        .foregroundStyle(.secondary)
+                        .font(.callout)
                         .padding(.leading, 20)
                 }
                 Toggle("Download companion PDFs when available", isOn: $options.downloadPDF)
@@ -481,12 +578,12 @@ struct DownloadOptionsView: View {
                         .textFieldStyle(.roundedBorder)
                         .font(.body.monospaced())
                 }
-                Text("Use {format}, {author}, {title}, or {asin}. Separate folders with /.")
+                Text("Use fields such as {format}, {author}, {title}, and {asin}. Separate folders with /.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
 
                 if !layout.isValid {
-                    Label("Enter a valid folder template.", systemImage: "exclamationmark.circle")
+                    Label("Check the folder and filename templates in Settings.", systemImage: "exclamationmark.circle")
                         .foregroundStyle(.secondary)
                 } else if let book = request.books.first {
                     destinationPreview(for: book)
@@ -497,7 +594,7 @@ struct DownloadOptionsView: View {
                 Spacer()
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
-                Button("Download", action: startDownload)
+                Button(request.restartsIncomplete ? "Restart" : "Download", action: startDownload)
                     .keyboardShortcut(.defaultAction)
                     .disabled(!layout.isValid || !options.hasSelection || model.isTransferring)
             }
@@ -507,25 +604,32 @@ struct DownloadOptionsView: View {
         .fixedSize(horizontal: false, vertical: true)
     }
 
-    private var layout: ArchiveLayout { ArchiveLayout(root: directory, template: template) }
+    private var layout: ArchiveLayout {
+        ArchiveLayout(root: directory, template: template, filenameStyle: model.filenameStyle,
+                      filenameLength: model.filenameLength, naming: model.outputNaming)
+    }
 
     private func destinationPreview(for book: AudibleBook) -> some View {
         let preferredFormat = model.apiOptions.format == .aaxcOnly ? "aaxc" : "aax"
-        let knownAudio = model.localAudio(for: book) + model.exportedFiles[book.id, default: []]
-        let existingFormat = knownAudio.map { $0.pathExtension.lowercased() }
+        let matchedFormat = model.localAudio(for: book).first?.pathExtension.lowercased()
+        let archivedFormat = model.exportedFiles[book.id, default: []].map { $0.pathExtension.lowercased() }
             .first { ["aax", "aaxc", "aa", "mp3"].contains($0) }
+        let existingFormat = matchedFormat ?? archivedFormat
         let sourceFormat = existingFormat ?? preferredFormat
         return VStack(alignment: .leading, spacing: 4) {
-            Text("Example folders")
+            Text("Example paths")
                 .font(.callout.bold())
             if options.savesOriginal, let path = previewPath(for: book, format: sourceFormat) {
                 Text(path)
             }
-            if options.makesM4B, let path = previewPath(for: book, format: "m4b") {
+            if options.makesConversion, let path = previewPath(
+                for: book, format: model.conversionPreferences.format.fileExtension,
+                separateChapter: model.conversionPreferences.chapterMode == .separate
+            ) {
                 Text(path)
             }
             if !options.downloadAudio && options.hasSelection,
-               let path = previewPath(for: book, format: existingFormat ?? "extras") {
+               let path = previewPath(for: book, format: existingFormat ?? "extras", folderOnly: true) {
                 Text(path)
             }
         }
@@ -536,10 +640,15 @@ struct DownloadOptionsView: View {
         .padding(.top, 4)
     }
 
-    private func previewPath(for book: AudibleBook, format: String) -> String? {
-        guard let result = try? layout.directory(for: ArchiveTitle(book), format: format) else { return nil }
-        let root = directory.standardizedFileURL.resolvingSymlinksInPath()
-        return result.pathComponents.dropFirst(root.pathComponents.count).joined(separator: "/") + "/"
+    private func previewPath(
+        for book: AudibleBook, format: String, separateChapter: Bool = false, folderOnly: Bool = false
+    ) -> String? {
+        let title = ArchiveTitle(book)
+        let chapterNumber = separateChapter ? 1 : nil
+        let chapterTitle = separateChapter ? "First Chapter" : nil
+        return layout.previewPath(
+            for: title, format: format, chapterNumber: chapterNumber, chapterTitle: chapterTitle, folderOnly: folderOnly
+        )
     }
 
     private func startDownload() {
@@ -547,6 +656,6 @@ struct DownloadOptionsView: View {
         model.outputDirectory = directory
         model.folderTemplate = template
         dismiss()
-        model.startDownloads(for: request.books, options: options)
+        model.startDownloads(for: request.books, options: options, restartsIncomplete: request.restartsIncomplete)
     }
 }

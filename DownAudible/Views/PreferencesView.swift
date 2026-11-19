@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct PreferencesView: View {
-    let model: WorkspaceModel
+    @Bindable var model: WorkspaceModel
 
     var body: some View {
         TabView {
@@ -13,6 +13,12 @@ struct PreferencesView: View {
             }
             Tab("Downloads", systemImage: "arrow.down.to.line") {
                 DownloadPreferencesView(model: model)
+            }
+            Tab("Conversion", systemImage: "waveform") {
+                Form {
+                    ConversionPreferencesView(preferences: $model.conversionPreferences)
+                }
+                .formStyle(.grouped)
             }
             Tab("Files", systemImage: "folder") {
                 FilePreferencesView(model: model)
@@ -112,7 +118,7 @@ private struct DownloadPreferencesView: View {
                     }
                 }
                 .disabled(!model.downloadOptions.downloadAudio)
-                Toggle("Convert to M4B", isOn: $model.downloadOptions.convert)
+                Toggle("Convert to \(model.conversionPreferences.format.displayName)", isOn: $model.downloadOptions.convert)
                     .disabled(!model.downloadOptions.downloadAudio)
                 Toggle("Keep the original after conversion", isOn: $model.downloadOptions.keepOriginal)
                     .disabled(!model.downloadOptions.downloadAudio || !model.downloadOptions.convert)
@@ -145,6 +151,18 @@ private struct DownloadPreferencesView: View {
                 Button("Use Largest Available") { model.apiOptions.coverSizes = [] }
                     .disabled(model.apiOptions.coverSizes.isEmpty)
             }
+
+            Section("Apple Books") {
+                Picker("Add after saving", selection: $model.appleBooksDestination) {
+                    ForEach(AppleBooksDestination.allCases) { destination in
+                        Text(destination.displayName).tag(destination)
+                    }
+                }
+                if model.appleBooksDestination == .m4b && model.conversionPreferences.format != .m4b {
+                    Text("Choose M4B in Conversion to send converted files to Apple Books.")
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
         .formStyle(.grouped)
     }
@@ -169,13 +187,8 @@ private struct FilePreferencesView: View {
                 DestinationPicker(directory: $model.outputDirectory)
                 TextField("Folder template", text: $model.folderTemplate)
                     .font(.body.monospaced())
-                if model.layout.isValid {
-                    Text("Use {format}, {author}, {title}, or {asin}. Separate folders with /.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    Label("Enter a valid folder template.", systemImage: "exclamationmark.circle")
-                        .foregroundStyle(.secondary)
-                }
+                Text("Separate folders with /.")
+                    .foregroundStyle(.secondary)
                 Button("Restore Default Template") {
                     model.folderTemplate = ArchiveLayout.defaultTemplate
                 }
@@ -183,20 +196,63 @@ private struct FilePreferencesView: View {
             }
 
             Section("Filenames") {
+                TextField("Filename template", text: $model.outputNaming.filenameTemplate,
+                          prompt: Text("Use the filename style"))
+                    .font(.body.monospaced())
+                TextField("Chapter filename template", text: $model.outputNaming.chapterFilenameTemplate)
+                    .font(.body.monospaced())
                 Picker("Name files by", selection: $model.filenameStyle) {
                     ForEach(FilenameStyle.allCases) { style in
                         Text(style.displayName).tag(style)
                     }
                 }
                 NumberPreference("Maximum filename length", value: $model.filenameLength, range: 40...230, unit: "bytes")
+                Picker("Spaces", selection: $model.outputNaming.whitespace) {
+                    ForEach(NamingWhitespace.allCases) { rule in
+                        Text(rule.displayName).tag(rule)
+                    }
+                }
+                Picker("Letter case", selection: $model.outputNaming.letterCase) {
+                    ForEach(NamingLetterCase.allCases) { rule in
+                        Text(rule.displayName).tag(rule)
+                    }
+                }
+                Toggle("Use ASCII characters", isOn: $model.outputNaming.transliterate)
                 Picker("If a file is already saved", selection: $model.transferPreferences.existingFiles) {
                     ForEach(ExistingFiles.allCases) { mode in
                         Text(mode.displayName).tag(mode)
                     }
                 }
             }
+
+            Section("Template preview") {
+                if let path = examplePath {
+                    Text(path)
+                        .monospaced()
+                        .textSelection(.enabled)
+                } else {
+                    Label("Check the folder and filename templates.", systemImage: "exclamationmark.circle")
+                        .foregroundStyle(.secondary)
+                }
+                Text(ArchiveLayout.tokens.map { "{\($0)}" }.joined(separator: "  "))
+                    .font(.callout.monospaced())
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
         }
         .formStyle(.grouped)
+    }
+
+    private var examplePath: String? {
+        let layout = model.layout
+        let format = model.conversionPreferences.format.fileExtension
+        let book = ArchiveTitle(title: "My Great Book", author: "Annie Reader", asin: "B001EXAMPLE", metadata: [
+            "subtitle": "A Memoir", "authors": "Annie Reader", "narrator": "Ella Day", "narrators": "Ella Day",
+            "series": "Village Stories", "seriesNumber": "2", "publisher": "Square Press", "year": "2026", "language": "English"
+        ])
+        let chapterNumber = model.conversionPreferences.chapterMode == .separate ? 1 : nil
+        let chapterTitle = chapterNumber == nil ? nil : "The Beginning"
+        return layout.previewPath(for: book, format: format, chapterNumber: chapterNumber, chapterTitle: chapterTitle)
     }
 }
 

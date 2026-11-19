@@ -5,6 +5,7 @@ struct AccountPreferencesView: View {
     @State private var selectedAccount: SavedAudibleAccount.ID?
     @State private var sheet: Sheet?
     @State private var showingRemove = false
+    @State private var accountToRemove: SavedAudibleAccount?
     @State private var issue: WorkspaceModel.Notice?
 
     private enum Sheet: Identifiable {
@@ -42,6 +43,11 @@ struct AccountPreferencesView: View {
                         .width(min: 80, ideal: 92, max: 100)
                     }
                     .frame(minHeight: 160)
+                    .contextMenu(forSelectionType: SavedAudibleAccount.ID.self) { ids in
+                        if let selected = model.accounts.first(where: { ids.contains($0.id) }) {
+                            accountActions(selected)
+                        }
+                    }
                 }
 
                 HStack(spacing: 8) {
@@ -57,18 +63,7 @@ struct AccountPreferencesView: View {
 
             if let account {
                 Section("Selected account") {
-                    if model.activeAccount?.id == account.id && !model.signedIn {
-                        Button("Sign In…") { sheet = .reconnect }
-                            .disabled(!model.canSwitchAccounts)
-                    } else {
-                        Button("Switch to This Account") { switchAccount(to: account) }
-                            .disabled(!model.canSwitchAccounts || model.activeAccount?.id == account.id)
-                    }
-
-                    Button("Rename…") { sheet = .rename(account) }
-                        .disabled(!model.canSwitchAccounts)
-                    Button("Remove Account…", role: .destructive) { showingRemove = true }
-                        .disabled(!model.canRemoveAccounts)
+                    accountActions(account)
                 }
             }
 
@@ -95,8 +90,8 @@ struct AccountPreferencesView: View {
                 RenameAccountView(model: model, account: account)
             }
         }
-        .alert("Remove Account?", isPresented: $showingRemove, presenting: account) { account in
-            Button("Cancel", role: .cancel) {}
+        .alert("Remove Account?", isPresented: $showingRemove, presenting: accountToRemove) { account in
+            Button("Cancel", role: .cancel) { accountToRemove = nil }
             Button("Remove Account", role: .destructive) { removeAccount(account) }
         } message: { account in
             Text("This removes \(account.name) from DownAudible and clears its saved sign-in.")
@@ -105,6 +100,29 @@ struct AccountPreferencesView: View {
 
     private var account: SavedAudibleAccount? {
         model.accounts.first { $0.id == selectedAccount }
+    }
+
+    @ViewBuilder
+    private func accountActions(_ account: SavedAudibleAccount) -> some View {
+        if model.activeAccount?.id == account.id {
+            if !model.signedIn {
+                Button("Sign In…") { sheet = .reconnect }
+                    .disabled(!model.canSwitchAccounts)
+            } else {
+                Button("Sign Out", action: model.signOut)
+                    .disabled(!model.canRemoveAccounts)
+            }
+        } else {
+            Button("Switch to This Account") { switchAccount(to: account) }
+                .disabled(!model.canSwitchAccounts)
+        }
+        Button("Rename…") { sheet = .rename(account) }
+            .disabled(!model.canSwitchAccounts)
+        Button("Remove Account…", role: .destructive) {
+            accountToRemove = account
+            showingRemove = true
+        }
+        .disabled(!model.canRemoveAccounts)
     }
 
     private func switchAccount(to account: SavedAudibleAccount) {
@@ -118,6 +136,7 @@ struct AccountPreferencesView: View {
 
     private func removeAccount(_ account: SavedAudibleAccount) {
         issue = nil
+        accountToRemove = nil
         Task {
             await model.removeAccount(account)
             issue = model.notice

@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 actor ArchiveWorker {
@@ -6,11 +7,47 @@ actor ArchiveWorker {
     private struct Record: Codable {
         var originals: [StoredAudio] = []
         var converted: URL?
+        var conversions: [String: [URL]]?
+        var history: [[URL]]?
+        var fileSizes: [URL: Int]?
+        var requestID: UUID?
         var cover: URL?
         var covers: [String: URL]?
         var pdf: URL?
         var chapters: [String: URL]?
         var annotations: URL?
+
+        var audioGroups: [[URL]] {
+            let groups = [originals.map(\.url), converted.map { [$0] } ?? []]
+                + (conversions.map { Array($0.values) } ?? []) + (history ?? [])
+            return groups.filter { !$0.isEmpty }
+        }
+
+        var knownFiles: Set<URL> {
+            var files = Set(audioGroups.joined())
+            if let fileSizes { files.formUnion(fileSizes.keys) }
+            for file in [cover, pdf, annotations].compactMap({ $0 }) { files.insert(file) }
+            if let covers { files.formUnion(covers.values) }
+            if let chapters { files.formUnion(chapters.values) }
+            return files
+        }
+
+        func contains(_ url: URL) -> Bool {
+            guard let bytes = ArchiveWorker.fileSize(url) else { return false }
+            return fileSizes?[url].map { $0 == bytes } ?? true
+        }
+
+        func outputs(for preferences: ConversionPreferences, key: String) -> [URL] {
+            let urls = conversions?[key] ?? (preferences == ConversionPreferences() ? converted.map { [$0] } ?? [] : [])
+            return urls.allSatisfy(contains) ? urls : []
+        }
+
+        mutating func addConversion(_ urls: [URL], key: String) {
+            let previous = conversions?[key] ?? []
+            if !previous.isEmpty, previous != urls { history = (history ?? []) + [previous] }
+            if conversions == nil { conversions = [:] }
+            conversions?[key] = urls
+        }
     }
 
     private struct Source {
@@ -44,6 +81,7 @@ actor ArchiveWorker {
     private var loaded = false
     private var activeRecords: Set<String> = []
     private var reservedFilenames: Set<String> = []
+    private var conversionReservations: [UUID: [String]] = [:]
 
     init(media: MediaTools) {
         self.media = media
@@ -57,16 +95,28 @@ actor ArchiveWorker {
         layout: ArchiveLayout,
         options: DownloadOptions,
         existingFiles: ExistingFiles,
+        conversion: ConversionPreferences = .init(),
+        requestID: UUID? = nil,
+        restartIncomplete: Bool = false,
+        didRestart: @escaping @Sendable () async -> Void = {},
         progress: @escaping Progress
     ) async throws -> ExportReceipt {
         let title = ArchiveTitle(book)
         let key = recordKey(layout, account, book.id)
-        guard activeRecords.insert(key).inserted else { throw WorkError.alreadyRunning }
-        defer { activeRecords.remove(key) }
+        let jobKey = IncompleteDownloads.folder(for: book.id, account: account, root: layout.root).path
+        guard activeRecords.insert(jobKey).inserted else { throw WorkError.alreadyRunning }
+        defer { activeRecords.remove(jobKey) }
 
         let previous = existingRecord(key)
-        var record = existingFiles == .reuse || !options.downloadAudio ? previous : Record()
-        if !options.downloadAudio && existingFiles == .saveNewCopy {
+        let restartsAudio = restartIncomplete && options.downloadAudio
+            && IncompleteDownloads.containsAudio(for: book.id, account: account, root: layout.root)
+        let sameAttempt = requestID != nil && requestID == previous.requestID
+        let reuse = (existingFiles == .reuse || sameAttempt) && !restartsAudio
+        var record = reuse || !options.downloadAudio
+            ? previous
+            : Record(history: previous.audioGroups, fileSizes: previous.fileSizes)
+        record.requestID = requestID
+        if !options.downloadAudio && existingFiles == .saveNewCopy && !sameAttempt {
             if options.downloadCover {
                 for name in Self.requestedCoverNames(audible) { record.covers?.removeValue(forKey: name) }
                 if audible.options.coverSizes.isEmpty { record.cover = nil }
@@ -75,17 +125,27 @@ actor ArchiveWorker {
             if options.downloadChapters { record.chapters?.removeValue(forKey: audible.options.chapterStyle.rawValue) }
             if options.downloadAnnotations { record.annotations = nil }
         }
-        let needsConversion = options.makesM4B && !(record.converted.map(Self.isFile) ?? false)
+        let recipe = try Self.recipeKey(conversion)
+        var converted = options.makesConversion ? record.outputs(for: conversion, key: recipe) : []
+        let needsConversion = options.makesConversion && converted.isEmpty
+        var addedOriginal: [URL] = []
+        var addedConverted: [URL] = []
+        var usesAudioStaging = false
         let staging = try makeStagingDirectory(in: layout.root)
         defer { try? FileManager.default.removeItem(at: staging) }
 
-        var sources = record.originals.allSatisfy({ Self.isFile($0.url) })
+        var sources = record.originals.allSatisfy({ record.contains($0.url) })
             ? record.originals.map { Source(audio: $0) } : []
         if sources.isEmpty && (options.savesOriginal || needsConversion) {
             if matches.isEmpty {
                 guard book.isDownloadable else { throw ArchiveError.unavailable }
+                let audioDirectory = try IncompleteDownloads.audioFolder(
+                    for: book.id, account: account, root: layout.root, restart: restartIncomplete
+                )
+                usesAudioStaging = true
+                if restartIncomplete { await didRestart() }
                 await progress("Downloading audio", nil)
-                let download = try await audible.download(book, to: staging) { fraction in
+                let download = try await audible.download(book, to: audioDirectory) { fraction in
                     await progress("Downloading audio", fraction)
                 }
                 sources = download.parts.map {
@@ -95,7 +155,10 @@ actor ArchiveWorker {
                 if options.savesOriginal {
                     sources = try saveOriginals(sources, title: title, layout: layout)
                     record.originals = sources.map(\.audio)
-                    save(record, for: key)
+                    addedOriginal = record.originals.map(\.url)
+                    save(&record, for: key)
+                    try IncompleteDownloads.clear(for: book.id, account: account, root: layout.root)
+                    usesAudioStaging = false
                 }
             } else {
                 guard matches.allSatisfy(Self.isFile) else { throw ArchiveError.missingLocalFiles }
@@ -103,7 +166,8 @@ actor ArchiveWorker {
                 if options.savesOriginal && existingFiles == .saveNewCopy {
                     sources = try saveOriginals(sources, title: title, layout: layout, copy: true)
                     record.originals = sources.map(\.audio)
-                    save(record, for: key)
+                    addedOriginal = record.originals.map(\.url)
+                    save(&record, for: key)
                 }
             }
         }
@@ -112,21 +176,22 @@ actor ArchiveWorker {
         let sourceURL = sources.first?.audio.url ?? previous.originals.map(\.url).first(where: Self.isFile)
             ?? matches.first(where: Self.isFile)
         let sourceFormat = sourceURL?.pathExtension.lowercased()
-        let extrasFormat = if options.makesM4B && !options.savesOriginal {
-            "m4b"
+        let extrasFormat = if options.makesConversion && !options.savesOriginal {
+            conversion.format.fileExtension
         } else {
             sourceFormat ?? "extras"
         }
         var issues: [String] = []
         let artwork = try await getArtwork(
             book, audible: audible, staging: staging, title: title, layout: layout,
-            format: extrasFormat, saveFiles: options.downloadCover, embed: needsConversion,
+            format: extrasFormat, saveFiles: options.downloadCover, embed: needsConversion && conversion.embedArtwork,
             record: &record, key: key, issues: &issues, progress: progress
         )
 
         if needsConversion {
             await progress("Preparing conversion", nil)
-            let chapters = try await chapterMetadata(for: book, audible: audible)
+            let needsChapters = conversion.embedChapters || conversion.chapterMode == .separate
+            let chapters = needsChapters ? try await chapterMetadata(for: book, audible: audible) : []
             var inputs: [MediaInput] = []
             for source in sources {
                 let credentials = try await mediaCredentials(
@@ -136,32 +201,31 @@ actor ArchiveWorker {
                 inputs.append(MediaInput(url: source.audio.url, credentials: credentials))
             }
 
-            let directory = try makeOutputDirectory(layout, title, format: "m4b")
-            let destination = try availableURL(in: directory, title: title, layout: layout, extension: "m4b")
-            let reservation = Self.reservationKey(destination)
-            reservedFilenames.insert(reservation)
-            defer { reservedFilenames.remove(reservation) }
-
             let metadata = MediaMetadata(
                 title: book.title, subtitle: book.subtitle, authors: book.authors, narrators: book.narrators,
                 description: book.description, publisher: book.publisher, releaseDate: book.releaseDate,
                 asin: book.asin, series: book.series, seriesSequence: book.seriesSequence,
                 language: book.language, genres: book.genres ?? [], chapters: chapters
             )
-            try await media.convert(inputs, to: destination, metadata: metadata, artwork: artwork) { fraction in
-                await progress("Converting to M4B", fraction)
+            converted = try await convertAudio(
+                inputs, title: title, layout: layout, preferences: conversion,
+                metadata: metadata, artwork: artwork, progress: progress
+            )
+            addedConverted = converted
+            record.addConversion(converted, key: recipe)
+            save(&record, for: key)
+            if usesAudioStaging {
+                try IncompleteDownloads.clear(for: book.id, account: account, root: layout.root)
             }
-            record.converted = destination
-            save(record, for: key)
         }
 
-        if options.downloadPDF && book.hasPDF && !(record.pdf.map(Self.isFile) ?? false) {
+        if options.downloadPDF && book.hasPDF && !(record.pdf.map(record.contains) ?? false) {
             await progress("Downloading PDF", nil)
             do {
                 let extras = try await audible.downloadExtras(book, to: staging, pdf: true, cover: false)
                 if let pdf = extras.pdf {
                     record.pdf = try saveExtra(pdf, title: title, layout: layout, format: extrasFormat)
-                    save(record, for: key)
+                    save(&record, for: key)
                 } else {
                     issues.append("Audible didn’t return the PDF.")
                 }
@@ -184,10 +248,11 @@ actor ArchiveWorker {
             }
             return ExportReceipt(url: output, note: note)
         }
-        guard let output = (options.makesM4B ? record.converted : nil) ?? originals.first else {
-            throw ArchiveError.noAudio
-        }
-        return ExportReceipt(url: output, original: originals, note: note)
+        guard let output = converted.first ?? originals.first else { throw ArchiveError.noAudio }
+        return ExportReceipt(
+            url: output, original: originals, converted: converted,
+            addedOriginal: addedOriginal, addedConverted: addedConverted, note: note
+        )
     }
 
     func convert(
@@ -196,52 +261,124 @@ actor ArchiveWorker {
         layout: ArchiveLayout,
         activationBytes: String?,
         existingFiles: ExistingFiles,
+        conversion: ConversionPreferences = .init(),
+        requestID: UUID? = nil,
         progress: @escaping Progress
     ) async throws -> ExportReceipt {
         let key = recordKey(layout, "Local file", file.url.standardizedFileURL.path)
         guard activeRecords.insert(key).inserted else { throw WorkError.alreadyRunning }
         defer { activeRecords.remove(key) }
 
-        var record = existingFiles == .reuse ? existingRecord(key) : Record()
-        if let previous = record.converted, Self.isFile(previous) {
-            let previousDate = try? previous.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
-            let sourceDate = try? file.url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
-            if let previousDate, let sourceDate, previousDate >= sourceDate {
-                return ExportReceipt(url: previous)
+        let previous = existingRecord(key)
+        let sameAttempt = requestID != nil && requestID == previous.requestID
+        var record = existingFiles == .reuse || sameAttempt
+            ? previous
+            : Record(history: previous.audioGroups, fileSizes: previous.fileSizes)
+        record.requestID = requestID
+        let recipe = try Self.recipeKey(conversion)
+        let written = record.outputs(for: conversion, key: recipe)
+        let sourceDate = try? file.url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+        if let sourceDate, let first = written.first, written.allSatisfy({ output in
+            guard let date = try? output.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate else {
+                return false
             }
+            return date >= sourceDate
+        }) {
+            return ExportReceipt(url: first, converted: written)
         }
 
         guard Self.isFile(file.url) else { throw ArchiveError.missingLocalFiles }
-        let title = ArchiveTitle(file)
         let credentials = try await mediaCredentials(
             for: nil, audio: StoredAudio(url: file.url, asin: file.asin), audible: audible, activationBytes: activationBytes
         )
-        let directory = try makeOutputDirectory(layout, title, format: "m4b")
-        let destination = try availableURL(in: directory, title: title, layout: layout, extension: "m4b")
-        let reservation = Self.reservationKey(destination)
-        reservedFilenames.insert(reservation)
-        defer { reservedFilenames.remove(reservation) }
-
-        try await media.convert(file.url, to: destination, credentials: credentials) { fraction in
-            await progress("Converting to M4B", fraction)
-        }
-        record.converted = destination
-        save(record, for: key)
-        return ExportReceipt(url: destination)
+        let converted = try await convertAudio(
+            [MediaInput(url: file.url, credentials: credentials)],
+            title: ArchiveTitle(file), layout: layout, preferences: conversion, progress: progress
+        )
+        guard let first = converted.first else { throw ArchiveError.noAudio }
+        record.addConversion(converted, key: recipe)
+        save(&record, for: key)
+        return ExportReceipt(url: first, converted: converted, addedConverted: converted)
     }
 
-    func existingExports(for ids: [String], account: String, layout: ArchiveLayout) -> [String: [URL]] {
-        var exports: [String: [URL]] = [:]
-        for id in ids {
-            let record = existingRecord(recordKey(layout, account, id))
+    private func convertAudio(
+        _ inputs: [MediaInput], title: ArchiveTitle, layout: ArchiveLayout,
+        preferences: ConversionPreferences, metadata: MediaMetadata = .init(), artwork: URL? = nil,
+        progress: @escaping Progress
+    ) async throws -> [URL] {
+        let conversionID = UUID()
+        defer {
+            let reservations = conversionReservations.removeValue(forKey: conversionID) ?? []
+            reservedFilenames.subtract(reservations)
+        }
+        let format = preferences.format.fileExtension
+        return try await media.convert(inputs, preferences: preferences, metadata: metadata, artwork: artwork) { outputs in
+            try await self.reserve(outputs, for: title, layout: layout, format: format, id: conversionID)
+        } progress: { fraction in
+            await progress("Converting to \(format.uppercased())", fraction)
+        }
+    }
+
+    private func reserve(
+        _ outputs: [ConversionOutput], for title: ArchiveTitle, layout: ArchiveLayout, format: String, id: UUID
+    ) throws -> [URL] {
+        try outputs.map { output in
+            let directory = try layout.directory(
+                for: title, format: format, chapterNumber: output.chapterNumber, chapterTitle: output.chapterTitle
+            )
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let url = try availableURL(
+                in: directory, title: title, layout: layout, extension: format,
+                chapterNumber: output.chapterNumber, chapterTitle: output.chapterTitle
+            )
+            let reservation = Self.reservationKey(url)
+            reservedFilenames.insert(reservation)
+            conversionReservations[id, default: []].append(reservation)
+            return url
+        }
+    }
+
+    private static func recipeKey(_ preferences: ConversionPreferences) throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        let digest = SHA256.hash(data: try encoder.encode(preferences.outputRecipe))
+        return digest.map { ($0 < 16 ? "0" : "") + String($0, radix: 16) }.joined()
+    }
+
+    func inventory(
+        for ids: [String], account: String, layout: ArchiveLayout
+    ) -> [String: ArchiveInventoryItem] {
+        loadRecords()
+        let root = layout.root.standardizedFileURL.path
+        let ids = Set(ids)
+        var inventory: [String: ArchiveInventoryItem] = [:]
+        for (key, record) in records {
+            guard let parts = Self.recordParts(key), parts.root == root, parts.account == account,
+                  ids.contains(parts.asin) else { continue }
+            var item = inventory[parts.asin, default: ArchiveInventoryItem()]
+            item.hadAudio = item.hadAudio || !record.audioGroups.isEmpty
+            for group in record.audioGroups where group.allSatisfy(record.contains) {
+                for path in group where !item.files.contains(path) { item.files.append(path) }
+            }
             let originals = record.originals.map(\.url)
-            if !originals.isEmpty && originals.allSatisfy(Self.isFile) {
-                exports[id] = originals
-            } else if let converted = record.converted, Self.isFile(converted) {
-                exports[id] = [converted]
+            if item.originals.isEmpty, originals.allSatisfy(record.contains) { item.originals = originals }
+            item.missingFiles.append(contentsOf: record.knownFiles.filter { !record.contains($0) })
+            inventory[parts.asin] = item
+        }
+        let incomplete = IncompleteDownloads.folders(in: layout.root)
+        if !incomplete.isEmpty {
+            for id in ids {
+                let folder = IncompleteDownloads.folder(for: id, account: account, root: layout.root)
+                if incomplete.contains(folder.lastPathComponent), IncompleteDownloads.containsAudio(in: folder) {
+                    inventory[id, default: ArchiveInventoryItem()].hasPartial = true
+                }
             }
         }
-        return exports
+        return inventory
+    }
+
+    func validMatches(_ matches: [String: [URL]]) -> [String: [URL]] {
+        matches.filter { !$0.value.isEmpty && $0.value.allSatisfy(Self.isFile) }
     }
 
     private func getArtwork(
@@ -250,8 +387,8 @@ actor ArchiveWorker {
         record: inout Record, key: String, issues: inout [String], progress: Progress
     ) async throws -> URL? {
         guard saveFiles || embed else { return nil }
-        var saved = record.covers?.filter { Self.isFile($0.value) } ?? [:]
-        if saved["cover"] == nil, let old = record.cover, Self.isFile(old) { saved["cover"] = old }
+        var saved = record.covers?.filter { record.contains($0.value) } ?? [:]
+        if saved["cover"] == nil, let old = record.cover, record.contains(old) { saved["cover"] = old }
         let largestFirst = saved.keys.sorted {
             Self.coverSize($0) > Self.coverSize($1)
         }
@@ -275,7 +412,7 @@ actor ArchiveWorker {
                     let destination = try saveExtra(source, title: title, layout: layout, format: format, suffix: suffix)
                     saved[name] = destination
                     record.covers = saved
-                    save(record, for: key)
+                    save(&record, for: key)
                     if artwork == source { artwork = destination }
                 }
                 if extras.failed.contains("cover") {
@@ -300,7 +437,7 @@ actor ArchiveWorker {
         }
         if options.downloadChapters { candidates.append(record.chapters?[audible.options.chapterStyle.rawValue]) }
         if options.downloadAnnotations { candidates.append(record.annotations) }
-        return candidates.compactMap { $0 }.first(where: Self.isFile)
+        return candidates.compactMap { $0 }.first(where: record.contains)
     }
 
     private static func requestedCoverNames(_ audible: AudibleClient) -> [String] {
@@ -318,8 +455,8 @@ actor ArchiveWorker {
         record: inout Record, key: String, issues: inout [String], progress: Progress
     ) async throws {
         let chapterStyle = audible.options.chapterStyle.rawValue
-        let chapters = options.downloadChapters && !(record.chapters?[chapterStyle].map(Self.isFile) ?? false)
-        let annotations = options.downloadAnnotations && !(record.annotations.map(Self.isFile) ?? false)
+        let chapters = options.downloadChapters && !(record.chapters?[chapterStyle].map(record.contains) ?? false)
+        let annotations = options.downloadAnnotations && !(record.annotations.map(record.contains) ?? false)
         guard chapters || annotations else { return }
 
         await progress("Downloading chapters and notes", nil)
@@ -334,7 +471,7 @@ actor ArchiveWorker {
                         var saved = record.chapters ?? [:]
                         saved[chapterStyle] = destination
                         record.chapters = saved
-                        save(record, for: key)
+                        save(&record, for: key)
                     } else if extras.failed.contains("chapters") {
                         issues.append("Couldn’t download the chapter list.")
                     }
@@ -349,7 +486,7 @@ actor ArchiveWorker {
                         record.annotations = try saveExtra(
                             source, title: title, layout: layout, format: format, suffix: " - Notes"
                         )
-                        save(record, for: key)
+                        save(&record, for: key)
                     } else if extras.failed.contains("annotations") {
                         issues.append("Couldn’t download the notes.")
                     }
@@ -421,10 +558,11 @@ actor ArchiveWorker {
         do {
             for (offset, source) in sources.enumerated() {
                 try Task.checkCancellation()
-                let number = sources.count > 1 ? " - Part \(offset + 1)" : ""
+                let part = sources.count > 1 ? offset + 1 : nil
                 let format = source.audio.url.pathExtension.lowercased()
-                let directory = try makeOutputDirectory(layout, title, format: format)
-                let destination = try availableURL(in: directory, title: title, layout: layout, extension: format, suffix: number)
+                let directory = try layout.directory(for: title, format: format, partNumber: part)
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                let destination = try availableURL(in: directory, title: title, layout: layout, extension: format, partNumber: part)
                 if copy {
                     try FileManager.default.copyItem(at: source.audio.url, to: destination)
                 } else {
@@ -436,7 +574,13 @@ actor ArchiveWorker {
                 ))
             }
         } catch {
-            for source in saved { try? FileManager.default.removeItem(at: source.audio.url) }
+            for (original, written) in zip(sources, saved) {
+                if copy {
+                    try? FileManager.default.removeItem(at: written.audio.url)
+                } else {
+                    try? FileManager.default.moveItem(at: written.audio.url, to: original.audio.url)
+                }
+            }
             throw error
         }
         return saved
@@ -473,9 +617,12 @@ actor ArchiveWorker {
     }
 
     private func availableURL(
-        in directory: URL, title: ArchiveTitle, layout: ArchiveLayout, extension ext: String, suffix: String = ""
+        in directory: URL, title: ArchiveTitle, layout: ArchiveLayout, extension ext: String, suffix: String = "",
+        chapterNumber: Int? = nil, chapterTitle: String? = nil, partNumber: Int? = nil
     ) throws -> URL {
-        let base = layout.filenameStyle.name(for: title)
+        let base = layout.filenameStem(
+            for: title, format: ext, chapterNumber: chapterNumber, chapterTitle: chapterTitle, partNumber: partNumber
+        )
         let asin = ArchiveLayout.filename(title.asin, maxBytes: 12)
         let maxLength = min(layout.filenameLength, 255)
         for number in 0...1_000 {
@@ -507,9 +654,13 @@ actor ArchiveWorker {
         url.standardizedFileURL.path.precomposedStringWithCanonicalMapping.lowercased()
     }
 
-    private static func isFile(_ url: URL) -> Bool {
-        guard let info = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]) else { return false }
-        return info.isRegularFile == true && (info.fileSize ?? 0) > 0
+    private static func isFile(_ url: URL) -> Bool { fileSize(url) != nil }
+
+    private static func fileSize(_ url: URL) -> Int? {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              attributes[.type] as? FileAttributeType == .typeRegular,
+              let size = attributes[.size] as? Int, size > 0 else { return nil }
+        return size
     }
 
     private func recordKey(_ layout: ArchiveLayout, _ account: String, _ identifier: String) -> String {
@@ -517,18 +668,39 @@ actor ArchiveWorker {
         return components.map { "\($0.utf8.count):\($0)" }.joined()
     }
 
-    private func existingRecord(_ key: String) -> Record {
-        if !loaded {
-            loaded = true
-            if let data = defaults.data(forKey: Self.indexKey),
-               let stored = try? JSONDecoder().decode([String: Record].self, from: data) {
-                records = stored
-            }
+    private static func recordParts(_ key: String) -> (root: String, account: String, asin: String)? {
+        var bytes = key.utf8[...]
+        var parts: [String] = []
+        for _ in 0..<4 {
+            guard let separator = bytes.firstIndex(of: 58),
+                  let length = Int(String(decoding: bytes[..<separator], as: UTF8.self)),
+                  length >= 0 else { return nil }
+            bytes = bytes[bytes.index(after: separator)...]
+            guard let end = bytes.index(bytes.startIndex, offsetBy: length, limitedBy: bytes.endIndex) else { return nil }
+            parts.append(String(decoding: bytes[..<end], as: UTF8.self))
+            bytes = bytes[end...]
         }
+        return (parts[0], parts[2], parts[3])
+    }
+
+    private func loadRecords() {
+        guard !loaded else { return }
+        loaded = true
+        if let data = defaults.data(forKey: Self.indexKey),
+           let stored = try? JSONDecoder().decode([String: Record].self, from: data) {
+            records = stored
+        }
+    }
+
+    private func existingRecord(_ key: String) -> Record {
+        loadRecords()
         return records[key] ?? Record()
     }
 
-    private func save(_ record: Record, for key: String) {
+    private func save(_ record: inout Record, for key: String) {
+        var sizes = record.fileSizes ?? [:]
+        for url in record.knownFiles where sizes[url] == nil { sizes[url] = Self.fileSize(url) }
+        record.fileSizes = sizes
         records[key] = record
         if let data = try? JSONEncoder().encode(records) {
             defaults.set(data, forKey: Self.indexKey)

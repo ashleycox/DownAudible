@@ -11,13 +11,17 @@ enum MediaTags {
     private static let containerKeys: Set<String> = ["major_brand", "minor_version", "compatible_brands"]
 
     static func file(
-        in directory: URL,
-        probes: [AudioProbe],
-        inputs: [MediaInput],
-        metadata: MediaMetadata
-    ) throws -> URL {
-        let tags = values(probes: probes, source: inputs[0].url, metadata: metadata)
-        let chapters = markers(probes: probes, supplied: metadata.chapters, title: tags["title"])
+        _ url: URL,
+        tags: [String: String],
+        chapters: [MediaChapter],
+        output: ConversionOutput,
+        outputCount: Int
+    ) throws {
+        var tags = tags
+        if !tags.isEmpty, let number = output.chapterNumber, let title = output.chapterTitle {
+            tags["title"] = title
+            tags["track"] = "\(number)/\(outputCount)"
+        }
         var fields = [";FFMETADATA1"]
         for (key, value) in tags.sorted(by: { $0.key < $1.key }) where !value.isEmpty {
             fields.append("\(escaped(key))=\(escaped(value))")
@@ -27,14 +31,14 @@ enum MediaTags {
             fields.append("[CHAPTER]\nTIMEBASE=1/1000\nSTART=\(chapter.startMilliseconds)\nEND=\(end)")
             fields.append("title=\(escaped(chapter.title))")
         }
-        let url = directory.appending(path: "book.ffmetadata")
         try Data((fields.joined(separator: "\n") + "\n").utf8).write(to: url)
-        return url
     }
 
-    private static func values(probes: [AudioProbe], source: URL, metadata: MediaMetadata) -> [String: String] {
+    static func values(
+        probes: [AudioProbe], source: URL, metadata: MediaMetadata, format: ConversionFormat
+    ) -> [String: String] {
         var tags: [String: String] = [:]
-        let customPrefix = "com.apple.iTunes:"
+        let customPrefix = format == .mp3 ? "" : "com.apple.iTunes:"
         for probe in probes {
             for (name, value) in (probe.format.tags ?? [:]) {
                 let lower = name.lowercased()
@@ -70,7 +74,11 @@ enum MediaTags {
         }
         tags["date"] = metadata.releaseDate ?? tags["date"] ?? sourceTags["pubdate"]
         tags["genre"] = tags["genre"] ?? (metadata.genres.isEmpty ? "Audiobook" : metadata.genres.joined(separator: ", "))
-        tags["media_type"] = "2"
+        if format == .m4b {
+            tags["media_type"] = "2"
+        } else {
+            tags["media_type"] = nil
+        }
 
         let libraryTags: [String: String?] = [
             "SUBTITLE": metadata.subtitle,
@@ -89,7 +97,7 @@ enum MediaTags {
         return tags
     }
 
-    private static func markers(probes: [AudioProbe], supplied: [MediaChapter], title: String?) -> [MediaChapter] {
+    static func markers(probes: [AudioProbe], supplied: [MediaChapter], title: String?) -> [MediaChapter] {
         var embedded: [MediaChapter] = []
         var offset: Int64 = 0
         var hasKnownDuration = true

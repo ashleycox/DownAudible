@@ -46,13 +46,15 @@ struct MediaChapter: Hashable, Sendable {
     var title: String
 }
 
-struct LocalAudioFile: Identifiable, Hashable, Sendable {
+struct LocalAudioFile: Identifiable, Codable, Hashable, Sendable {
     let url: URL
     let format: String
     let title: String
     let author: String?
     let asin: String?
     let durationSeconds: Double?
+    var metadata: [String: String]? = nil
+    var isSegment: Bool? = nil
 
     var id: URL { url }
 
@@ -74,7 +76,7 @@ struct LocalAudioIndex: Sendable {
     init(files: [LocalAudioFile]) {
         var identifiers: [String: [LocalAudioFile]] = [:]
         var titles: [String: [LocalAudioFile]] = [:]
-        for file in files {
+        for file in files where file.isSegment != true {
             if let asin = file.asin {
                 identifiers[asin.uppercased(), default: []].append(file)
             }
@@ -84,13 +86,15 @@ struct LocalAudioIndex: Sendable {
         byTitle = titles
     }
 
-    func match(title: String, author: String?, asin: String) -> LocalAudioFile? {
+    func match(title: String, author: String?, asin: String, durationSeconds: Int? = nil) -> LocalAudioFile? {
         if let matches = byIdentifier[asin.uppercased()] {
-            return matches.count == 1 ? matches.first : nil
+            let complete = matches.filter { Self.matchesDuration($0, durationSeconds) }
+            return complete.count == 1 ? complete.first : nil
         }
 
         let title = LocalAudioFile.searchKey(title)
-        guard !title.isEmpty, let matches = byTitle[title] else { return nil }
+        guard !title.isEmpty, let candidates = byTitle[title] else { return nil }
+        let matches = candidates.filter { Self.matchesDuration($0, durationSeconds) }
         let author = author.map(LocalAudioFile.searchKey) ?? ""
         if !author.isEmpty {
             let byAuthor = matches.filter { file in
@@ -105,6 +109,14 @@ struct LocalAudioIndex: Sendable {
         guard matches.count == 1, let file = matches.first, file.asin == nil else { return nil }
         return author.isEmpty || file.author == nil ? file : nil
     }
+
+    private static func matchesDuration(_ file: LocalAudioFile, _ duration: Int?) -> Bool {
+        guard let duration, duration > 0, let actual = file.durationSeconds else { return true }
+        let expected = Double(duration)
+        let tolerance = min(120, max(5, expected * 0.03))
+        return abs(actual - expected) <= tolerance
+    }
+
 }
 
 enum MediaError: LocalizedError {
@@ -116,15 +128,17 @@ enum MediaError: LocalizedError {
     case voucherRequired
     case conversionFailed
     case destinationExists
+    case incompatibleAudioSettings
+    case invalidDestinations
 
     var errorDescription: String? {
         switch self {
         case .toolsMissing:
             "The conversion tools are missing. Rebuild or reinstall DownAudible."
         case .noInput:
-            "Choose an AAX, AAXC, AA, or MP3 file to convert."
+            "Choose an AAX, AAXC, AA, MP3, M4A, or M4B file to convert."
         case .unsupportedFile:
-            "Choose an AAX, AAXC, AA, or MP3 file, or a folder containing those files."
+            "Choose an AAX, AAXC, AA, MP3, M4A, or M4B file, or a folder containing those files."
         case .unreadableAudio:
             "The audio could not be read. Check that the file is complete and try again."
         case .activationRequired:
@@ -134,7 +148,11 @@ enum MediaError: LocalizedError {
         case .conversionFailed:
             "The audio could not be converted. Check that the files are complete and the destination has enough space."
         case .destinationExists:
-            "An M4B with that name already exists in the destination."
+            "An audio file with that name already exists in the destination."
+        case .incompatibleAudioSettings:
+            "That bitrate is too high for the channel count and sample rate. Choose a lower bitrate or a higher sample rate."
+        case .invalidDestinations:
+            "DownAudible couldn’t find a separate destination for each audio file."
         }
     }
 }
