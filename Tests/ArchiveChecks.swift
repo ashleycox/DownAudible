@@ -36,8 +36,10 @@ struct ArchiveChecks {
         checkBundleIdentifierMigration()
 
         let file = LocalAudioFile(url: root.appending(path: "Book.aax"), format: "aax", title: "Écho", author: "Me", asin: nil, durationSeconds: 10)
-        check(LocalAudioIndex(files: [file]).match(title: "Echo", author: "me", asin: "B000000001") == file)
-        check(LocalAudioIndex(files: [file, file]).match(title: "Echo", author: "me", asin: "B000000001") == nil)
+        let echo = try matchingBook("Echo", asin: "B000000001", authors: ["me"])
+        check(try LocalAudioIndex(files: [file]).matches(for: [echo]) == [echo.id: [file.url]])
+        check(try LocalAudioIndex(files: [file, file]).matches(for: [echo]).isEmpty)
+        try await checkFolderMatching(in: workspace)
         let book = try JSONDecoder().decode(AudibleBook.self, from: Data(#"{"asin":"B000000001","title":"One, \"Two\"","authors":["Me"],"narrators":[],"hasPDF":false,"isDownloadable":true}"#.utf8))
         check(book.downloadUnavailableReason == nil)
         checkLibraryAudioCategories()
@@ -62,6 +64,99 @@ struct ArchiveChecks {
         try await checkArchiveWatcher(in: workspace, existsAtStart: true)
         try await checkArchiveWatcher(in: workspace, existsAtStart: false)
         print("Archive naming, incomplete transfers, queue persistence, file watching, matching, library status, preference migration, CSV export, and logs passed.")
+    }
+
+    private static func checkFolderMatching(in workspace: URL) async throws {
+        let tools = workspace.appending(path: "ScanTools", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: tools, withIntermediateDirectories: false)
+        let probe = tools.appending(path: "ffprobe")
+        let script = #"""
+            #!/bin/sh
+            for file do :; done
+            case "$file" in
+                */Imported.m4b)
+                    tags='{"title":"A Different Name","asin":"Unspecified","com.apple.iTunes:ASIN":"b000000001"}' ;;
+                */AnotherName.m4a)
+                    tags='{"title":"The Opening","album":"The River: A Story (Unabridged)","artist":"A Narrator","album_artist":"Zoë Bell"}' ;;
+                */Chapter.mp3)
+                    tags='{"asin":"B000000004","album":"Winter","tracktotal":"12"}' ;;
+                */Spring.aax)
+                    tags='{"title":"Spring","album_artist":"Audible Studios"}' ;;
+                *) exit 1 ;;
+            esac
+            printf '{"streams":[{"index":0,"codec_type":"audio","duration":"600"}],"chapters":[],"format":{"tags":%s}}\n' "$tags"
+            """#
+        try script.write(to: probe, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: probe.path)
+
+        let library = workspace.appending(path: "Existing Audio", directoryHint: .isDirectory)
+        let layout = ArchiveLayout(root: library, template: ArchiveLayout.defaultTemplate)
+        let title = ArchiveTitle(title: "The River", author: "Zoë Bell", asin: "B000000002")
+        let archiveFolder = try layout.directory(for: title, format: "aax")
+        try FileManager.default.createDirectory(at: archiveFolder, withIntermediateDirectories: true)
+        let archived = archiveFolder.appending(path: "Custom File.aax")
+        let springFolder = try layout.directory(
+            for: ArchiveTitle(title: "Spring", author: "Zoe Bell", asin: nil), format: "aax"
+        )
+        try FileManager.default.createDirectory(at: springFolder, withIntermediateDirectories: true)
+        let conflictingArtist = springFolder.appending(path: "Spring.aax")
+        let original = library.appending(path: "Other App Export [B000000001].aax")
+        let untagged = library.appending(path: "Other App Export.aaxc")
+        let converted = library.appending(path: "Imported.m4b")
+        let album = library.appending(path: "AnotherName.m4a")
+        let chapter = library.appending(path: "Chapter.mp3")
+        let compact = library.appending(path: "BehindtheClouds_AAX_64_64.aax")
+        let nameAndAuthor = library.appending(path: "Jules Verne - The Lighthouse.aaxc")
+        let ignored = library.appending(path: "Unsupported.flac")
+        let audio = [archived, conflictingArtist, original, untagged, converted, album, chapter, compact, nameAndAuthor]
+        for url in audio + [ignored] {
+            try Data().write(to: url)
+        }
+
+        let files = try await MediaTools(toolDirectory: tools).scan(library)
+        check(Set(files.map(\.url)) == Set(audio))
+        let index = LocalAudioIndex(files: files)
+        let imported = try matchingBook("Other App Export", asin: "B000000001", duration: 600)
+        check(try index.matches(for: [imported]) == [imported.id: [original]])
+        check(try LocalAudioIndex(files: files.filter { $0.url != original })
+            .matches(for: [imported]) == [imported.id: [converted]])
+        let otherEdition = try matchingBook("Other App Export", asin: "B000000101", duration: 600)
+        check(try index.matches(for: [imported, otherEdition]) == [imported.id: [original]])
+
+        let river = try matchingBook("The River", asin: "B000000002", authors: ["Zoe Bell"])
+        let compactName = try matchingBook("Behind the Clouds", asin: "B000000005")
+        let lighthouse = try matchingBook("The Lighthouse", asin: "B000000006", authors: ["Jules Verne"])
+        let spring = try matchingBook("Spring", asin: "B000000007", authors: ["Zoe Bell"], duration: 600)
+        check(try index.matches(for: [river, compactName, lighthouse, spring]) == [
+            river.id: [archived], compactName.id: [compact], lighthouse.id: [nameAndAuthor], spring.id: [conflictingArtist]
+        ])
+
+        let wrongIdentifier = try matchingBook("A Different Name", asin: "B000000003", duration: 600)
+        let onlyChapter = try matchingBook("Winter", asin: "B000000004")
+        let wrongAuthor = try matchingBook("The River", asin: "B000000008", authors: ["Another Author"])
+        let anotherClouds = try matchingBook("Behind the Clouds", asin: "B000000105")
+        check(try index.matches(for: [wrongIdentifier, onlyChapter, wrongAuthor, compactName, anotherClouds]).isEmpty)
+
+        let outsideArchive = LocalAudioIndex(files: files.filter { $0.url != archived })
+        let sameDuration = try matchingBook(
+            "The River", asin: "B000000002", subtitle: "A Story", authors: ["Another Author", "Zoe Bell"], duration: 600
+        )
+        let differentDuration = try matchingBook(
+            "The River", asin: "B000000102", subtitle: "A Story", authors: ["Zoe Bell"], duration: 1_200
+        )
+        check(try outsideArchive.matches(for: [sameDuration, differentDuration]) == [sameDuration.id: [album]])
+    }
+
+    private static func matchingBook(
+        _ title: String, asin: String, subtitle: String? = nil, authors: [String] = [], duration: Int? = nil
+    ) throws -> AudibleBook {
+        var attributes: [String: Any] = [
+            "asin": asin, "title": title, "authors": authors, "narrators": [String](),
+            "hasPDF": false, "isDownloadable": true
+        ]
+        attributes["subtitle"] = subtitle
+        attributes["durationSeconds"] = duration
+        return try JSONDecoder().decode(AudibleBook.self, from: JSONSerialization.data(withJSONObject: attributes))
     }
 
     private static func checkMediaChapterBounds() throws {

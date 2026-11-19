@@ -2,7 +2,7 @@
 
 ## Destination
 
-Choose where to save your archive in **Settings > Files**. A download sheet can also change the destination. Keep the same destination and naming settings when picking up an existing archive so DownAudible can find its files.
+Choose where to save your archive in **Settings > Files**. A download sheet can also change the destination. To link audio from an existing archive, choose **Match Existing Folder…** in Library and select the archive folder.
 
 ## Templates
 

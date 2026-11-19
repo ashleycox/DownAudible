@@ -514,16 +514,7 @@ final class WorkspaceModel {
     }
 
     @concurrent private nonisolated static func matchBooks(_ books: [AudibleBook], with files: [LocalAudioFile]) async throws -> [String: [URL]] {
-        let index = LocalAudioIndex(files: files)
-        var matches: [String: [URL]] = [:]
-        for book in books {
-            try Task.checkCancellation()
-            if let file = index.match(title: book.title, author: book.authors.first, asin: book.asin, durationSeconds: book.durationSeconds) {
-                matches[book.id] = [file.url]
-            }
-        }
-        let counts = Dictionary(grouping: matches.values.compactMap(\.first), by: { $0 }).mapValues(\.count)
-        return matches.filter { entry in entry.value.first.flatMap { counts[$0] } == 1 }
+        try LocalAudioIndex(files: files).matches(for: books)
     }
 
     func match(_ book: AudibleBook, to urls: [URL]) {
@@ -563,7 +554,7 @@ final class WorkspaceModel {
             var failed: [(url: URL, error: any Error)] = []
             for url in urls {
                 do {
-                    new.append(contentsOf: try await media.scan(url, includeConverted: true))
+                    new.append(contentsOf: try await media.scan(url))
                 } catch is CancellationError {
                     return
                 } catch MediaError.toolsMissing {

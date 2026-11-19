@@ -16,7 +16,9 @@ The count covers the loaded library, including any filters from **Settings > Lib
 
 ## Match files you already have
 
-Choose **Match Existing Folder…** from the **Library Actions** toolbar menu and select the folder that holds your audio. DownAudible reads book identifiers, filenames, and tags to find a match. Control-click a book and choose **Match to Audio Files…** when the automatic search cannot tell which file belongs to it. For a book split into parts, select its files together.
+Choose **Match Existing Folder…** from the **Library Actions** toolbar menu and select the folder that holds your audio. The scan includes subfolders, so you can select the root of a DownAudible archive organised as `{format}/{author}/{title}` or a folder from another app. It checks AAX, AAXC, AA, M4B, M4A, and MP3 files.
+
+DownAudible compares Audible identifiers, tags, filenames, and title and author folders. It also checks the book’s length when available. Control-click a book and choose **Match to Audio Files…** when the match is ambiguous or the book is split into parts or chapters. For a split book, select its files together.
 
 Use **Rescan Matched Folder** after putting more books in the folder. **Show Matched Folder in Finder** opens it. **Stop Matching This Folder** clears the automatic links to that folder. To change a single book, use **Change Matched Files…** or **Remove File Match** in its contextual menu.
 

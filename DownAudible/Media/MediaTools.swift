@@ -1,18 +1,16 @@
 import Foundation
 
 struct MediaTools: Sendable {
-    private static let originals: Set<String> = ["aax", "aaxc", "aa", "mp3"]
-    private static let unprotectedFormats: Set<String> = ["m4a", "m4b"]
+    private static let formats: Set<String> = ["aax", "aaxc", "aa", "mp3", "m4a", "m4b"]
     private let toolDirectory: URL?
 
     init(toolDirectory: URL? = Bundle.main.resourceURL?.appending(path: "MediaSupport", directoryHint: .isDirectory)) {
         self.toolDirectory = toolDirectory
     }
 
-    @concurrent func scan(_ url: URL, includeConverted: Bool = false) async throws -> [LocalAudioFile] {
+    @concurrent func scan(_ url: URL) async throws -> [LocalAudioFile] {
         let ffprobe = try executable(named: "ffprobe")
-        let formats = includeConverted ? Self.originals.union(Self.unprotectedFormats) : Self.originals
-        let files = try Self.audioFiles(at: url, formats: formats)
+        let files = try Self.audioFiles(at: url)
         let directory = try Self.workspace()
         defer { try? FileManager.default.removeItem(at: directory) }
 
@@ -55,7 +53,7 @@ struct MediaTools: Sendable {
         return url
     }
 
-    private static func audioFiles(at url: URL, formats: Set<String>) throws -> [URL] {
+    private static func audioFiles(at url: URL) throws -> [URL] {
         let keys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey]
         let values = try url.resourceValues(forKeys: keys)
         if values.isRegularFile == true && formats.contains(url.pathExtension.lowercased()) {
@@ -90,23 +88,12 @@ struct MediaTools: Sendable {
     private static func localFile(_ url: URL, inspection: AudioProbe?) -> LocalAudioFile {
         let tags = inspection?.formatTags ?? [:]
         let stem = url.deletingPathExtension().lastPathComponent
-        let candidates = tags["asin"] ?? tags["audible_asin"] ?? tags["audibleasin"] ?? tags["com.apple.itunes:asin"]
-        let asinRange = stem.range(of: "(?i)(?<![A-Z0-9])B0[A-Z0-9]{8}(?![A-Z0-9])", options: .regularExpression)
-        let asin = candidates.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() }
-            .flatMap { $0.count == 10 ? $0 : nil }
-            ?? asinRange.map { stem[$0].uppercased() }
-        let title = [tags["title"], tags["parent_title"], tags["album"]]
-            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }.first { !$0.isEmpty }
-        let artist = [tags["artist"], tags["author"], tags["album_artist"]]
-            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }.first { !$0.isEmpty }
-        var fallback = stem
-        if let asinRange {
-            fallback.removeSubrange(asinRange)
-        }
-        fallback = fallback
-            .replacingOccurrences(of: "[]", with: "")
-            .replacingOccurrences(of: "_", with: " ")
-            .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "-")))
+        let asin = taggedIdentifier(in: tags) ?? LocalAudioIndex.identifier(inFilename: stem)
+        let collection = sourceTag(["parent_title", "album"], in: tags)
+        let title = sourceTag(["title"], in: tags) ?? collection
+        let artist = sourceTag(["artist", "author", "album_artist"], in: tags)
+        let collectionAuthor = sourceTag(["author", "album_artist"], in: tags)
+        let fallback = LocalAudioIndex.filenameTitle(stem).replacingOccurrences(of: "_", with: " ")
         let format = url.pathExtension.lowercased()
         let authors = sourceTag(["authors", "artist", "author", "album_artist"], in: tags)
         let audiobook = ["aa", "aax", "aaxc", "m4b"].contains(format)
@@ -131,12 +118,24 @@ struct MediaTools: Sendable {
             "language": sourceTag(["language", "lang"], in: tags) ?? (streamLanguage == "und" ? nil : streamLanguage)
         ]
         let metadata = fields.compactMapValues { $0 }
-        let totalTracks = tags["track"]?.split(separator: "/").dropFirst().first.flatMap { Int($0) }
+        let totals = ["tracktotal", "totaltracks", "disctotal", "totaldiscs"].compactMap {
+            sourceTag([$0], in: tags).flatMap(Int.init)
+        } + ["track", "disc"].compactMap { key in
+            tags[key]?.split(separator: "/").dropFirst().first.flatMap { Int($0) }
+        }
         return LocalAudioFile(
             url: url, format: format, title: title ?? (fallback.isEmpty ? stem : fallback),
             author: artist, asin: asin, durationSeconds: inspection?.durationSeconds,
-            metadata: metadata.isEmpty ? nil : metadata, isSegment: totalTracks.map { $0 > 1 }
+            metadata: metadata.isEmpty ? nil : metadata, isSegment: totals.contains { $0 > 1 } ? true : nil,
+            collectionTitle: collection, collectionAuthor: collectionAuthor
         )
+    }
+
+    private static func taggedIdentifier(in tags: [String: String]) -> String? {
+        let identifiers = ["asin", "audible_asin", "audibleasin"].flatMap { [$0, "com.apple.itunes:" + $0] }
+        return identifiers.lazy.compactMap { tags[$0]?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { $0.range(of: #"^[A-Za-z0-9]{10}$"#, options: .regularExpression) != nil }?
+            .uppercased()
     }
 
     private static func sourceTag(_ names: [String], in tags: [String: String]) -> String? {
