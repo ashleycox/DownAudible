@@ -1,0 +1,53 @@
+--- a/libavformat/movenc.c
++++ b/libavformat/movenc.c
+@@ -4747,6 +4747,42 @@
+     return pos ? update_size(pb, pos) : 0;
+ }
+ 
++static void mov_write_freeform_metadata(AVIOContext *pb, AVFormatContext *s)
++{
++    const char prefix[] = "com.apple.iTunes:";
++    const char owner[] = "com.apple.iTunes";
++    const AVDictionaryEntry *entry = NULL;
++
++    while ((entry = av_dict_get(s->metadata, prefix, entry, AV_DICT_IGNORE_SUFFIX))) {
++        const char *name = entry->key + sizeof(prefix) - 1;
++        int64_t pos;
++
++        if (!*name || !*entry->value)
++            continue;
++
++        pos = avio_tell(pb);
++        avio_wb32(pb, 0);
++        ffio_wfourcc(pb, "----");
++
++        avio_wb32(pb, 12 + sizeof(owner) - 1);
++        ffio_wfourcc(pb, "mean");
++        avio_wb32(pb, 0);
++        avio_write(pb, owner, sizeof(owner) - 1);
++
++        avio_wb32(pb, 12 + strlen(name));
++        ffio_wfourcc(pb, "name");
++        avio_wb32(pb, 0);
++        avio_write(pb, name, strlen(name));
++
++        avio_wb32(pb, 16 + strlen(entry->value));
++        ffio_wfourcc(pb, "data");
++        avio_wb32(pb, 1); /* UTF-8 */
++        avio_wb32(pb, 0);
++        avio_write(pb, entry->value, strlen(entry->value));
++        update_size(pb, pos);
++    }
++}
++
+ /* iTunes meta data list */
+ static int mov_write_ilst_tag(AVIOContext *pb, MOVMuxContext *mov,
+                               AVFormatContext *s)
+@@ -4785,6 +4821,7 @@
+     mov_write_trkn_tag(pb, mov, s, 0); // track number
+     mov_write_trkn_tag(pb, mov, s, 1); // disc number
+     mov_write_tmpo_tag(pb, s);
++    mov_write_freeform_metadata(pb, s);
+     return update_size(pb, pos);
+ }
+ 

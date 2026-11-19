@@ -1,0 +1,12 @@
+[project]
+name = "downaudible-helper"
+version = "0.1.0"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "audible==0.13.1",
+    "audible-cli==0.6.0",
+    "pyinstaller==6.22.3",
+]
+
+[tool.uv]
+package = false

@@ -1,0 +1,18 @@
+.DS_Store
+.build/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+__pycache__/
+
+# Local signing
+Signing.local.xcconfig
+*.cer
+*.p12
+*.p8
+*.pfx
+*.pem
+*.key
+*.mobileprovision
+*.provisionprofile
+*.certSigningRequest

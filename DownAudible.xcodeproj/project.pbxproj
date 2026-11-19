@@ -1,0 +1,148 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 77;
+	objects = {
+		DA0000000000000000000001 = {
+			isa = PBXProject;
+			attributes = { LastSwiftUpdateCheck = 2720; LastUpgradeCheck = 2720; };
+			buildConfigurationList = DA0000000000000000000002;
+			compatibilityVersion = "Xcode 16.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (en, Base);
+			mainGroup = DA0000000000000000000003;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = DA0000000000000000000004;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (DA0000000000000000000005);
+		};
+		DA0000000000000000000002 = {
+			isa = XCConfigurationList;
+			buildConfigurations = (DA0000000000000000000010, DA0000000000000000000011);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		DA0000000000000000000003 = {
+			isa = PBXGroup;
+			children = (DA0000000000000000000006, DA0000000000000000000017, DA0000000000000000000004);
+			sourceTree = "<group>";
+		};
+		DA0000000000000000000004 = {
+			isa = PBXGroup;
+			children = (DA0000000000000000000007);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		DA0000000000000000000005 = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = DA0000000000000000000012;
+			buildPhases = (DA0000000000000000000008, DA0000000000000000000009, DA000000000000000000000A, DA000000000000000000000B);
+			buildRules = ();
+			dependencies = ();
+			fileSystemSynchronizedGroups = (DA0000000000000000000006);
+			name = DownAudible;
+			productName = DownAudible;
+			productReference = DA0000000000000000000007;
+			productType = "com.apple.product-type.application";
+		};
+		DA0000000000000000000006 = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = DownAudible;
+			sourceTree = "<group>";
+		};
+		DA0000000000000000000007 = {
+			isa = PBXFileReference;
+			explicitFileType = wrapper.application;
+			includeInIndex = 0;
+			path = DownAudible.app;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		DA0000000000000000000008 = { isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		DA0000000000000000000009 = { isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		DA000000000000000000000A = { isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (DA0000000000000000000018); runOnlyForDeploymentPostprocessing = 0; };
+		DA000000000000000000000B = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = ();
+			name = "Bundle Audible and media tools";
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "set -eu\nresources=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH\"\n\"$SRCROOT/Scripts/prepare-audible.sh\" \"$resources/AudibleSupport\"\n\"$SRCROOT/Scripts/prepare-media.sh\" \"$resources/MediaSupport\"\n";
+		};
+		DA0000000000000000000010 = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				SDKROOT = macosx;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		DA0000000000000000000011 = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		DA0000000000000000000012 = {
+			isa = XCConfigurationList;
+			buildConfigurations = (DA0000000000000000000013, DA0000000000000000000014);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		DA0000000000000000000013 = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = DA0000000000000000000015;
+			buildSettings = {
+				ENABLE_PREVIEWS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		DA0000000000000000000014 = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = DA0000000000000000000015;
+			buildSettings = {};
+			name = Release;
+		};
+		DA0000000000000000000015 = {
+			isa = PBXFileReference;
+			lastKnownFileType = text.xcconfig;
+			path = App.xcconfig;
+			sourceTree = SOURCE_ROOT;
+		};
+		DA0000000000000000000017 = {
+			isa = PBXGroup;
+			children = (DA0000000000000000000019);
+			path = AppAssets;
+			sourceTree = "<group>";
+		};
+		DA0000000000000000000018 = { isa = PBXBuildFile; fileRef = DA0000000000000000000019; };
+		DA0000000000000000000019 = {
+			isa = PBXFileReference;
+			lastKnownFileType = folder.iconcomposer.icon;
+			path = DownAudible.icon;
+			sourceTree = "<group>";
+		};
+	};
+	rootObject = DA0000000000000000000001;
+}

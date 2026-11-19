@@ -1,0 +1,29 @@
+--- a/fftools/cmdutils.c
++++ b/fftools/cmdutils.c
+@@ -869,6 +869,26 @@
+             continue;
+         }
+ 
++        /* Load Audible decryption options from private files. */
++        if (opt[0] == '/' &&
++            (!strcmp(opt + 1, "activation_bytes") ||
++             !strcmp(opt + 1, "audible_key") ||
++             !strcmp(opt + 1, "audible_iv"))) {
++            char *value;
++
++            GET_ARG(arg);
++            value = read_file_to_string(arg);
++            if (!value) {
++                av_log(NULL, AV_LOG_ERROR, "Could not read value for %s.\n", opt + 1);
++                return AVERROR(EINVAL);
++            }
++            ret = opt_default(NULL, opt + 1, value);
++            av_free(value);
++            if (ret < 0)
++                return ret;
++            continue;
++        }
++
+         /* AVOptions */
+         if (argv[optindex]) {
+             ret = opt_default(NULL, opt, argv[optindex]);

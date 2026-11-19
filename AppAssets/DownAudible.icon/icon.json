@@ -1,0 +1,36 @@
+{
+  "fill": {
+    "automatic-gradient": "extended-srgb:0.12941,0.32549,0.62745,1.00000"
+  },
+  "groups": [
+    {
+      "layers": [
+        {
+          "image-name": "Download Arrow.svg",
+          "name": "Download Arrow"
+        },
+        {
+          "image-name": "Open Pages.svg",
+          "name": "Open Pages"
+        },
+        {
+          "image-name": "Book Cover.svg",
+          "name": "Book Cover"
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.3
+      }
+    }
+  ],
+  "supported-platforms": {
+    "squares": [
+      "macOS"
+    ]
+  }
+}
