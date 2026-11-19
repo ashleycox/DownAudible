@@ -59,39 +59,49 @@ struct DownAudibleApp: App {
                     .keyboardShortcut("4")
             }
             CommandMenu("Audiobooks") {
-                Button("Refresh Library") {
-                    show(.library)
-                    Task { await model.refresh() }
-                }
-                .keyboardShortcut("r")
-                .disabled(!model.signedIn || model.isRefreshing || model.isScanning)
-                Button("Recheck Saved Files") {
-                    show(.library)
-                    Task { await model.recheckFiles() }
-                }
-                .keyboardShortcut("r", modifiers: [.command, .shift])
-                .disabled(!model.signedIn || model.isRefreshing || model.isScanning || model.isCheckingFiles)
-
-                Divider()
-                LibraryDownloadActions(model: model, activateLibrary: { show(.library) })
+                LibraryDownloadCommands(model: model, activateLibrary: { show(.library) })
                     .disabled(showingOnboarding)
 
-                Divider()
-                LibraryContextCommands(model: model)
-                    .disabled(showingOnboarding || model.downloadRequest != nil)
-                Menu("Export Library") {
-                    Button("JSON…") { Task { await model.exportLibrary(.json) } }
-                        .keyboardShortcut("j", modifiers: [.command, .control])
-                    Button("CSV…") { Task { await model.exportLibrary(.csv) } }
-                        .keyboardShortcut("c", modifiers: [.command, .control])
-                    Button("TSV…") { Task { await model.exportLibrary(.tsv) } }
-                        .keyboardShortcut("t", modifiers: [.command, .control])
+                Menu("Library") {
+                    Button("Refresh Library") {
+                        show(.library)
+                        Task { await model.refresh() }
+                    }
+                    .keyboardShortcut("r")
+                    .disabled(!model.signedIn || model.isRefreshing || model.isScanning)
+                    Button("Recheck Saved Files") {
+                        show(.library)
+                        Task { await model.recheckFiles() }
+                    }
+                    .keyboardShortcut("r", modifiers: [.command, .shift])
+                    .disabled(!model.signedIn || model.isRefreshing || model.isScanning || model.isCheckingFiles)
+
+                    Divider()
+                    LibraryContextCommands(model: model)
+                        .disabled(showingOnboarding || model.downloadRequest != nil)
+                    Menu("Export Library") {
+                        Button("JSON…") { Task { await model.exportLibrary(.json) } }
+                            .keyboardShortcut("j", modifiers: [.command, .control])
+                        Button("CSV…") { Task { await model.exportLibrary(.csv) } }
+                            .keyboardShortcut("c", modifiers: [.command, .control])
+                        Button("TSV…") { Task { await model.exportLibrary(.tsv) } }
+                            .keyboardShortcut("t", modifiers: [.command, .control])
+                    }
+                    .disabled(!model.signedIn || model.isRefreshing)
                 }
-                .disabled(!model.signedIn || model.isRefreshing)
+
+                Divider()
                 Button("Audible Tools…") { openWindow(id: "audible-tools") }
                     .keyboardShortcut("5")
                     .disabled(model.activeAudibleClient == nil)
                 WishlistExportCommands()
+
+                Divider()
+                ConversionSelectionCommands {
+                    show(.convert)
+                    showingConversionOptions = true
+                }
+                .disabled(showingOnboarding || model.downloadRequest != nil)
             }
             CommandMenu("Transfers") {
                 Button("Cancel Batch") {
@@ -120,13 +130,6 @@ struct DownAudibleApp: App {
                 .keyboardShortcut("k", modifiers: [.command, .control])
                 .disabled(!model.canClearCompleted)
                 TransferSelectionCommands()
-            }
-            CommandMenu("Conversion") {
-                ConversionSelectionCommands {
-                    show(.convert)
-                    showingConversionOptions = true
-                }
-                .disabled(showingOnboarding || model.downloadRequest != nil)
             }
             CommandGroup(after: .windowArrangement) {
                 Button("Show DownAudible") { openWindow(id: "workspace") }

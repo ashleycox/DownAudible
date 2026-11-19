@@ -29,16 +29,16 @@ Setup opens the first time you run DownAudible. Use it to connect an account, ch
 
 1. On the Accounts page in setup or in **Settings → Accounts**, click **Add Account…**. Sign in through your browser, then paste the resulting address into DownAudible. You can also choose **Import from Audible CLI…**. Each account has a separate session in Keychain.
 2. If you already have files, use **Match Existing Folder**. You can fix an individual match from its contextual menu.
-3. Choose **Download Missing** to fetch eligible titles without a complete audio copy, or select books and choose **Download Selected**. Use the corresponding **As…** command to review the destination, audio, conversion, and optional PDFs, cover images, chapters, and notes.
+3. In **Audiobooks → Download**, choose **Download Missing** to fetch eligible titles without a complete audio copy, or select books and choose **Download Selected**. Use the corresponding **As…** command to review the destination, audio, conversion, and optional PDFs, cover images, chapters, and notes.
 4. If a batch is interrupted, open **Transfers** and choose **Retry Incomplete**. DownAudible resumes partial audio when Audible can confirm it is the same file. Choose **Restart Download…** from a transfer’s contextual menu to discard its temporary bytes and download it from the start.
 
-**Audiobooks → Audible Tools** opens the wish list, catalogue search, activation bytes, and encrypted Audible CLI account export for the current account. Use **Export Library** to save the displayed library as JSON, CSV, or TSV.
+**Audiobooks → Audible Tools** opens the wish list, catalogue search, activation bytes, and encrypted Audible CLI account export for the current account. Use **Audiobooks → Library → Export Library** to save the displayed library as JSON, CSV, or TSV.
 
 **View → Library Status** shows which books need audio, which are downloaded or matched, and which Audible lists as unavailable. The **View** menu also controls the sidebar and the library status bar.
 
 ## Conversion and file names
 
-To convert existing files, drag them into **Convert Files** or choose **Add Files** or **Add Folder**. **Conversion Options** controls the format, chapters, audio encoding, artwork, and metadata. In **Settings → Downloads**, you can send new original downloads or M4Bs to Apple Books.
+To convert existing files, drag them into **Convert Files** or choose **Add Files** or **Add Folder**. **Audiobooks → Conversion Options…** controls the format, chapters, audio encoding, artwork, and metadata. In **Settings → Downloads**, you can send new original downloads or M4Bs to Apple Books.
 
 Folder and filename templates are independent. The default folder template, `{format}/{author}/{title}`, groups original and converted formats separately. For chapter filenames you might use `{title} - {chapterNumber} - {chapter}`. Settings shows a preview as you edit.
 

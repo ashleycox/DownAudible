@@ -1,5 +1,21 @@
 import SwiftUI
 
+struct LibraryDownloadCommands: View {
+    @FocusedValue(\.libraryWorkspaceActions) private var libraryContext
+    let model: WorkspaceModel
+    let activateLibrary: () -> Void
+
+    var body: some View {
+        Menu("Download") {
+            LibraryDownloadActions(model: model, activateLibrary: activateLibrary)
+            if libraryContext != nil {
+                Divider()
+                LibraryRestartAction(model: model, books: model.selectedAudiobooks, inMenuBar: true)
+            }
+        }
+    }
+}
+
 struct LibraryDownloadActions: View {
     let model: WorkspaceModel
     var activateLibrary: (() -> Void)?

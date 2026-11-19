@@ -27,7 +27,7 @@ Menu shortcuts work when their commands are available. Open the named page, wind
 
 ## Library and downloads
 
-**Download** commands use your saved settings and start immediately. **Download As…** commands open settings for that batch.
+The **Audiobooks** menu groups download commands under **Download** and library actions under **Library**. **Download** commands use your saved settings and start immediately. **Download As…** commands open settings for that batch.
 
 | Command | Shortcut |
 | --- | --- |

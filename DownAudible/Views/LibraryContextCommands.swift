@@ -27,10 +27,7 @@ struct LibraryContextCommands: View {
             .disabled(!model.signedIn)
 
             Menu("Selected Books") {
-                let books = model.selectedAudiobooks
-                LibraryRestartAction(model: model, books: books, inMenuBar: true)
-                Divider()
-                LibraryBookActions(model: model, books: books, inMenuBar: true)
+                LibraryBookActions(model: model, books: model.selectedAudiobooks, inMenuBar: true)
             }
             .disabled(model.selectedBooks.isEmpty)
 

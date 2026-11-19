@@ -4,7 +4,7 @@
 
 Click a column header to sort the table. Search by title, author, narrator, or ASIN. Click one book, then Command-click to add individual books to the selection. Shift-click selects a range.
 
-Use **Refresh Library** to fetch changes. In **Settings > Library**, choose whether to show podcast series or individual episodes, set a purchase date range, and change the number of results per request. Refresh after changing these options. **Audiobooks > Export Library** saves the loaded library as JSON, CSV, or TSV.
+Use **Audiobooks > Library > Refresh Library** to fetch changes. In **Settings > Library**, choose whether to show podcast series or individual episodes, set a purchase date range, and change the number of results per request. Refresh after changing these options. **Audiobooks > Library > Export Library** saves the loaded library as JSON, CSV, or TSV.
 
 ## Check library status
 
@@ -24,7 +24,7 @@ Use **Rescan Matched Folder** after putting more books in the folder. **Show Mat
 
 The **Download Status** column shows six states. **Downloaded** means at least one complete audio copy is in the archive. **Matched** means DownAudible can read the source you linked. **Incomplete** means part of the transfer is saved. **Files missing** means a recorded copy went away. **Not downloaded** means the book has yet to be saved. **Unavailable** means Audible is withholding the download.
 
-After moving or deleting a file, use **Recheck Saved Files** to refresh the status straight away. A warning beside a downloaded book can mean there is a missing companion file or another saved audio copy. Hover over the warning or read the row with VoiceOver to find out which file. Use **Download Selected As…** with the corresponding option to get that file back.
+After moving or deleting a file, choose **Audiobooks > Library > Recheck Saved Files** to refresh the status straight away. A warning beside a downloaded book can mean there is a missing companion file or another saved audio copy. Hover over the warning or read the row with VoiceOver to find out which file. Use **Download Selected As…** with the corresponding option to get that file back.
 
 **Download Missing** queues eligible books whose audio is missing, incomplete, or unsaved. **Download Entire Library** queues all titles in the loaded library, even when search is filtering the table. Use **Download Missing As…** or **Download Entire Library As…** to review what to save before starting. When a transfer repeatedly fails partway, Control-click its book and choose **Restart Incomplete Downloads…**.
 
