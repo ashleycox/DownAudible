@@ -27,3 +27,11 @@ Find the file with **Show Output in Finder** in Transfers. Books may require aut
 ## The main window is closed
 
 Choose **Window > Show DownAudible** to bring the main window back. Use the **View** menu to show or hide the sidebar and the library status bar. Choose **Help > Keyboard Shortcuts** for the full list of keys.
+
+---
+
+## Support DownAudible
+
+If this app has helped you, a donation is one way to support my work. There’s no pressure or hard sell. DownAudible is and always will be free.
+
+[Make a donation](https://www.paypal.com/donate/?hosted_button_id=WMLX4PLED9PRE)

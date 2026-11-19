@@ -4,6 +4,7 @@ import SwiftUI
 @main
 struct DownAudibleApp: App {
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openURL) private var openURL
     @NSApplicationDelegateAdaptor(DownAudibleAppDelegate.self) private var appDelegate
     @AppStorage("ShowsLibraryStatusBar") private var showsStatusBar = true
     @State private var model = WorkspaceModel()
@@ -129,6 +130,9 @@ struct DownAudibleApp: App {
                 }
                 .keyboardShortcut(",", modifiers: [.command, .option])
                 .disabled(showingOnboarding || model.downloadRequest != nil)
+                Divider()
+                Button("Donate…") { openURL(DownAudibleLinks.donation) }
+                    .keyboardShortcut("y", modifiers: [.command, .control])
             }
         }
 

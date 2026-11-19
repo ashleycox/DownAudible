@@ -24,3 +24,11 @@ Choose **Help > Set Up DownAudible…** to run setup again with your saved setti
 Use **View > Hide Sidebar** or **Show Sidebar** to change the layout. The **View** menu also opens **Library Status** and controls the status bar at the bottom of the library window.
 
 Choose **DownAudible > Settings** or press Command-comma to change the app’s defaults. Choose **Help > Keyboard Shortcuts** for a reference organised by task.
+
+---
+
+## Support DownAudible
+
+If this app has helped you, a donation is one way to support my work. There’s no pressure or hard sell. DownAudible is and always will be free.
+
+[Make a donation](https://www.paypal.com/donate/?hosted_button_id=WMLX4PLED9PRE)

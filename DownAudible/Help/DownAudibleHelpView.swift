@@ -63,17 +63,18 @@ private struct HelpArticleView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 12) {
                 Text(chapter.title)
                     .font(.largeTitle.bold())
                     .accessibilityAddTraits(.isHeader)
+                    .padding(.bottom, 4)
                 ForEach(chapter.paragraphs.indices, id: \.self) { index in
                     paragraph(chapter.paragraphs[index])
                 }
             }
             .textSelection(.enabled)
-            .frame(maxWidth: 720, alignment: .leading)
-            .padding(28)
+            .frame(maxWidth: 640, alignment: .leading)
+            .padding(24)
             .frame(maxWidth: .infinity, alignment: .center)
         }
     }
@@ -87,10 +88,30 @@ private struct HelpArticleView: View {
                 .accessibilityAddTraits(.isHeader)
                 .padding(.top, 8)
         case .body(let text):
-            Text(text)
-                .lineSpacing(3)
+            if let url = text.runs.first?.link, text.runs.allSatisfy({ $0.link == url }) {
+                Link(String(text.characters), destination: url)
+            } else {
+                Text(text)
+                    .lineSpacing(3)
+            }
+        case .orderedSteps(let steps):
+            Grid(alignment: .topLeading, horizontalSpacing: 8, verticalSpacing: 8) {
+                ForEach(steps.indices, id: \.self) { index in
+                    GridRow {
+                        Text("\(index + 1).")
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                        Text(steps[index])
+                            .lineSpacing(3)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+            }
         case .table(let table):
             HelpTableView(table: table)
+        case .divider:
+            Divider()
+                .padding(.top, 8)
         }
     }
 }
@@ -127,7 +148,9 @@ private struct HelpChapter: Identifiable {
     enum Paragraph {
         case heading(String)
         case body(AttributedString)
+        case orderedSteps([AttributedString])
         case table(MarkdownTable)
+        case divider
     }
 
     struct MarkdownTable {
@@ -175,12 +198,25 @@ private struct HelpChapter: Identifiable {
         guard let heading = blocks.first, heading.hasPrefix("# ") else { return nil }
         self.id = id
         title = String(heading.dropFirst(2))
-        searchableText = normalized
+        let footerStart = blocks.lastIndex(of: "## Support DownAudible") ?? blocks.endIndex
+        searchableText = blocks[..<footerStart].joined(separator: "\n\n")
         paragraphs = blocks.dropFirst().map { block in
             if block.hasPrefix("## ") { return .heading(String(block.dropFirst(3))) }
+            if block == "---" { return .divider }
             if let table = MarkdownTable(block) { return .table(table) }
+            if let steps = Self.orderedSteps(block) { return .orderedSteps(steps) }
             return .body(Self.inlineMarkdown(block))
         }
+    }
+
+    private static func orderedSteps(_ block: String) -> [AttributedString]? {
+        let lines = block.split(separator: "\n")
+        let steps = lines.enumerated().compactMap { index, line -> AttributedString? in
+            let prefix = "\(index + 1). "
+            guard line.hasPrefix(prefix) else { return nil }
+            return inlineMarkdown(String(line.dropFirst(prefix.count)))
+        }
+        return !steps.isEmpty && steps.count == lines.count ? steps : nil
     }
 
     private static func inlineMarkdown(_ text: String) -> AttributedString {

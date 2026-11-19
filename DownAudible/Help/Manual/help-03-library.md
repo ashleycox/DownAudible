@@ -29,3 +29,11 @@ After moving or deleting a file, use **Recheck Saved Files** to refresh the stat
 **Download Missing** queues eligible books whose audio is missing, incomplete, or unsaved. **Download Entire Library** queues all titles in the loaded library, even when search is filtering the table. Use **Download Missing As…** or **Download Entire Library As…** to review what to save before starting. When a transfer repeatedly fails partway, Control-click its book and choose **Restart Incomplete Downloads…**.
 
 Use **Show Audio in Finder** to locate a selected book’s files. **Add to Apple Books** lets you send original files, M4Bs, or other supported audio already on disk. **Copy Title** and **Copy ASIN** put book details on the clipboard.
+
+---
+
+## Support DownAudible
+
+If this app has helped you, a donation is one way to support my work. There’s no pressure or hard sell. DownAudible is and always will be free.
+
+[Make a donation](https://www.paypal.com/donate/?hosted_button_id=WMLX4PLED9PRE)

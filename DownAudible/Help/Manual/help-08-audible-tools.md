@@ -13,3 +13,11 @@ Choose **Account** in Audible Tools to look up the eight-character activation co
 In the same tab, choose **Export Encrypted Account File…** to move a session to Audible CLI or another copy of DownAudible. Enter and confirm a password, then click **Save Encrypted File…**. Keep the file and its password somewhere private.
 
 To download annotations and chapter data for library books, choose those files in the download sheet or set them as defaults in **Settings > Downloads**.
+
+---
+
+## Support DownAudible
+
+If this app has helped you, a donation is one way to support my work. There’s no pressure or hard sell. DownAudible is and always will be free.
+
+[Make a donation](https://www.paypal.com/donate/?hosted_button_id=WMLX4PLED9PRE)

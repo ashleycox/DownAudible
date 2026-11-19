@@ -24,3 +24,11 @@ Choose how to handle spaces and letter case. Leave them alone to keep the source
 ## Apple Books
 
 Choose **Settings > Downloads > Apple Books** to send newly saved files to the Books app after a transfer. Select **Original Audible file** or **M4B**. For M4B, enable conversion and select M4B in **Settings > Conversion**. Books may ask you to authorise an original Audible file. Check the transfer result if Books cannot open it.
+
+---
+
+## Support DownAudible
+
+If this app has helped you, a donation is one way to support my work. There’s no pressure or hard sell. DownAudible is and always will be free.
+
+[Make a donation](https://www.paypal.com/donate/?hosted_button_id=WMLX4PLED9PRE)

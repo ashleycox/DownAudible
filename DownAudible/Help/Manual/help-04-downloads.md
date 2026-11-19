@@ -21,3 +21,11 @@ Some titles come as several files. DownAudible can keep those parts and combine 
 Under **Settings > Downloads**, choose what to save, which cover sizes to request, and whether chapter JSON uses a nested or flat list. Leave all cover sizes unchecked to use the largest image Audible provides. Starting a download from an **As…** sheet also saves your choices for later.
 
 **Download Missing** includes audio even if your saved options only include companion material. Set your default destination and folder template under **Settings > Files**.
+
+---
+
+## Support DownAudible
+
+If this app has helped you, a donation is one way to support my work. There’s no pressure or hard sell. DownAudible is and always will be free.
+
+[Make a donation](https://www.paypal.com/donate/?hosted_button_id=WMLX4PLED9PRE)

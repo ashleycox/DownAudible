@@ -25,3 +25,11 @@ For MP3, **Constant (CBR)** keeps one bitrate throughout the file. **Variable (V
 For Apple Books, use one M4B and keep chapter markers on. For a player that sorts MP3 files by filename, choose MP3 and **Separate chapter files**. Put `{chapterNumber}` before `{chapter}` in the chapter filename template to sort the tracks in order.
 
 If a player requires mono or a particular sample rate, set **Channels** and **Sample rate** before starting. At low MP3 sample rates, some high bitrates are unavailable. Use a lower bitrate or a higher sample rate if Settings flags the combination.
+
+---
+
+## Support DownAudible
+
+If this app has helped you, a donation is one way to support my work. There’s no pressure or hard sell. DownAudible is and always will be free.
+
+[Make a donation](https://www.paypal.com/donate/?hosted_button_id=WMLX4PLED9PRE)

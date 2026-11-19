@@ -73,10 +73,13 @@ extension ArchiveLayout {
     }
 }
 
-struct AboutView: View {
-    private let repository = URL(string: "https://github.com/ashleycox/DownAudible")!
-    private let website = URL(string: "https://ashleycox.co.uk")!
+enum DownAudibleLinks {
+    static let repository = URL(string: "https://github.com/ashleycox/DownAudible")!
+    static let website = URL(string: "https://ashleycox.co.uk")!
+    static let donation = URL(string: "https://www.paypal.com/donate/?hosted_button_id=WMLX4PLED9PRE")!
+}
 
+struct AboutView: View {
     var body: some View {
         VStack(spacing: 8) {
             Image(nsImage: NSApplication.shared.applicationIconImage)
@@ -88,13 +91,22 @@ struct AboutView: View {
                 .font(.title2.bold())
             Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0")")
                 .foregroundStyle(.secondary)
-            Link("Developed by Ashley Cox", destination: website)
+            Link("Developed by Ashley Cox", destination: DownAudibleLinks.website)
                 .keyboardShortcut("w", modifiers: [.control, .shift])
                 .padding(.top, 8)
-            Link("View on GitHub", destination: repository)
+            Link("View on GitHub", destination: DownAudibleLinks.repository)
                 .keyboardShortcut("g", modifiers: [.control, .shift])
+            Divider()
+                .padding(.vertical, 4)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("If this app has helped you, a donation is one way to support my work. There’s no pressure or hard sell. DownAudible is and always will be free.")
+                    .fixedSize(horizontal: false, vertical: true)
+                Link("Make a donation", destination: DownAudibleLinks.donation)
+            }
+            .font(.callout)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(32)
-        .frame(minWidth: 300)
+        .padding(24)
+        .frame(width: 380)
     }
 }

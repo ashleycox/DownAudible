@@ -19,3 +19,11 @@ Open **Settings > Jobs** to set simultaneous downloads and conversions. Lower th
 ## Keep a log
 
 In **Settings > Jobs**, choose **Errors only** to keep warnings and errors or **Transfer results** to include completed jobs. Click **Choose…** to write the log somewhere else. **Use Default Location** returns the log to DownAudible’s folder in Application Support.
+
+---
+
+## Support DownAudible
+
+If this app has helped you, a donation is one way to support my work. There’s no pressure or hard sell. DownAudible is and always will be free.
+
+[Make a donation](https://www.paypal.com/donate/?hosted_button_id=WMLX4PLED9PRE)

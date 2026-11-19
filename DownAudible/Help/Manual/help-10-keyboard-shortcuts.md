@@ -21,6 +21,7 @@ Menu shortcuts work when their commands are available. Open the named page, wind
 | DownAudible Help | Shift–Command–Slash |
 | Keyboard Shortcuts | Option–Command–Slash |
 | Set Up DownAudible… | Option–Command–Comma |
+| Donate… | Control–Command–Y |
 | Open the developer’s website from About DownAudible | Control–Shift–W |
 | View on GitHub from About DownAudible | Control–Shift–G |
 
@@ -196,3 +197,11 @@ Turn on **Keyboard navigation** in **System Settings > Keyboard** to move throug
 | Choose the highlighted menu item | Return |
 | Close a menu | Escape |
 | Focus the macOS menu bar | Control–F2, or Fn–Control–F2 on some keyboards |
+
+---
+
+## Support DownAudible
+
+If this app has helped you, a donation is one way to support my work. There’s no pressure or hard sell. DownAudible is and always will be free.
+
+[Make a donation](https://www.paypal.com/donate/?hosted_button_id=WMLX4PLED9PRE)

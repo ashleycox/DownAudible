@@ -1,6 +1,12 @@
 # DownAudible
 
-DownAudible backs up your Audible library on a Mac. Keep the original downloads, or convert them to M4B, M4A, or MP3. You can keep a book in one file or save each chapter separately.
+DownAudible backs up your Audible library on a Mac. Keep the original DRM-protected Audible files, or convert them to M4B, M4A, or MP3 and play them on any device. You can keep a book in one file or save each chapter separately.
+
+## Why I built DownAudible
+
+I built DownAudible one morning after discovering Audible had removed the download button from their website, removing access to the books we bought and paid for. I have been an Audible user for years and have amassed a library of thousands of books.
+
+I refuse to use the Audible app. It is an atrocity, especially on macOS. We must all fight against our right to ownership being stripped from us. I have spent thousands of pounds over many years building a library of books, and I will do with them as I please within the remit of legal personal use. If you pay for something without the explicit knowledge that you are renting it, you should own access to it, even if the product is digital.
 
 ## Build and run
 
@@ -9,7 +15,9 @@ You’ll need an Apple silicon Mac, Xcode 27.2, and uv. DownAudible targets macO
 Open `DownAudible.xcodeproj`, choose the **DownAudible** scheme, and press Command-R. To build from Terminal, run
 
 ```sh
-xcodebuild -scheme DownAudible -configuration Debug -derivedDataPath DerivedData build
+xcodebuild -scheme DownAudible \
+  -configuration Debug \
+  -derivedDataPath DerivedData build
 open DerivedData/Build/Products/Debug/DownAudible.app
 ```
 
@@ -26,7 +34,7 @@ Setup opens the first time you run DownAudible. Use it to connect an account, ch
 
 **Audiobooks → Audible Tools** opens the wish list, catalogue search, activation bytes, and encrypted Audible CLI account export for the current account. Use **Export Library** to save the displayed library as JSON, CSV, or TSV.
 
-**View → Library Status** shows which books need audio, which are downloaded or matched, and which Audible lists as unavailable. The **View** menu also controls the sidebar and the library status bar. Open **Help → Keyboard Shortcuts** for the keyboard reference.
+**View → Library Status** shows which books need audio, which are downloaded or matched, and which Audible lists as unavailable. The **View** menu also controls the sidebar and the library status bar.
 
 ## Conversion and file names
 
@@ -34,7 +42,9 @@ To convert existing files, drag them into **Convert Files** or choose **Add File
 
 Folder and filename templates are independent. The default folder template, `{format}/{author}/{title}`, groups original and converted formats separately. For chapter filenames you might use `{title} - {chapterNumber} - {chapter}`. Settings shows a preview as you edit.
 
-Open **Help → DownAudible Help** for the chapterised manual, including steps for recovering a batch, fixing missing files, and using Audible CLI profiles. [Browse manual chapters](DownAudible/Help/Manual)
+## Manual and keyboard shortcuts
+
+Open **Help → DownAudible Help** for the manual, including steps for recovering a batch, fixing missing files, and using Audible CLI profiles. **Help → Keyboard Shortcuts** opens the keyboard reference. [Browse manual chapters](DownAudible/Help/Manual) · [Keyboard shortcuts](DownAudible/Help/Manual/help-10-keyboard-shortcuts.md)
 
 ## Checks
 
@@ -42,8 +52,12 @@ Run the archive checks and the Audible helper’s mocked network tests without s
 
 ```sh
 Scripts/check-archive.sh
-PYTHONPATH=Scripts/Audible UV_PROJECT_ENVIRONMENT=.build/audible-tests \
-  uv run --project Scripts/Audible --locked --python 3.13 python -m unittest discover -s Scripts/Audible/tests
+PYTHONPATH=Scripts/Audible \
+  UV_PROJECT_ENVIRONMENT=.build/audible-tests \
+  uv run --project Scripts/Audible \
+  --locked --python 3.13 \
+  python -m unittest discover \
+  -s Scripts/Audible/tests
 ```
 
 ## Credits
@@ -53,3 +67,7 @@ Ashley Cox develops DownAudible. The source is licensed under the GNU Affero Gen
 The Audible helper uses mkb79’s Audible library and draws on Audible CLI. Libation and AAX Audio Converter were references for the download and conversion workflow. [Audible](https://github.com/mkb79/Audible) · [Audible CLI](https://github.com/mkb79/audible-cli) · [Libation](https://github.com/rmcrackan/Libation) · [AAX Audio Converter](https://github.com/audiamus/AaxAudioConverter)
 
 The build script pins and builds the bundled FFmpeg and LAME sources. [FFmpeg](https://ffmpeg.org/) · [LAME](https://lame.sourceforge.io/) · [Build script](Scripts/prepare-media.sh)
+
+## Support DownAudible
+
+If this app has helped you and you’d like to support my work, you can [make a donation](https://www.paypal.com/donate/?hosted_button_id=WMLX4PLED9PRE). There’s no pressure or hard sell. DownAudible is and always will be free.
