@@ -131,6 +131,10 @@ nonisolated struct AudibleBook: Codable, Identifiable, Hashable, Sendable {
     let releaseDate: String?
     let purchaseDate: String?
     let dateAdded: String?
+    let rating: Double?
+    let ratingCount: Int?
+    let isFinished: Bool?
+    let percentComplete: Double?
     let durationSeconds: Int?
     let coverURL: URL?
     let coverImages: [String: URL]?
@@ -184,6 +188,9 @@ nonisolated enum AudibleError: String, Decodable, LocalizedError {
     case activation, activationRequired, authorization, fileAccess, invalidRedirect, keychain, network
     case notSignedIn, service, signInFailed, unavailable, voucherMissing, helperMissing
     case authImport, cliConfig, importPassword, importMarketplace, unsupportedLegacySignIn
+    case exportPassword
+
+    var isRetryable: Bool { self == .network }
 
     var errorDescription: String? {
         switch self {
@@ -205,6 +212,7 @@ nonisolated enum AudibleError: String, Decodable, LocalizedError {
         case .importPassword: "Enter the password used to encrypt this Audible CLI authentication file."
         case .importMarketplace: "Choose the Audible marketplace for this authentication file."
         case .unsupportedLegacySignIn: "Audible username sign-in is available in the United Kingdom, United States and Germany."
+        case .exportPassword: "Enter a password to protect the account file."
         }
     }
 }
@@ -297,6 +305,41 @@ nonisolated struct AudibleClient: Sendable {
 
     @concurrent func library() async throws -> [AudibleBook] {
         try await run(.init(command: .library, session: session()))
+    }
+
+    @concurrent func wishlist() async throws -> [AudibleBook] {
+        try await run(.init(command: .wishlist, session: session()))
+    }
+
+    @concurrent func searchCatalog(_ query: String) async throws -> [AudibleBook] {
+        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return [] }
+        return try await run(.init(command: .catalog, session: session(), query: query))
+    }
+
+    @concurrent func addToWishlist(_ asins: [String]) async throws -> [String] {
+        try await run(.init(command: .wishlistAdd, session: session(), asins: asins))
+    }
+
+    @concurrent func removeFromWishlist(_ asins: [String]) async throws -> [String] {
+        try await run(.init(command: .wishlistRemove, session: session(), asins: asins))
+    }
+
+    @concurrent func activationBytes(refresh: Bool = false) async throws -> String {
+        let snapshot = try session()
+        let result: Activation = try await run(.init(
+            command: .activation, session: snapshot, refreshActivation: refresh
+        ))
+        try Task.checkCancellation()
+        try vault.updateSession(from: Data(snapshot.utf8), to: Data(result.session.utf8), for: sessionAccount)
+        return result.activationBytes
+    }
+
+    @concurrent func exportEncryptedAuthFile(to destination: URL, password: String) async throws {
+        guard !password.isEmpty else { throw AudibleError.exportPassword }
+        let contents: String = try await run(.init(command: .exportAuthFile, session: session(), password: password))
+        try Task.checkCancellation()
+        try Data(contents.utf8).write(to: destination, options: .atomic)
     }
 
     @concurrent func chapters(for book: AudibleBook) async throws -> [AudibleChapter] {
@@ -399,16 +442,11 @@ nonisolated struct AudibleClient: Sendable {
             }
             throw AudibleError.voucherMissing
         case "aax":
-            let snapshot: String
             do {
-                snapshot = try session()
+                return AudibleConversionCredentials(activationBytes: try await activationBytes())
             } catch AudibleError.notSignedIn {
                 throw AudibleError.activationRequired
             }
-            let result: Activation = try await run(.init(command: .activation, session: snapshot))
-            try Task.checkCancellation()
-            try vault.updateSession(from: Data(snapshot.utf8), to: Data(result.session.utf8), for: sessionAccount)
-            return AudibleConversionCredentials(activationBytes: result.activationBytes)
         default:
             return AudibleConversionCredentials()
         }
@@ -466,11 +504,15 @@ private nonisolated struct Request: Encodable, Sendable {
     enum Command: String, Encodable, Sendable {
         case beginSignIn, completeSignIn, library, download, chapters, extras, jsonExtras, activation, voucher
         case cliProfiles, inspectAuthFile, importAuthFile
+        case wishlist, catalog, wishlistAdd, wishlistRemove, exportAuthFile
     }
 
     let command: Command
     var marketplace: String?
     var session: String?
+    var query: String?
+    var asins: [String]?
+    var refreshActivation: Bool?
     var redirect: String?
     var serial: String?
     var verifier: String?

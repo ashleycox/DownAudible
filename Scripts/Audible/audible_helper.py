@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import math
 import os
 import re
 import sys
@@ -20,8 +21,6 @@ from audible.login import build_oauth_url, create_code_verifier
 from audible.register import register
 from audible_cli.config import ConfigFile
 from audible_cli.constants import (
-    AAX_CONTENT_TYPES,
-    AAXC_CONTENT_TYPES,
     AVAILABLE_MARKETPLACES,
 )
 from audible_cli.exceptions import (
@@ -30,29 +29,25 @@ from audible_cli.exceptions import (
     NoDownloadUrl,
     NotDownloadableAsAAX,
 )
-from audible_cli.models import Library, LibraryItem
+from audible_cli.models import Catalog, Library, LibraryItem, Wishlist
 from audible_cli.utils import parse_api_datetime
 from bs4 import BeautifulSoup
+from download_transfer import (
+    FormatUnavailable,
+    OperationError,
+    PartsRequired,
+    fingerprint,
+    stream_file,
+)
 
 WIRE = sys.stdout
 AUTHORIZATION_CODE = "openid.oa2.authorization_code"
-CHUNK_SIZE = 256 * 1024
 PAGE_SIZE = 100
 DOWNLOAD_USER_AGENT = "Audible/671 CFNetwork/1240.0.4 Darwin/20.6.0"
-
-
-class OperationError(Exception):
-    def __init__(self, code):
-        super().__init__(code)
-        self.code = code
-
-
-class PartsRequired(Exception):
-    pass
-
-
-class FormatUnavailable(Exception):
-    pass
+CATALOG_FIELDS = (
+    "contributors, media, product_attrs, product_desc, product_extended_attrs, "
+    "series, rating, categories, category_ladders, relationships"
+)
 
 
 def emit(**message):
@@ -221,11 +216,22 @@ def plain_text(text):
     )
 
 
+def numeric_value(value, convert):
+    try:
+        if value is not None:
+            result = convert(value)
+            return result if math.isfinite(result) else None
+    except (TypeError, ValueError, OverflowError):
+        pass
+    return None
+
+
 def represent_book(item):
     series = next(iter(item.series or []), {})
     duration_minutes = item.runtime_length_min
     rights = item.customer_rights or {}
     library_status = item.library_status or {}
+    rating = (item.rating or {}).get("overall_distribution") or {}
     genres = (
         entry["name"]
         for category in item.category_ladders or []
@@ -248,7 +254,11 @@ def represent_book(item):
         "genres": list(dict.fromkeys(genres)),
         "releaseDate": item.release_date,
         "purchaseDate": item.purchase_date,
-        "dateAdded": library_status.get("date_added"),
+        "dateAdded": library_status.get("date_added") or item.added_timestamp,
+        "rating": numeric_value(rating.get("display_average_rating"), float),
+        "ratingCount": numeric_value(rating.get("num_ratings"), int),
+        "isFinished": item.is_finished if isinstance(item.is_finished, bool) else None,
+        "percentComplete": numeric_value(item.percent_complete, float),
         "durationSeconds": int(duration_minutes) * 60
         if duration_minutes is not None
         else None,
@@ -350,6 +360,63 @@ async def library_item(client, asin, image_sizes=None):
     return LibraryItem(response, client)
 
 
+def catalog_entries(items):
+    books = {}
+    for item in items:
+        if item.asin and item.title:
+            books[item.asin] = {**represent_book(item), "isDownloadable": False}
+    return list(books.values())
+
+
+async def catalog_search(client, text):
+    text = text.strip()
+    if not text:
+        return []
+    if re.fullmatch(r"[A-Za-z0-9]{10}", text):
+        try:
+            response = await client.get(
+                f"catalog/products/{text.upper()}",
+                response_groups=CATALOG_FIELDS,
+            )
+        except NotFoundError:
+            pass
+        else:
+            exact = catalog_entries(
+                [LibraryItem(response.get("product") or {}, client)]
+            )
+            if exact:
+                return exact
+    matches = await Catalog.from_api(
+        client,
+        title=text[:200],
+        num_results=50,
+        response_groups=CATALOG_FIELDS,
+    )
+    return catalog_entries(matches)
+
+
+async def edit_wishlist(client, command, asins):
+    failed = []
+    # Audible can throttle bursts of Wishlist requests.
+    for asin in dict.fromkeys(asins):
+        if not re.fullmatch(r"[A-Za-z0-9]{10}", asin):
+            failed.append(asin)
+            continue
+        try:
+            if command == "wishlistAdd":
+                await client.post("wishlist", body={"asin": asin})
+            else:
+                await client.delete(f"wishlist/{asin}")
+        except Unauthorized:
+            raise
+        except NotFoundError:
+            if command == "wishlistAdd":
+                failed.append(asin)
+        except (RequestError, httpx.HTTPError):
+            failed.append(asin)
+    return failed
+
+
 def chapters_from(metadata):
     chapter_info = (metadata.get("content_metadata") or {}).get("chapter_info") or {}
     if chapter_info.get("is_accurate") is False:
@@ -392,127 +459,6 @@ def web_cookies(auth):
     return cookies
 
 
-def artifact_matches(prefix, content_type, kind):
-    if kind == "aax":
-        return (
-            content_type in (*AAX_CONTENT_TYPES, "application/octet-stream")
-            and prefix[4:8] == b"ftyp"
-        )
-    if kind == "aaxc":
-        return (
-            content_type in (*AAXC_CONTENT_TYPES, "application/octet-stream")
-            and prefix[4:8] == b"ftyp"
-        )
-    if kind == "mp3":
-        return content_type in (*AAXC_CONTENT_TYPES, "application/octet-stream") and (
-            prefix.startswith(b"ID3")
-            or (len(prefix) >= 2 and prefix[0] == 0xFF and prefix[1] & 0xE0 == 0xE0)
-        )
-    if kind == "pdf":
-        return b"%PDF-" in prefix[:1024]
-    return image_extension(prefix) is not None
-
-
-def image_extension(prefix):
-    if prefix.startswith(b"\xff\xd8\xff"):
-        return "jpg"
-    if prefix.startswith(b"\x89PNG\r\n\x1a\n"):
-        return "png"
-    if prefix.startswith(b"RIFF") and prefix[8:12] == b"WEBP":
-        return "webp"
-    if prefix.startswith((b"GIF87a", b"GIF89a")):
-        return "gif"
-    return None
-
-
-@contextlib.asynccontextmanager
-async def artifact_response(web, url, api):
-    url = httpx.URL(url)
-    trusted = set()
-    if api is not None:
-        domain = api.auth.locale.domain
-        trusted = {f"{service}.audible.{domain}" for service in ("www", "cds", "api")}
-
-    for _ in range(10):
-        if (
-            url.scheme != "https"
-            or url.username
-            or url.password
-            or url.port not in (None, 443)
-        ):
-            raise FormatUnavailable()
-        client = api.session if url.host in trusted else web
-        # The CDN URL normally contains its own token. Keep account signing
-        # headers on Audible's hosts when a response redirects to the CDN.
-        async with client.stream("GET", url, follow_redirects=False) as response:
-            if response.has_redirect_location:
-                url = response.url.join(response.headers["location"])
-            else:
-                yield response
-                return
-    raise OperationError("network")
-
-
-async def stream_file(web, url, target, kind, progress=None, *, api=None, bandwidth=0):
-    async with artifact_response(web, url, api) as response:
-        if response.status_code in (400, 403, 404, 410):
-            raise FormatUnavailable()
-        response.raise_for_status()
-        chunk_size = (
-            min(CHUNK_SIZE, max(4096, bandwidth // 4)) if bandwidth else CHUNK_SIZE
-        )
-        iterator = response.aiter_bytes(chunk_size=chunk_size)
-        first = await anext(iterator, b"")
-        content_type = (
-            response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
-        )
-        if not artifact_matches(first, content_type, kind):
-            if b"please download individual parts" in first.lower():
-                raise PartsRequired()
-            raise FormatUnavailable()
-
-        if kind == "cover":
-            target = target.with_suffix("." + image_extension(first))
-        intermediate = target.with_name(target.name + ".partial")
-        length = response.headers.get("content-length", "")
-        expected = (
-            int(length)
-            if length.isdecimal()
-            and response.headers.get("content-encoding", "identity") == "identity"
-            else 0
-        )
-        written = 0
-        last_update = -1
-        now = asyncio.get_running_loop().time
-        started = now()
-
-        try:
-            with intermediate.open("xb") as output:
-                data = first
-                while data:
-                    output.write(data)
-                    written += len(data)
-                    if bandwidth:
-                        delay = started + written / bandwidth - now()
-                        if delay > 0:
-                            await asyncio.sleep(delay)
-                    if progress and expected:
-                        percent = min(99, int(written * 100 / expected))
-                        if percent > last_update:
-                            progress(percent / 100)
-                            last_update = percent
-                    data = await anext(iterator, b"")
-            if expected and written != expected:
-                raise OperationError("network")
-            intermediate.rename(target)
-        finally:
-            intermediate.unlink(missing_ok=True)
-
-    if progress:
-        progress(1.0)
-    return target
-
-
 def conversion_credentials(license_response):
     voucher = license_response.get("content_license", {}).get("license_response", {})
     if not isinstance(voucher, dict):
@@ -529,7 +475,9 @@ def conversion_credentials(license_response):
 
 async def download_part(item, client, web, folder, progress, options):
     if (
-        not (item.customer_rights or {}).get("is_consumable_offline", True)
+        not isinstance(item.asin, str)
+        or not re.fullmatch(r"[A-Za-z0-9]{10}", item.asin)
+        or not (item.customer_rights or {}).get("is_consumable_offline", True)
         or not item.is_published()
     ):
         raise OperationError("unavailable")
@@ -541,7 +489,7 @@ async def download_part(item, client, web, folder, progress, options):
     )
     for find_aax_url in aax_providers:
         try:
-            url, _ = await find_aax_url(quality)
+            url, codec = await find_aax_url(quality)
             target = await stream_file(
                 web,
                 url,
@@ -550,6 +498,7 @@ async def download_part(item, client, web, folder, progress, options):
                 progress,
                 api=client,
                 bandwidth=bandwidth,
+                representation=fingerprint("aax", quality, codec),
             )
             return {"file": target.name, "asin": item.asin, "credentials": {}}
         except NotDownloadableAsAAX:
@@ -561,6 +510,12 @@ async def download_part(item, client, web, folder, progress, options):
         raise OperationError("unavailable")
     url, codec, voucher = await item.get_aaxc_url(quality)
     extension = "mp3" if codec.lower() == "mpeg" else "aaxc"
+    credentials = conversion_credentials(voucher)
+    representation = (
+        fingerprint(extension, quality, codec, credentials)
+        if credentials or extension == "mp3"
+        else None
+    )
     target = await stream_file(
         web,
         url,
@@ -569,11 +524,12 @@ async def download_part(item, client, web, folder, progress, options):
         progress,
         api=client,
         bandwidth=bandwidth,
+        representation=representation,
     )
     return {
         "file": target.name,
         "asin": item.asin,
-        "credentials": conversion_credentials(voucher),
+        "credentials": credentials,
     }
 
 
@@ -725,9 +681,19 @@ async def execute(request):
     timeout = max(0, min(600, options.get("timeout", 45))) or None
     quality = options.get("quality", "best")
     auth = audible.Authenticator.from_dict(json.loads(request["session"]))
+    if command == "exportAuthFile":
+        password = request.get("password")
+        if not password:
+            raise OperationError("exportPassword")
+        encrypted = AESCipher(password, kdf_iterations=65535).to_dict(
+            session_json(auth)
+        )
+        return json.dumps(encrypted, indent=2) + "\n"
     if command == "activation":
         try:
-            activation = auth.get_activation_bytes()
+            activation = auth.get_activation_bytes(
+                force_refresh=request.get("refreshActivation", False)
+            )
         except httpx.RequestError:
             raise
         except Exception as error:
@@ -747,6 +713,13 @@ async def execute(request):
     ) as client:
         if command == "library":
             return await list_books(client, options)
+        if command == "wishlist":
+            items = await Wishlist.from_api(client, response_groups=CATALOG_FIELDS)
+            return catalog_entries(items)
+        if command == "catalog":
+            return await catalog_search(client, request["query"])
+        if command in ("wishlistAdd", "wishlistRemove"):
+            return await edit_wishlist(client, command, request["asins"])
         asin = request["asin"]
         if not re.fullmatch(r"[A-Za-z0-9]{10}", asin):
             raise OperationError("unavailable")

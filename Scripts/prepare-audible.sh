@@ -16,7 +16,7 @@ source_root="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 helper="$source_root/Scripts/Audible"
 cache_root="${PROJECT_TEMP_DIR:-$source_root/.build}/downaudible-audible"
 destination="$1"
-source_hash="$(cat "$0" "$helper/audible_helper.py" "$helper/pyproject.toml" "$helper/uv.lock" | shasum -a 256 | cut -d ' ' -f 1)"
+source_hash="$(cat "$0" "$helper/"*.py "$helper/pyproject.toml" "$helper/uv.lock" | shasum -a 256 | cut -d ' ' -f 1)"
 
 if [[ ! -f "$cache_root/built-hash" || $(cat "$cache_root/built-hash") != "$source_hash" || ! -x "$cache_root/out/audible-helper/audible-helper" ]]; then
     mkdir -p "$cache_root"
