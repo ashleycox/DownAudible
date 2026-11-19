@@ -29,7 +29,14 @@ xcodebuild -scheme DownAudible \
 open DerivedData/Build/Products/Debug/DownAudible.app
 ```
 
-Automatic signing is enabled. The checked-in settings sign builds to run locally. To use your Apple development team, put `DEVELOPMENT_TEAM` and `CODE_SIGN_IDENTITY = Apple Development` in `Signing.local.xcconfig` beside `App.xcconfig`. Git ignores the local file.
+Automatic signing is enabled. The checked-in settings sign builds to run locally. To use your Apple development team, sign in under **Xcode > Settings > Accounts**, then create `Signing.local.xcconfig` beside `App.xcconfig` with your Team ID.
+
+```xcconfig
+DEVELOPMENT_TEAM = YOUR_TEAM_ID
+CODE_SIGN_IDENTITY = Apple Development
+```
+
+Git ignores this file. Set the team here so Xcode leaves the shared project file free of team-specific settings. Xcode uses the signing identities in your Keychain or Apple’s signing service.
 
 ## Start with your library
 
