@@ -26,6 +26,29 @@ For Apple Books, use one M4B and keep chapter markers on. For a player that sort
 
 If a player requires mono or a particular sample rate, set **Channels** and **Sample rate** before starting. At low MP3 sample rates, some high bitrates are unavailable. Use a lower bitrate or a higher sample rate if Settings flags the combination.
 
+## Related chapters
+
+[Downloading Books](help-04-downloads.md)
+
+[Naming and Folders](help-06-files.md)
+
+[Audible Tools](help-08-audible-tools.md)
+
+## Keyboard Shortcuts
+
+| Command | Shortcut |
+| --- | --- |
+| Convert Files | Command–3 |
+| Add Files… | Command–O |
+| Add Folder… | Shift–Command–O |
+| Choose a destination folder | Control–Shift–Y |
+| Conversion Options… | Control–Shift–O |
+| Convert All / Convert Selected | Control–Shift–V |
+| Show in Finder | Control–Shift–S |
+| Add to Apple Books | Control–Shift–B |
+
+[See all keyboard shortcuts](help-10-keyboard-shortcuts.md)
+
 ---
 
 ## Support DownAudible

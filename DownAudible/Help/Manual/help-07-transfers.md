@@ -20,6 +20,29 @@ Open **Settings > Jobs** to set simultaneous downloads and conversions. Lower th
 
 In **Settings > Jobs**, choose **Errors only** to keep warnings and errors or **Transfer results** to include completed jobs. Click **Choose…** to write the log somewhere else. **Use Default Location** returns the log to DownAudible’s folder in Application Support.
 
+## Related chapters
+
+[Downloading Books](help-04-downloads.md)
+
+[Troubleshooting](help-09-troubleshooting.md)
+
+## Keyboard Shortcuts
+
+| Command | Shortcut |
+| --- | --- |
+| Transfers | Command–2 |
+| Cancel Batch | Control–Command–Period |
+| Retry Incomplete | Option–Command–R |
+| Restart Incomplete Downloads | Control–Command–R |
+| Retry Selected Transfers | Control–Shift–R |
+| Restart Selected Downloads… | Control–Shift–D |
+| Show Output in Finder | Control–Shift–F |
+| Show Partial Files | Control–Shift–P |
+| Copy Error / Copy Errors | Control–Shift–E |
+| Clear Completed | Control–Command–K |
+
+[See all keyboard shortcuts](help-10-keyboard-shortcuts.md)
+
 ---
 
 ## Support DownAudible

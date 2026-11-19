@@ -22,6 +22,28 @@ Under **Settings > Downloads**, choose what to save, which cover sizes to reques
 
 **Download Missing** includes audio even if your saved options only include companion material. Set your default destination and folder template under **Settings > Files**.
 
+## Related chapters
+
+[Converting Audio](help-05-conversion.md)
+
+[Naming and Folders](help-06-files.md)
+
+[Transfers and Recovery](help-07-transfers.md)
+
+## Keyboard Shortcuts
+
+| Command | Shortcut |
+| --- | --- |
+| Download Selected | Command–D |
+| Download Selected As… | Option–Command–D |
+| Download Missing | Shift–Command–D |
+| Download Missing As… | Option–Shift–Command–D |
+| Download Entire Library | Shift–Command–L |
+| Download Entire Library As… | Option–Shift–Command–L |
+| Download or Restart from the sheet | Return |
+
+[See all keyboard shortcuts](help-10-keyboard-shortcuts.md)
+
 ---
 
 ## Support DownAudible

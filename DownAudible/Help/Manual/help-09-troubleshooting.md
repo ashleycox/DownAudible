@@ -26,7 +26,33 @@ Find the file with **Show Output in Finder** in Transfers. Books may require aut
 
 ## The main window is closed
 
-Choose **Window > Show DownAudible** to bring the main window back. Use the **View** menu to show or hide the sidebar and the library status bar. Choose **Help > Keyboard Shortcuts** for the full list of keys.
+Choose **Window > Show DownAudible** to bring the main window back. Use the **View** menu to show or hide the sidebar and the library status bar.
+
+## Related chapters
+
+[Accounts and Sign-In](help-02-accounts.md)
+
+[Library and File Matching](help-03-library.md)
+
+[Converting Audio](help-05-conversion.md)
+
+[Transfers and Recovery](help-07-transfers.md)
+
+## Keyboard Shortcuts
+
+| Command | Shortcut |
+| --- | --- |
+| Open Sign-In Page from the sign-in sheet | Control–Shift–B |
+| Refresh Library | Command–R |
+| Recheck Saved Files | Shift–Command–R |
+| Match Existing Folder… | Control–Shift–F |
+| Download Missing | Shift–Command–D |
+| Retry Selected Transfers | Control–Shift–R |
+| Restart Selected Downloads… | Control–Shift–D |
+| Show Output in Finder from Transfers | Control–Shift–F |
+| Show DownAudible | Control–Command–0 |
+
+[See all keyboard shortcuts](help-10-keyboard-shortcuts.md)
 
 ---
 

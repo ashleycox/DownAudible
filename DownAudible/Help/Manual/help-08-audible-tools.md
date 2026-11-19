@@ -14,6 +14,30 @@ In the same tab, choose **Export Encrypted Account File…** to move a session t
 
 To download annotations and chapter data for library books, choose those files in the download sheet or set them as defaults in **Settings > Downloads**.
 
+## Related chapters
+
+[Accounts and Sign-In](help-02-accounts.md)
+
+[Downloading Books](help-04-downloads.md)
+
+[Converting Audio](help-05-conversion.md)
+
+## Keyboard Shortcuts
+
+| Command | Shortcut |
+| --- | --- |
+| Audible Tools… | Command–5 |
+| Find in Wish List | Command–F |
+| Add Titles… | Control–Shift–A |
+| Search in Add Titles | Control–Shift–F, or Return in the search field |
+| Add to Wish List in Add Titles | Control–Shift–A |
+| Remove selected wish list titles | Control–Shift–Delete |
+| Show / Hide activation bytes | Control–Shift–H |
+| Copy activation bytes | Control–Shift–C |
+| Export Encrypted Account File… | Control–Shift–E |
+
+[See all keyboard shortcuts](help-10-keyboard-shortcuts.md)
+
 ---
 
 ## Support DownAudible

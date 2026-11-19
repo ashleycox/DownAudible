@@ -20,6 +20,25 @@ Use the account menu in the Library toolbar, or select an account in **Settings 
 
 **Sign Out** clears the saved session, so you can sign in to that profile again later. **Remove Account…** also removes the profile and its file matches. Use **Rename…** to change the name shown in the account menu.
 
+## Related chapters
+
+[Audible Tools](help-08-audible-tools.md)
+
+[Troubleshooting](help-09-troubleshooting.md)
+
+## Keyboard Shortcuts
+
+| Command | Shortcut |
+| --- | --- |
+| Sign In… / Add Account… in Library | Control–Shift–A |
+| Sign In… / Switch to This Account in Settings or setup | Control–Shift–S |
+| Import from Audible CLI… | Control–Shift–I |
+| Open Sign-In Page | Control–Shift–B |
+| Continue or Sign In in the sign-in sheet | Return |
+| Sign Out | Control–Shift–Q |
+
+[See all keyboard shortcuts](help-10-keyboard-shortcuts.md)
+
 ---
 
 ## Support DownAudible

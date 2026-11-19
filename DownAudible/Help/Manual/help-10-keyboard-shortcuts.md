@@ -184,14 +184,28 @@ Your keyboard may label Fn with a globe. Dictation and emoji shortcuts can depen
 | Start Dictation… | Dictation key |
 | Emoji & Symbols | Globe key when configured |
 
+## Related chapters
+
+[Getting Started](help-01-getting-started.md)
+
+[Library and File Matching](help-03-library.md)
+
+[Downloading Books](help-04-downloads.md)
+
+[Converting Audio](help-05-conversion.md)
+
+[Transfers and Recovery](help-07-transfers.md)
+
 ## Keyboard navigation
 
 Turn on **Keyboard navigation** in **System Settings > Keyboard** to move through buttons and other controls with Tab. Use focus to reach items such as account names, help chapters, category filters, settings tabs, and confirmation buttons.
 
 | Action | Shortcut |
 | --- | --- |
+| Open DownAudible Help | Shift–Command–Slash |
+| Open this shortcut reference | Option–Command–Slash |
 | Move to the next or previous control | Tab or Shift–Tab |
-| Press a focused button, open a focused menu, or change a checkbox | Space |
+| Follow a focused chapter link, press a button, open a menu, or change a checkbox | Space |
 | Move through a menu, list, table, or picker | Arrow keys |
 | Extend a table or list selection | Shift–Up Arrow or Shift–Down Arrow |
 | Choose the highlighted menu item | Return |

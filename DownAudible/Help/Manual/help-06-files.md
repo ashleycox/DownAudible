@@ -25,6 +25,26 @@ Choose how to handle spaces and letter case. Leave them alone to keep the source
 
 Choose **Settings > Downloads > Apple Books** to send newly saved files to the Books app after a transfer. Select **Original Audible file** or **M4B**. For M4B, enable conversion and select M4B in **Settings > Conversion**. Books may ask you to authorise an original Audible file. Check the transfer result if Books cannot open it.
 
+## Related chapters
+
+[Downloading Books](help-04-downloads.md)
+
+[Converting Audio](help-05-conversion.md)
+
+[Transfers and Recovery](help-07-transfers.md)
+
+## Keyboard Shortcuts
+
+| Command | Shortcut |
+| --- | --- |
+| Settings… | Command–Comma |
+| Choose a destination folder in Files settings | Control–Shift–Y |
+| Restore Default Template | Control–Shift–D |
+| Show Output in Finder from Transfers | Control–Shift–F |
+| Add to Apple Books from Transfers | Control–Shift–B |
+
+[See all keyboard shortcuts](help-10-keyboard-shortcuts.md)
+
 ---
 
 ## Support DownAudible

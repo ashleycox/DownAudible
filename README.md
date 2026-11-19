@@ -64,9 +64,11 @@ PYTHONPATH=Scripts/Audible \
 
 Ashley Cox develops DownAudible. The source is licensed under the GNU Affero General Public License, version 3. [Ashley Cox](https://ashleycox.co.uk/) · [Licence](LICENSE)
 
-The Audible helper uses mkb79’s Audible library and draws on Audible CLI. Libation and AAX Audio Converter were references for the download and conversion workflow. [Audible](https://github.com/mkb79/Audible) · [Audible CLI](https://github.com/mkb79/audible-cli) · [Libation](https://github.com/rmcrackan/Libation) · [AAX Audio Converter](https://github.com/audiamus/AaxAudioConverter)
+The Audible helper uses mkb79’s Audible and Audible CLI libraries. Libation and AAX Audio Converter were references for the download and conversion workflow. [Audible](https://github.com/mkb79/Audible) · [Audible CLI](https://github.com/mkb79/audible-cli) · [Libation](https://github.com/rmcrackan/Libation) · [AAX Audio Converter](https://github.com/audiamus/AaxAudioConverter)
 
 The build script pins and builds the bundled FFmpeg and LAME sources. [FFmpeg](https://ffmpeg.org/) · [LAME](https://lame.sourceforge.io/) · [Build script](Scripts/prepare-media.sh)
+
+[Credits and licences](DownAudible/Help/Manual/help-11-credits.md)
 
 ## Support DownAudible
 

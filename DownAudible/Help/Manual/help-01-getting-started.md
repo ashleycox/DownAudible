@@ -23,7 +23,30 @@ Choose **Help > Set Up DownAudible…** to run setup again with your saved setti
 
 Use **View > Hide Sidebar** or **Show Sidebar** to change the layout. The **View** menu also opens **Library Status** and controls the status bar at the bottom of the library window.
 
-Choose **DownAudible > Settings** or press Command-comma to change the app’s defaults. Choose **Help > Keyboard Shortcuts** for a reference organised by task.
+Choose **DownAudible > Settings** to change the app’s defaults.
+
+## Related chapters
+
+[Accounts and Sign-In](help-02-accounts.md)
+
+[Downloading Books](help-04-downloads.md)
+
+[Transfers and Recovery](help-07-transfers.md)
+
+[Credits](help-11-credits.md)
+
+## Keyboard Shortcuts
+
+| Command | Shortcut |
+| --- | --- |
+| Settings… | Command–Comma |
+| Library | Command–1 |
+| Transfers | Command–2 |
+| Convert Files | Command–3 |
+| Download Selected As… | Option–Command–D |
+| Set Up DownAudible… | Option–Command–Comma |
+
+[See all keyboard shortcuts](help-10-keyboard-shortcuts.md)
 
 ---
 

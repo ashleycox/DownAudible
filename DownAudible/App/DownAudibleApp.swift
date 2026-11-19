@@ -10,6 +10,7 @@ struct DownAudibleApp: App {
     @State private var model = WorkspaceModel()
     @State private var showingOnboarding = false
     @State private var sidebarVisibility = NavigationSplitViewVisibility.all
+    @State private var helpChapterRequest: String?
 
     var body: some Scene {
         Window("DownAudible", id: "workspace") {
@@ -162,13 +163,13 @@ struct DownAudibleApp: App {
         .commandsRemoved()
 
         Window("DownAudible Help", id: "help") {
-            DownAudibleHelpView()
+            DownAudibleHelpView(requestedChapter: $helpChapterRequest)
         }
         .defaultSize(width: 820, height: 580)
         .commandsRemoved()
 
         Window("Keyboard Shortcuts", id: "keyboard-shortcuts") {
-            DownAudibleHelpView(keyboardShortcuts: true)
+            DownAudibleHelpView(keyboardShortcuts: true, requestedChapter: $helpChapterRequest)
         }
         .defaultSize(width: 780, height: 620)
         .commandsRemoved()

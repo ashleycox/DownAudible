@@ -30,6 +30,27 @@ After moving or deleting a file, use **Recheck Saved Files** to refresh the stat
 
 Use **Show Audio in Finder** to locate a selected book’s files. **Add to Apple Books** lets you send original files, M4Bs, or other supported audio already on disk. **Copy Title** and **Copy ASIN** put book details on the clipboard.
 
+## Related chapters
+
+[Downloading Books](help-04-downloads.md)
+
+[Transfers and Recovery](help-07-transfers.md)
+
+[Audible Tools](help-08-audible-tools.md)
+
+## Keyboard Shortcuts
+
+| Command | Shortcut |
+| --- | --- |
+| Refresh Library | Command–R |
+| Recheck Saved Files | Shift–Command–R |
+| Find in Library | Command–F |
+| Library Status | Command–4 |
+| Match Existing Folder… | Control–Shift–F |
+| Match to Audio Files… / Change Matched Files… | Control–Shift–M |
+
+[See all keyboard shortcuts](help-10-keyboard-shortcuts.md)
+
 ---
 
 ## Support DownAudible

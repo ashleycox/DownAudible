@@ -1,7 +1,9 @@
 import SwiftUI
 
 struct DownAudibleHelpView: View {
+    @Environment(\.openWindow) private var openWindow
     var keyboardShortcuts = false
+    @Binding var requestedChapter: String?
     @State private var selection: HelpChapter.ID? = HelpChapter.all.first?.id
     @State private var search = ""
 
@@ -9,7 +11,10 @@ struct DownAudibleHelpView: View {
         Group {
             if keyboardShortcuts {
                 if let chapter = HelpChapter.all.first(where: { $0.id == "help-10-keyboard-shortcuts" }) {
-                    HelpArticleView(chapter: chapter)
+                    HelpArticleView(chapter: chapter) { chapterID in
+                        requestedChapter = chapterID
+                        openWindow(id: "help")
+                    }
                 } else {
                     unavailable
                 }
@@ -30,7 +35,7 @@ struct DownAudibleHelpView: View {
             .accessibilityLabel("Help chapters")
         } detail: {
             if let chapter = resultChapters.first(where: { $0.id == selection }) ?? resultChapters.first {
-                HelpArticleView(chapter: chapter)
+                HelpArticleView(chapter: chapter, openChapter: showChapter)
                     .id(chapter.id)
             } else if HelpChapter.all.isEmpty {
                 unavailable
@@ -44,6 +49,17 @@ struct DownAudibleHelpView: View {
                 selection = resultChapters.first?.id
             }
         }
+        .onChange(of: requestedChapter, initial: true) { _, chapterID in
+            if let chapterID {
+                showChapter(chapterID)
+                requestedChapter = nil
+            }
+        }
+    }
+
+    private func showChapter(_ chapterID: HelpChapter.ID) {
+        if !resultChapters.contains(where: { $0.id == chapterID }) { search = "" }
+        selection = chapterID
     }
 
     private var unavailable: some View {
@@ -60,6 +76,7 @@ struct DownAudibleHelpView: View {
 
 private struct HelpArticleView: View {
     let chapter: HelpChapter
+    let openChapter: (HelpChapter.ID) -> Void
 
     var body: some View {
         ScrollView {
@@ -89,7 +106,16 @@ private struct HelpArticleView: View {
                 .padding(.top, 8)
         case .body(let text):
             if let url = text.runs.first?.link, text.runs.allSatisfy({ $0.link == url }) {
-                Link(String(text.characters), destination: url)
+                let label = String(text.characters)
+                if let chapterID = HelpChapter.chapterID(for: url) {
+                    Button(label) { openChapter(chapterID) }
+                        .buttonStyle(.link)
+                        .accessibilityLabel(label)
+                } else if url.scheme != nil {
+                    Link(label, destination: url)
+                } else {
+                    Text(label)
+                }
             } else {
                 Text(text)
                     .lineSpacing(3)
@@ -189,6 +215,13 @@ private struct HelpChapter: Identifiable {
                 return HelpChapter(markdown: markdown, id: url.deletingPathExtension().lastPathComponent)
             }
     }()
+
+    static func chapterID(for url: URL) -> ID? {
+        guard url.scheme == nil, url.relativeString == url.lastPathComponent, url.pathExtension == "md"
+        else { return nil }
+        let id = url.deletingPathExtension().lastPathComponent
+        return all.contains { $0.id == id } ? id : nil
+    }
 
     init?(markdown: String, id: String) {
         let normalized = markdown.replacingOccurrences(of: "\r\n", with: "\n")
