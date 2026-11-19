@@ -69,10 +69,11 @@
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
 			files = ();
-			name = "Bundle Audible and media tools";
+			name = "Bundle Audible, media tools, and Help";
+			outputPaths = ("$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/DownAudible.help");
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
-			shellScript = "set -eu\nresources=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH\"\n\"$SRCROOT/Scripts/prepare-audible.sh\" \"$resources/AudibleSupport\"\n\"$SRCROOT/Scripts/prepare-media.sh\" \"$resources/MediaSupport\"\n";
+			shellScript = "set -eu\nresources=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH\"\n\"$SRCROOT/Scripts/prepare-audible.sh\" \"$resources/AudibleSupport\"\n\"$SRCROOT/Scripts/prepare-media.sh\" \"$resources/MediaSupport\"\n/usr/bin/swift \"$SRCROOT/Scripts/prepare-help.swift\" \"$SRCROOT/DownAudible/Help/Manual\" \"$resources/DownAudible.help\" \"$PRODUCT_BUNDLE_IDENTIFIER.help\"\n";
 		};
 		DA0000000000000000000010 = {
 			isa = XCBuildConfiguration;

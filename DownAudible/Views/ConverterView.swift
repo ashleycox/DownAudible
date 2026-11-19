@@ -3,7 +3,7 @@ import SwiftUI
 
 struct ConverterView: View {
     @Bindable var model: WorkspaceModel
-    @State private var showingOptions = false
+    @Binding var showingOptions: Bool
     @State private var sortOrder = [KeyPathComparator(\LocalAudioFile.title, comparator: .localizedStandard)]
 
     var body: some View {
@@ -117,12 +117,12 @@ struct ConverterView: View {
             .width(min: 64, ideal: 72, max: 90)
         }
         .contextMenu(forSelectionType: LocalAudioFile.ID.self) { ids in
-            ConversionActions(context: ConversionCommandContext(model: model, ids: ids) { showingOptions = true })
+            ConversionActions(context: ConversionCommandContext(model: model, ids: ids))
         }
     }
 
     private var commandContext: ConversionCommandContext {
-        ConversionCommandContext(model: model, ids: model.selectedFiles) { showingOptions = true }
+        ConversionCommandContext(model: model, ids: model.selectedFiles)
     }
 
     private func pickFiles() {
@@ -141,9 +141,14 @@ extension FocusedValues {
 
 struct ConversionSelectionCommands: View {
     @FocusedValue(\.conversionCommands) private var context
+    let showOptions: () -> Void
 
     var body: some View {
+        Button("Conversion Options…", action: showOptions)
+            .keyboardShortcut(context == nil ? nil : KeyboardShortcut("o", modifiers: [.control, .shift]))
+
         if let context {
+            Divider()
             ConversionActions(context: context, inMenuBar: true)
         }
     }
@@ -153,7 +158,6 @@ struct ConversionSelectionCommands: View {
 private struct ConversionCommandContext {
     let model: WorkspaceModel
     let ids: Set<LocalAudioFile.ID>
-    let showOptions: () -> Void
 
     var files: [LocalAudioFile] { model.localFiles.filter { ids.contains($0.id) } }
     var convertTitle: LocalizedStringKey { ids.isEmpty ? "Convert All" : "Convert Selected" }
@@ -180,10 +184,6 @@ private struct ConversionActions: View {
         let canAddToBooks = urls.contains(where: AppleBooks.supports)
         let allFiles = context.model.localFiles
 
-        if inMenuBar {
-            Button("Conversion Options…", action: context.showOptions)
-                .keyboardShortcut("o", modifiers: [.control, .shift])
-        }
         Button(inMenuBar ? context.convertTitle : "Convert", action: context.convert)
             .keyboardShortcut(shortcut("v"))
             .disabled(!context.canConvert || (!inMenuBar && files.isEmpty))

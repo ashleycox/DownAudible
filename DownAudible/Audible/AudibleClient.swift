@@ -729,6 +729,7 @@ private nonisolated final class ProcessExit: Sendable {
 
 private nonisolated final class AudibleKeychain: Sendable {
     private let mutex = Mutex(())
+    private let service = DownAudibleIdentity.audibleKeychainService()
 
     enum Account {
         case session(UUID?)
@@ -769,7 +770,7 @@ private nonisolated final class AudibleKeychain: Sendable {
     private func query(for account: Account) -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: (Bundle.main.bundleIdentifier ?? "uk.co.ashleycox.DownAudible") + ".audible",
+            kSecAttrService as String: service,
             kSecAttrAccount as String: account.name
         ]
     }

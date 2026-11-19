@@ -46,6 +46,8 @@ Folder and filename templates are independent. The default folder template, `{fo
 
 Open **Help → DownAudible Help** for the manual, including steps for recovering a batch, fixing missing files, and using Audible CLI profiles. **Help → Keyboard Shortcuts** opens the keyboard reference. [Browse manual chapters](DownAudible/Help/Manual) · [Keyboard shortcuts](DownAudible/Help/Manual/help-10-keyboard-shortcuts.md)
 
+From an Applications folder, these commands open macOS Help. From a build folder, DownAudible displays the same help pages in its own windows. VoiceOver can navigate the shortcut tables by row and column in either viewer.
+
 ## Checks
 
 Run the archive checks and the Audible helper’s mocked network tests without signing in.

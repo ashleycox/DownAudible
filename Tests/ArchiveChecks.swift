@@ -31,6 +31,7 @@ struct ArchiveChecks {
         let previous = Data(#"{"convert":false,"keepOriginal":true,"downloadPDF":false,"downloadCover":true}"#.utf8)
         let options = try JSONDecoder().decode(DownloadOptions.self, from: previous)
         check(options.savesOriginal && options.downloadAudio && options.downloadCover && !options.downloadChapters)
+        checkBundleIdentifierMigration()
 
         let file = LocalAudioFile(url: root.appending(path: "Book.aax"), format: "aax", title: "Écho", author: "Me", asin: nil, durationSeconds: 10)
         check(LocalAudioIndex(files: [file]).match(title: "Echo", author: "me", asin: "B000000001") == file)
@@ -69,6 +70,37 @@ struct ArchiveChecks {
             check(LibraryAudioCategory(status: .matched, isDownloadable: isDownloadable) == .matched)
         }
         check(LibraryAudioCategory(status: .unavailable, isDownloadable: false) == .unavailable)
+    }
+
+    private static func checkBundleIdentifierMigration() {
+        let oldBundle = "DownAudible.ArchiveChecks.\(UUID()).old"
+        let newBundle = "DownAudible.ArchiveChecks.\(UUID()).new"
+        let defaults = UserDefaults.standard
+        defer {
+            defaults.removePersistentDomain(forName: oldBundle)
+            defaults.removePersistentDomain(forName: newBundle)
+        }
+
+        let accounts = Data("saved accounts fixture".utf8)
+        defaults.setPersistentDomain(["Accounts": accounts, "HasFinishedOnboarding": true], forName: oldBundle)
+        defaults.setPersistentDomain(["HasFinishedOnboarding": false], forName: newBundle)
+
+        DownAudibleIdentity.migratePreferences(for: "OtherBundle", from: oldBundle, to: newBundle)
+        check(defaults.persistentDomain(forName: newBundle)?["Accounts"] == nil)
+        DownAudibleIdentity.migratePreferences(for: newBundle, from: oldBundle, to: newBundle)
+        let migrated = defaults.persistentDomain(forName: newBundle) ?? [:]
+        check(migrated["Accounts"] as? Data == accounts && migrated["HasFinishedOnboarding"] as? Bool == false)
+        check(defaults.persistentDomain(forName: oldBundle)?["Accounts"] as? Data == accounts)
+
+        var afterRemoval = migrated
+        afterRemoval.removeValue(forKey: "Accounts")
+        defaults.setPersistentDomain(afterRemoval, forName: newBundle)
+        DownAudibleIdentity.migratePreferences(for: newBundle, from: oldBundle, to: newBundle)
+        check(defaults.persistentDomain(forName: newBundle)?["Accounts"] == nil)
+
+        check(DownAudibleIdentity.audibleKeychainService(for: "com.tbmw.downaudible") == "uk.co.ashleycox.DownAudible.audible")
+        check(DownAudibleIdentity.audibleKeychainService(for: oldBundle) == oldBundle + ".audible")
+        check(DownAudibleIdentity.audibleKeychainService(for: nil) == "DownAudible.audible")
     }
 
     private static func checkOutputNaming(root: URL) throws {

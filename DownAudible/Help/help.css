@@ -1,0 +1,42 @@
+:root {
+    color-scheme: light dark;
+    font: -apple-system-body;
+}
+
+body {
+    max-width: 44rem;
+    margin: 0 auto;
+    padding: 1.5rem;
+    color: CanvasText;
+    background: Canvas;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
+h1, h2 { line-height: 1.2; }
+h2 { margin-top: 1.7em; }
+a { color: LinkText; }
+nav { margin-bottom: 1.5rem; }
+li + li { margin-top: 0.5rem; }
+li p { margin: 0; }
+pre { overflow-x: auto; }
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+th, td {
+    border-bottom: 1px solid color-mix(in srgb, CanvasText 24%, transparent);
+    padding: 0.4rem 0.75rem;
+    text-align: start;
+    vertical-align: top;
+}
+
+tbody th { font-weight: normal; }
+
+hr {
+    margin: 2rem 0 0;
+    border: 0;
+    border-top: 1px solid color-mix(in srgb, CanvasText 24%, transparent);
+}

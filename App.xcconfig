@@ -4,11 +4,12 @@ CODE_SIGN_STYLE = Automatic
 CODE_SIGN_IDENTITY = -
 CURRENT_PROJECT_VERSION = 1
 GENERATE_INFOPLIST_FILE = YES
+INFOPLIST_FILE = App-Info.plist
 INFOPLIST_KEY_CFBundleDisplayName = DownAudible
 INFOPLIST_KEY_LSApplicationCategoryType = public.app-category.utilities
 INFOPLIST_KEY_NSHumanReadableCopyright = Copyright © 2026 Ashley Cox
 MARKETING_VERSION = 0.1.0
-PRODUCT_BUNDLE_IDENTIFIER = uk.co.ashleycox.DownAudible
+PRODUCT_BUNDLE_IDENTIFIER = com.tbmw.downaudible
 PRODUCT_NAME = DownAudible
 
 #include? "Signing.local.xcconfig"

@@ -6,7 +6,9 @@ Turn on conversion in the download sheet. **Keep the original after conversion**
 
 ## Convert files already on your Mac
 
-Open **Convert Files**, then click **Add Files…** or **Add Folder…**. DownAudible reads AAX, AAXC, AA, MP3, M4A, and M4B. You can also choose **Open Audio Files…** or **Open Audio Folder…** from the **File** menu, or drag files in from Finder. Choose the destination and format at the bottom of Convert Files. Open **Conversion Options…** to change chapter and audio settings.
+Open **Convert Files**, then click **Add Files…** or **Add Folder…**. DownAudible reads AAX, AAXC, AA, MP3, M4A, and M4B. You can also choose **Open Audio Files…** or **Open Audio Folder…** from the **File** menu, or drag files in from Finder. Choose the destination and format at the bottom of Convert Files.
+
+Choose **Conversion > Conversion Options…** to open Convert Files and change chapter and audio settings. From Convert Files, you can also click **Conversion Options…** or press Control–Shift–O.
 
 Select rows and click **Convert Selected**. With nothing selected, **Convert All** starts the whole list. Control-click a row for **Convert**, **Show in Finder**, **Add to Apple Books**, or **Copy Path**. **Remove from List** and **Clear List** only change the list.
 

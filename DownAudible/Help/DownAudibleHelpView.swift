@@ -1,4 +1,30 @@
+import AppKit
 import SwiftUI
+import WebKit
+
+enum DownAudibleHelp {
+    static let shortcuts = "help-10-keyboard-shortcuts"
+
+    static var pages: URL? {
+        Bundle.main.resourceURL?.appending(path: "DownAudible.help/Contents/Resources/en.lproj", directoryHint: .isDirectory)
+    }
+
+    @MainActor
+    static func openSystemHelp(anchor: String? = nil) -> Bool {
+        let appPath = Bundle.main.bundleURL.resolvingSymlinksInPath().pathComponents
+        let applications = FileManager.default.urls(for: .applicationDirectory, in: [.localDomainMask, .userDomainMask])
+        // macOS Help cannot always read a third-party book outside an Applications directory.
+        guard applications.contains(where: { appPath.starts(with: $0.resolvingSymlinksInPath().pathComponents) }),
+              let book = Bundle.main.object(forInfoDictionaryKey: "CFBundleHelpBookName") as? String,
+              NSHelpManager.shared.registerBooks(in: Bundle.main) else { return false }
+        if let anchor {
+            NSHelpManager.shared.openHelpAnchor(.init(anchor), inBook: .init(book))
+        } else {
+            NSApplication.shared.showHelp(nil)
+        }
+        return true
+    }
+}
 
 struct DownAudibleHelpView: View {
     @Environment(\.openWindow) private var openWindow
@@ -10,8 +36,8 @@ struct DownAudibleHelpView: View {
     var body: some View {
         Group {
             if keyboardShortcuts {
-                if let chapter = HelpChapter.all.first(where: { $0.id == "help-10-keyboard-shortcuts" }) {
-                    HelpArticleView(chapter: chapter) { chapterID in
+                if let chapter = HelpChapter.all.first(where: { $0.id == DownAudibleHelp.shortcuts }) {
+                    article(chapter) { chapterID in
                         requestedChapter = chapterID
                         openWindow(id: "help")
                     }
@@ -35,7 +61,7 @@ struct DownAudibleHelpView: View {
             .accessibilityLabel("Help chapters")
         } detail: {
             if let chapter = resultChapters.first(where: { $0.id == selection }) ?? resultChapters.first {
-                HelpArticleView(chapter: chapter, openChapter: showChapter)
+                article(chapter, openChapter: showChapter)
                     .id(chapter.id)
             } else if HelpChapter.all.isEmpty {
                 unavailable
@@ -62,6 +88,20 @@ struct DownAudibleHelpView: View {
         selection = chapterID
     }
 
+    @ViewBuilder
+    private func article(_ chapter: HelpChapter, openChapter: @escaping (HelpChapter.ID) -> Void) -> some View {
+        if let pages = DownAudibleHelp.pages {
+            let url = pages.appending(path: chapter.id + ".html", directoryHint: .notDirectory)
+            if FileManager.default.fileExists(atPath: url.path) {
+                HelpWebPage(url: url, openChapter: openChapter)
+            } else {
+                unavailable
+            }
+        } else {
+            unavailable
+        }
+    }
+
     private var unavailable: some View {
         ContentUnavailableView("Help Unavailable", systemImage: "book.closed",
                                description: Text("Rebuild DownAudible to restore the help chapters."))
@@ -74,135 +114,60 @@ struct DownAudibleHelpView: View {
     }
 }
 
-private struct HelpArticleView: View {
-    let chapter: HelpChapter
+private struct HelpWebPage: NSViewRepresentable {
+    let url: URL
     let openChapter: (HelpChapter.ID) -> Void
 
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                Text(chapter.title)
-                    .font(.largeTitle.bold())
-                    .accessibilityAddTraits(.isHeader)
-                    .padding(.bottom, 4)
-                ForEach(chapter.paragraphs.indices, id: \.self) { index in
-                    paragraph(chapter.paragraphs[index])
-                }
-            }
-            .textSelection(.enabled)
-            .frame(maxWidth: 640, alignment: .leading)
-            .padding(24)
-            .frame(maxWidth: .infinity, alignment: .center)
-        }
+    func makeCoordinator() -> Coordinator {
+        Coordinator(openChapter: openChapter)
     }
 
-    @ViewBuilder
-    private func paragraph(_ paragraph: HelpChapter.Paragraph) -> some View {
-        switch paragraph {
-        case .heading(let title):
-            Text(title)
-                .font(.title3.bold())
-                .accessibilityAddTraits(.isHeader)
-                .padding(.top, 8)
-        case .body(let text):
-            if let url = text.runs.first?.link, text.runs.allSatisfy({ $0.link == url }) {
-                let label = String(text.characters)
-                if let chapterID = HelpChapter.chapterID(for: url) {
-                    Button(label) { openChapter(chapterID) }
-                        .buttonStyle(.link)
-                        .accessibilityLabel(label)
-                } else if url.scheme != nil {
-                    Link(label, destination: url)
-                } else {
-                    Text(label)
-                }
-            } else {
-                Text(text)
-                    .lineSpacing(3)
-            }
-        case .orderedSteps(let steps):
-            Grid(alignment: .topLeading, horizontalSpacing: 8, verticalSpacing: 8) {
-                ForEach(steps.indices, id: \.self) { index in
-                    GridRow {
-                        Text("\(index + 1).")
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                        Text(steps[index])
-                            .lineSpacing(3)
-                    }
-                    .accessibilityElement(children: .combine)
-                }
-            }
-        case .table(let table):
-            HelpTableView(table: table)
-        case .divider:
-            Divider()
-                .padding(.top, 8)
-        }
+    func makeNSView(context: Context) -> WKWebView {
+        let configuration = WKWebViewConfiguration()
+        configuration.defaultWebpagePreferences.allowsContentJavaScript = false
+        let view = WKWebView(frame: .zero, configuration: configuration)
+        view.navigationDelegate = context.coordinator
+        view.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+        return view
     }
-}
 
-private struct HelpTableView: View {
-    let table: HelpChapter.MarkdownTable
+    func updateNSView(_ view: WKWebView, context: Context) {
+        context.coordinator.openChapter = openChapter
+    }
 
-    var body: some View {
-        Grid(alignment: .topLeading, horizontalSpacing: 24, verticalSpacing: 0) {
-            GridRow {
-                ForEach(table.header.indices, id: \.self) { column in
-                    Text(table.header[column])
-                        .fontWeight(.semibold)
-                        .accessibilityAddTraits(.isHeader)
-                        .padding(.bottom, 6)
+    @MainActor
+    final class Coordinator: NSObject, WKNavigationDelegate {
+        var openChapter: (HelpChapter.ID) -> Void
+
+        init(openChapter: @escaping (HelpChapter.ID) -> Void) {
+            self.openChapter = openChapter
+        }
+
+        func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
+            guard action.navigationType == .linkActivated, let url = action.request.url else { return .allow }
+            if url.isFileURL {
+                let id = url.deletingPathExtension().lastPathComponent
+                if id == "index", let firstChapter = HelpChapter.all.first {
+                    openChapter(firstChapter.id)
+                    return .cancel
                 }
-            }
-            ForEach(table.rows.indices, id: \.self) { row in
-                Divider()
-                GridRow {
-                    ForEach(table.header.indices, id: \.self) { column in
-                        Text(table.rows[row][column])
-                            .frame(maxWidth: column == 0 ? .infinity : nil, alignment: .leading)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(.vertical, 6)
-                    }
+                if HelpChapter.all.contains(where: { $0.id == id }) {
+                    openChapter(id)
+                    return .cancel
                 }
+                return .allow
             }
+            if url.scheme == "https" || url.scheme == "http" {
+                NSWorkspace.shared.open(url)
+            }
+            return .cancel
         }
     }
 }
 
 private struct HelpChapter: Identifiable {
-    enum Paragraph {
-        case heading(String)
-        case body(AttributedString)
-        case orderedSteps([AttributedString])
-        case table(MarkdownTable)
-        case divider
-    }
-
-    struct MarkdownTable {
-        let header: [AttributedString]
-        let rows: [[AttributedString]]
-
-        init?(_ block: String) {
-            let lines = block.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
-            guard lines.count >= 3, lines.allSatisfy({ $0.hasPrefix("|") && $0.hasSuffix("|") }) else { return nil }
-            let cells = lines.map { line in
-                line.dropFirst().dropLast().split(separator: "|", omittingEmptySubsequences: false)
-                    .map { $0.trimmingCharacters(in: .whitespaces) }
-            }
-            let columns = cells[0].count
-            guard columns > 1, cells.allSatisfy({ $0.count == columns }), cells[1].allSatisfy({ separator in
-                let rule = separator.trimmingCharacters(in: CharacterSet(charactersIn: ":"))
-                return rule.count >= 3 && rule.allSatisfy { $0 == "-" }
-            }) else { return nil }
-            header = cells[0].map(HelpChapter.inlineMarkdown)
-            rows = cells.dropFirst(2).map { $0.map(HelpChapter.inlineMarkdown) }
-        }
-    }
-
     let id: String
     let title: String
-    let paragraphs: [Paragraph]
     private let searchableText: String
 
     static let all: [HelpChapter] = {
@@ -211,51 +176,13 @@ private struct HelpChapter: Identifiable {
         return urls.filter { $0.lastPathComponent.hasPrefix("help-") }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
             .compactMap { url in
-                guard let markdown = try? String(contentsOf: url, encoding: .utf8) else { return nil }
-                return HelpChapter(markdown: markdown, id: url.deletingPathExtension().lastPathComponent)
+                guard let text = try? String(contentsOf: url, encoding: .utf8),
+                      let heading = text.split(separator: "\n").first, heading.hasPrefix("# ") else { return nil }
+                let footerStart = text.range(of: "\n## Support DownAudible\n")?.lowerBound ?? text.endIndex
+                return HelpChapter(id: url.deletingPathExtension().lastPathComponent,
+                                   title: String(heading.dropFirst(2)), searchableText: String(text[..<footerStart]))
             }
     }()
-
-    static func chapterID(for url: URL) -> ID? {
-        guard url.scheme == nil, url.relativeString == url.lastPathComponent, url.pathExtension == "md"
-        else { return nil }
-        let id = url.deletingPathExtension().lastPathComponent
-        return all.contains { $0.id == id } ? id : nil
-    }
-
-    init?(markdown: String, id: String) {
-        let normalized = markdown.replacingOccurrences(of: "\r\n", with: "\n")
-        let blocks = normalized.components(separatedBy: "\n\n")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        guard let heading = blocks.first, heading.hasPrefix("# ") else { return nil }
-        self.id = id
-        title = String(heading.dropFirst(2))
-        let footerStart = blocks.lastIndex(of: "## Support DownAudible") ?? blocks.endIndex
-        searchableText = blocks[..<footerStart].joined(separator: "\n\n")
-        paragraphs = blocks.dropFirst().map { block in
-            if block.hasPrefix("## ") { return .heading(String(block.dropFirst(3))) }
-            if block == "---" { return .divider }
-            if let table = MarkdownTable(block) { return .table(table) }
-            if let steps = Self.orderedSteps(block) { return .orderedSteps(steps) }
-            return .body(Self.inlineMarkdown(block))
-        }
-    }
-
-    private static func orderedSteps(_ block: String) -> [AttributedString]? {
-        let lines = block.split(separator: "\n")
-        let steps = lines.enumerated().compactMap { index, line -> AttributedString? in
-            let prefix = "\(index + 1). "
-            guard line.hasPrefix(prefix) else { return nil }
-            return inlineMarkdown(String(line.dropFirst(prefix.count)))
-        }
-        return !steps.isEmpty && steps.count == lines.count ? steps : nil
-    }
-
-    private static func inlineMarkdown(_ text: String) -> AttributedString {
-        (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
-            ?? AttributedString(text)
-    }
 
     func matches(_ query: String) -> Bool {
         query.split(whereSeparator: \.isWhitespace).allSatisfy {

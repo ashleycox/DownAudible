@@ -6,16 +6,24 @@ struct DownAudibleApp: App {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openURL) private var openURL
     @NSApplicationDelegateAdaptor(DownAudibleAppDelegate.self) private var appDelegate
-    @AppStorage("ShowsLibraryStatusBar") private var showsStatusBar = true
-    @State private var model = WorkspaceModel()
+    @AppStorage private var showsStatusBar: Bool
+    @State private var model: WorkspaceModel
     @State private var showingOnboarding = false
+    @State private var showingConversionOptions = false
     @State private var sidebarVisibility = NavigationSplitViewVisibility.all
     @State private var helpChapterRequest: String?
+
+    init() {
+        DownAudibleIdentity.migratePreferences()
+        _showsStatusBar = AppStorage(wrappedValue: true, "ShowsLibraryStatusBar")
+        _model = State(initialValue: WorkspaceModel())
+    }
 
     var body: some Scene {
         Window("DownAudible", id: "workspace") {
             WorkspaceView(model: model, showsStatusBar: showsStatusBar,
-                          showingOnboarding: $showingOnboarding, sidebarVisibility: $sidebarVisibility)
+                          showingOnboarding: $showingOnboarding, showingConversionOptions: $showingConversionOptions,
+                          sidebarVisibility: $sidebarVisibility, openManual: { openHelp() })
                 .frame(minWidth: 720, minHeight: 440)
                 .onAppear { appDelegate.model = model }
         }
@@ -114,16 +122,20 @@ struct DownAudibleApp: App {
                 TransferSelectionCommands()
             }
             CommandMenu("Conversion") {
-                ConversionSelectionCommands()
+                ConversionSelectionCommands {
+                    show(.convert)
+                    showingConversionOptions = true
+                }
+                .disabled(showingOnboarding || model.downloadRequest != nil)
             }
             CommandGroup(after: .windowArrangement) {
                 Button("Show DownAudible") { openWindow(id: "workspace") }
                     .keyboardShortcut("0", modifiers: [.command, .control])
             }
             CommandGroup(replacing: .help) {
-                Button("DownAudible Help") { openWindow(id: "help") }
+                Button("DownAudible Help") { openHelp() }
                     .keyboardShortcut("/", modifiers: [.command, .shift])
-                Button("Keyboard Shortcuts") { openWindow(id: "keyboard-shortcuts") }
+                Button("Keyboard Shortcuts") { openHelp(anchor: DownAudibleHelp.shortcuts) }
                     .keyboardShortcut("/", modifiers: [.command, .option])
                 Button("Set Up DownAudible…") {
                     openWindow(id: "workspace")
@@ -181,6 +193,12 @@ struct DownAudibleApp: App {
         .commandsRemoved()
     }
 
+    private func openHelp(anchor: String? = nil) {
+        if !DownAudibleHelp.openSystemHelp(anchor: anchor) {
+            openWindow(id: anchor == nil ? "help" : "keyboard-shortcuts")
+        }
+    }
+
     private func toggleSidebar() {
         sidebarVisibility = sidebarVisibility == .detailOnly ? .all : .detailOnly
     }
@@ -206,12 +224,13 @@ struct DownAudibleApp: App {
 }
 
 private struct WorkspaceView: View {
-    @Environment(\.openWindow) private var openWindow
     @AppStorage("HasFinishedOnboarding") private var hasFinishedOnboarding = false
     @Bindable var model: WorkspaceModel
     let showsStatusBar: Bool
     @Binding var showingOnboarding: Bool
+    @Binding var showingConversionOptions: Bool
     @Binding var sidebarVisibility: NavigationSplitViewVisibility
+    let openManual: () -> Void
     @State private var openManualAfterSetup = false
 
     var body: some View {
@@ -231,7 +250,7 @@ private struct WorkspaceView: View {
                 case .transfers:
                     TransfersView(model: model)
                 case .convert:
-                    ConverterView(model: model)
+                    ConverterView(model: model, showingOptions: $showingConversionOptions)
                 }
             }
             .navigationTitle((model.page ?? .library).rawValue)
@@ -273,6 +292,6 @@ private struct WorkspaceView: View {
     private func openSetupManualIfRequested() {
         guard openManualAfterSetup else { return }
         openManualAfterSetup = false
-        openWindow(id: "help")
+        openManual()
     }
 }
