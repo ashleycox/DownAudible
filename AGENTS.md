@@ -2,7 +2,7 @@
 
 ## Build and verification
 
-DownAudible is an Apple silicon Mac app that targets macOS 15 and later. Use the **DownAudible** scheme in Xcode 27.2. Keep Swift 6 language mode and complete concurrency checking. Install uv before building. The build prepares the bundled Audible helper from locked Python dependencies and compiles the pinned FFmpeg and LAME sources.
+DownAudible targets macOS 15 and later on Apple silicon and Intel Macs. Build on Apple silicon with the **DownAudible** scheme in Xcode 27.2. Keep Swift 6 language mode and complete concurrency checking. Install uv and Rosetta before building. The build prepares the bundled Audible helper from locked Python dependencies and compiles the pinned FFmpeg and LAME sources.
 
 Build and launch the debug app from the repository root.
 
@@ -21,7 +21,9 @@ PYTHONPATH=Scripts/Audible UV_PROJECT_ENVIRONMENT=.build/audible-tests \
 
 Use synthetic media and account fixtures for verification. Check changes to macOS workflows in the running app when possible, including keyboard navigation and the corresponding help chapter.
 
-## Settings and the in-app manual
+## Documentation and settings
+
+Keep `README.md` focused on what users need to download and use DownAudible, with a short build-from-source section. Put implementation details, test commands, and contributor instructions in the project guidance.
 
 The bundled manual lives in `DownAudible/Help/Manual` and opens from **Help > DownAudible Help**. Update the relevant chapters whenever a feature, control label, default, or workflow changes. Write the instructions for someone using the app as it is. Document actions available in the current app using present tense and the labels shown in the app. Leave previous versions, comparisons across releases, and change summaries out of the manual. Keep the setup instructions and README in step with the same controls.
 
@@ -31,7 +33,7 @@ Register each settings page once in `SettingsPane` in `DownAudible/Views/Prefere
 
 ## Signing and Git
 
-- Keep shared signing settings in `App.xcconfig`. Set team and identity overrides in the ignored `Signing.local.xcconfig`. Keep signing credentials, account files, passwords, vouchers, activation bytes, and build products out of Git.
+- Keep shared signing settings in `App.xcconfig`. For Apple Development signing, sign in under **Xcode > Settings > Accounts** and set `DEVELOPMENT_TEAM` and `CODE_SIGN_IDENTITY = Apple Development` in the ignored `Signing.local.xcconfig` beside `App.xcconfig`. Keep signing credentials, account files, passwords, vouchers, activation bytes, and build products out of Git.
 - Fetch the relevant refs and check the working tree before editing. Use the current default branch for routine work in this repository. Use a topic branch when Ashley requests one or the task already has one.
 - Make focused commits and keep unrelated local edits out of them. Use descriptive task-based names for branches and commits. Keep assistant and tool branding out of authored files, Git metadata, and pull request copy. Preserve required human DCO sign-offs.
 - Verify the push URL before writing to GitHub. The authorised repository for this project is `ashleycox/DownAudible`. Push completed work there unless Ashley requests a local stopping point. Open pull requests, publish releases, or package a distributable only on request.

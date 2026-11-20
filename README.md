@@ -14,7 +14,7 @@ I refuse to use the Audible app. It is an atrocity, especially on macOS. We must
 
 [**Download DownAudible for Mac (.zip)**](https://github.com/ashleycox/DownAudible/releases/latest/download/DownAudible.zip)
 
-DownAudible runs on Apple silicon and Intel Macs, running MacOS 15 Catalina or later. Unzip the download and drag DownAudible to your Applications folder.
+DownAudible runs on Apple silicon and Intel Macs with macOS 15 or later. Unzip the download and drag DownAudible to your Applications folder.
 
 Choose **DownAudible → Check for Updates…** to check for a new release. Enable automatic updates in **Settings → General** or on the General page during setup.
 
@@ -22,10 +22,10 @@ Choose **DownAudible → Check for Updates…** to check for a new release. Enab
 
 The setup wizard opens the first time you run DownAudible. Use it to connect an account, choose the destination, and set your download and conversion defaults. On the Accounts page, choose **Continue Without an Account** to work with local files. **Help → Set Up DownAudible…** opens setup again with your saved settings.
 
-1. On the Accounts page in setup or in **Settings → Accounts**, click **Add Account…**. Sign in through your browser, then paste the resulting address into DownAudible. You can also choose **Import from Audible CLI…**. Each account has a separate session in Keychain.
+1. On the Accounts page in setup or in **Settings → Accounts**, click **Add Account…**. Sign in through your browser, then paste the resulting address into DownAudible. You can also choose **Import from Audible CLI…**.
 2. If you already have files, use **Match Existing Folder…** to scan your archive or a folder from another app. You can fix an individual match from its contextual menu.
 3. In **Audiobooks → Download**, choose **Download Missing** to fetch eligible titles without a complete audio copy, or select books and choose **Download Selected**. Use the corresponding **As…** command to review the destination, audio, conversion, and optional PDFs, cover images, chapters, and notes.
-4. If a batch is interrupted, open **Downloads** and choose **Retry Incomplete**. DownAudible resumes partial audio when Audible can confirm it is the same file. Choose **Restart Download…** from a job’s contextual menu to discard its temporary bytes and download it from the start.
+4. If a batch is interrupted, open **Downloads** and choose **Retry Incomplete**. Choose **Restart Download…** from a job’s contextual menu to download it again from the beginning.
 
 In **Settings → Notifications**, choose sounds and alerts, check macOS permissions, or send a silent test. Click a transfer alert to open its jobs in **Downloads**.
 
@@ -41,7 +41,7 @@ When creating separate M4B or M4A files, turn on **Copy chapter audio when possi
 
 When exporting MP3, turn on **Move converted AAX files to Trash** to remove eligible AAX sources after the complete export is saved.
 
-When DownAudible can’t unlock an AAX download for conversion, it tries to refresh the account’s activation code. With **AAX with fallback**, it requests AAXC for conversion if it still can’t unlock the AAX. Any originals already saved are kept. AAX files opened in **Convert Files** need the activation code for the account that downloaded them.
+If an AAX download can’t be converted, try **AAX with fallback** in **Settings → Downloads**. AAX files opened in **Convert Files** need the activation code for the account that downloaded them.
 
 Folder and filename templates are independent. The default folder template, `{format}/{author}/{title}`, groups original and converted formats separately. For chapter filenames you might use `{title} - {chapterNumber} - {chapter}`. Settings shows a preview as you edit.
 
@@ -51,15 +51,11 @@ Turn on **Keep Audible’s AAX filename** in **Settings → Files** to save new 
 
 Open **Help → DownAudible Help** for the manual or choose **Settings Reference** or **Keyboard Shortcuts** to go straight to that chapter. **Settings → General → Show Help Tags** controls the tips shown when you point to DownAudible controls. [Manual contents](DownAudible/Help/Manual/README.md) · [Settings reference](DownAudible/Help/Manual/help-12-settings.md) · [Keyboard shortcuts](DownAudible/Help/Manual/help-10-keyboard-shortcuts.md)
 
-Each build generates the indexed HTML Help bundle (`DownAudible.help`) from the Markdown chapters maintained on GitHub. Installed apps open the book in macOS Help. DownAudible displays the same HTML in its own window when system Help is unavailable.
-
 ## Build and run
 
-To build from source, you’ll need an Apple silicon Mac with Xcode 27.2, uv, and Rosetta. The build produces a universal app for macOS 15 and later. The first build downloads the Audible helper’s dependencies and compiles FFmpeg and LAME for both architectures. Later builds reuse the tools. [Xcode](https://developer.apple.com/xcode/) · [Install uv](https://docs.astral.sh/uv/getting-started/installation/) · [Install Rosetta](https://support.apple.com/en-gb/102527)
+You’ll need an Apple silicon Mac with Xcode 27.2, uv, and Rosetta. [Xcode](https://developer.apple.com/xcode/) · [Install uv](https://docs.astral.sh/uv/getting-started/installation/) · [Install Rosetta](https://support.apple.com/en-gb/102527)
 
-Xcode resolves the pinned Sparkle update framework through Swift Package Manager.
-
-Open `DownAudible.xcodeproj`, choose the **DownAudible** scheme, and choose product>run or press Command-R. To build from Terminal, run
+Open `DownAudible.xcodeproj`, select the **DownAudible** scheme, and press Command-R. To build and run from Terminal, use these commands.
 
 ```sh
 xcodebuild -scheme DownAudible \
@@ -68,36 +64,9 @@ xcodebuild -scheme DownAudible \
 open DerivedData/Build/Products/Debug/DownAudible.app
 ```
 
-Automatic signing is enabled. The checked-in settings sign builds to run locally. To use your Apple development team, sign in under **Xcode > Settings > Accounts**, then create `Signing.local.xcconfig` beside `App.xcconfig` with your Team ID.
-
-```xcconfig
-DEVELOPMENT_TEAM = YOUR_TEAM_ID
-CODE_SIGN_IDENTITY = Apple Development
-```
-
-Git ignores this file. Set the team here so Xcode leaves the shared project file free of team-specific settings. Xcode uses the signing identities in your Keychain or Apple’s signing service.
-
-## Checks
-
-Run the archive checks and the Audible helper’s mocked network tests without signing in.
-
-```sh
-Scripts/check-archive.sh
-PYTHONPATH=Scripts/Audible \
-  UV_PROJECT_ENVIRONMENT=.build/audible-tests \
-  uv run --project Scripts/Audible \
-  --locked --python 3.13 \
-  python -m unittest discover \
-  -s Scripts/Audible/tests
-```
-
 ## Credits
 
 DownAudible is developed by [Ashley Cox](https://ashleycox.co.uk). The source is licensed under the GNU Affero General Public License, version 3. [Licence](LICENSE)
-
-The Audible helper uses mkb79’s Audible and Audible CLI libraries. Libation and AAX Audio Converter were references for the download and conversion workflow. [Audible](https://github.com/mkb79/Audible) · [Audible CLI](https://github.com/mkb79/audible-cli) · [Libation](https://github.com/rmcrackan/Libation) · [AAX Audio Converter](https://github.com/audiamus/AaxAudioConverter)
-
-The build script pins and builds the bundled FFmpeg and LAME sources. [FFmpeg](https://ffmpeg.org/) · [LAME](https://lame.sourceforge.io/) · [Build script](Scripts/prepare-media.sh)
 
 [Credits and licences](DownAudible/Help/Manual/help-11-credits.md)
 
