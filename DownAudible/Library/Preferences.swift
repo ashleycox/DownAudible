@@ -5,6 +5,7 @@ struct SavedAudibleAccount: Codable, Identifiable, Hashable, Sendable {
     var name: String
     let marketplace: AudibleMarketplace
     var usesLegacySession = false
+    var librarySort: LibrarySort?
 }
 
 struct TransferPreferences: Codable, Sendable {

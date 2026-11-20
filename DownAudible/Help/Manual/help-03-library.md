@@ -2,9 +2,11 @@
 
 ## Browse your books
 
-Choose **Sort Library** in the toolbar or **View > Sort Library**. Pick a field and an order. Sort by title, author, narrator, series, purchase date, release year, length, or download status. Books with no value for the chosen field appear last. You can also click a column header to sort by that column.
+Choose **Sort Library** in the toolbar or **View > Sort Library**. Pick a field and an order. Sort by title, author, narrator, series, purchase date, release year, length, or download status. Books with no value for the chosen field appear last. You can also click a column header to sort by that column. DownAudible remembers each account’s sort order.
 
-Choose **Filter Library** in the toolbar or **View > Filter Library** to narrow the table by title, author, series, narrator, genre, language, release year, or download status. You can apply several filters together. Choose the same field again to edit it or choose **Remove Filter**. Under **Download Status**, choose **Any Status** to remove that filter. Choose **Clear Filters** to start over.
+Choose **Filter Library** in the toolbar or **View > Filter Library** to narrow the table by title, author, series, narrator, genre, language, release year, or download status. You can apply several filters together. Choose the same field again to edit it or choose **Remove Filter**. Under **Download Status**, choose **Any Status** to remove that filter. Choose **Clear Filters** to start over. Filters clear when you switch accounts, sign out, or quit DownAudible.
+
+When you type a filter, DownAudible suggests matches from the current library. Click a suggestion or use the Up and Down Arrow keys and press Return. You can also enter your own value. To hide suggestions, turn off **Suggest filter values as you type** in **Settings > Library**.
 
 Press Command–F to search by title, author, narrator, series, or ASIN. Search works within your active filters. Click one book, then Command-click to add individual books to the selection. Shift-click selects a range.
 

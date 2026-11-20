@@ -1,3 +1,4 @@
+import Accessibility
 import SwiftUI
 
 struct LibraryBrowseActions {
@@ -84,18 +85,22 @@ struct LibraryTextFilterView: View {
     @Environment(\.dismiss) private var dismiss
     @FocusState private var focused: Bool
     @State private var text: String
+    @State private var highlighted: String?
     let field: LibraryFilters.Field
+    let suggestions: LibraryFilterSuggestions?
     let apply: (String) -> Void
     private let hasFilter: Bool
 
-    init(field: LibraryFilters.Field, value: String?, apply: @escaping (String) -> Void) {
+    init(field: LibraryFilters.Field, value: String?, suggestions: LibraryFilterSuggestions?, apply: @escaping (String) -> Void) {
         self.field = field
+        self.suggestions = suggestions
         self.apply = apply
         hasFilter = value != nil
         _text = State(initialValue: value ?? "")
     }
 
     var body: some View {
+        let matches = suggestions?.matching(text) ?? []
         VStack(alignment: .leading, spacing: 16) {
             Text("Filter by \(field.displayName)")
                 .font(.title2.bold())
@@ -104,6 +109,29 @@ struct LibraryTextFilterView: View {
             TextField(field.displayName, text: $text)
                 .textFieldStyle(.roundedBorder)
                 .focused($focused)
+                .onKeyPress(keys: [.upArrow, .downArrow]) { press in
+                    guard press.modifiers.isDisjoint(with: [.shift, .control, .option, .command]) else { return .ignored }
+                    return moveSuggestion(matches, down: press.key == .downArrow)
+                }
+                .onKeyPress(.return) {
+                    guard highlighted != nil else { return .ignored }
+                    applyFilter()
+                    return .handled
+                }
+                .onSubmit(applyFilter)
+                .accessibilityHint(suggestions == nil ? "" : "Use the Up and Down Arrow keys to choose a suggestion.")
+
+            if !matches.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Suggestions")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .accessibilityAddTraits(.isHeader)
+                    ForEach(matches, id: \.self) { suggestion in
+                        suggestionButton(suggestion)
+                    }
+                }
+            }
 
             HStack {
                 if hasFilter {
@@ -112,19 +140,59 @@ struct LibraryTextFilterView: View {
                 Spacer()
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
-                Button("Apply Filter") { finish(with: text) }
+                Button("Apply Filter", action: applyFilter)
                     .keyboardShortcut(.defaultAction)
-                    .disabled(!canApply)
+                    .disabled(!canApply(highlighted ?? text))
             }
         }
         .padding(24)
         .frame(width: 440)
         .onAppear { focused = true }
+        .onChange(of: text) { highlighted = nil }
     }
 
-    private var canApply: Bool {
-        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func suggestionButton(_ suggestion: String) -> some View {
+        let selected = highlighted == suggestion
+        return Button { finish(with: suggestion) } label: {
+            Text(suggestion)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .foregroundStyle(selected ? Color(nsColor: .alternateSelectedControlTextColor) : .primary)
+                .background {
+                    if selected { RoundedRectangle(cornerRadius: 4).fill(Color(nsColor: .selectedContentBackgroundColor)) }
+                }
+        }
+        .buttonStyle(.plain)
+        .help(suggestion)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private func moveSuggestion(_ matches: [String], down: Bool) -> KeyPress.Result {
+        guard !matches.isEmpty else { return .ignored }
+        let index: Int
+        if let highlighted, let current = matches.firstIndex(of: highlighted) {
+            index = min(max(current + (down ? 1 : -1), 0), matches.count - 1)
+        } else {
+            index = down ? 0 : matches.count - 1
+        }
+        let selection = matches[index]
+        if highlighted != selection {
+            highlighted = selection
+            AccessibilityNotification.Announcement(selection).post()
+        }
+        return .handled
+    }
+
+    private func canApply(_ value: String) -> Bool {
+        let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return field == .releaseYear ? (Int(value).map { (1...9999).contains($0) } ?? false) : !value.isEmpty
+    }
+
+    private func applyFilter() {
+        let value = highlighted.flatMap { suggestions?.matching(text).contains($0) == true ? $0 : nil } ?? text
+        if canApply(value) { finish(with: value) }
     }
 
     private func finish(with value: String) {

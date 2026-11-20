@@ -75,6 +75,7 @@ struct PreferencesView: View {
 
 private struct LibraryPreferencesView: View {
     @Bindable var model: WorkspaceModel
+    @AppStorage(LibraryFilters.suggestionsPreferenceKey) private var showsFilterSuggestions = true
 
     var body: some View {
         Form {
@@ -102,6 +103,10 @@ private struct LibraryPreferencesView: View {
                 Button("Refresh Library") { Task { await model.refresh() } }
                     .keyboardShortcut("r", modifiers: [.control, .shift])
                     .disabled(!model.signedIn || !model.canSwitchAccounts || reversedDateRange)
+            }
+
+            Section("Browsing") {
+                Toggle("Suggest filter values as you type", isOn: $showsFilterSuggestions)
             }
         }
         .formStyle(.grouped)

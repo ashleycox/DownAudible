@@ -29,7 +29,7 @@ The setup wizard opens the first time you run DownAudible. Use it to connect an 
 
 **Audiobooks → Audible Tools** opens the wish list, catalogue search, activation bytes, and encrypted Audible CLI account export for the current account. Use **Audiobooks → Library → Export Library** to save the loaded library as JSON, CSV, or TSV.
 
-Use **Sort Library** and **Filter Library** in the library toolbar or the **View** menu to organise the table. **View → Library Status** shows which books need audio, which are downloaded or matched, and which Audible lists as unavailable. The **View** menu also controls the sidebar and the library status bar.
+Use **Sort Library** and **Filter Library** in the library toolbar or the **View** menu to organise the table. Each account remembers its sort order. Filters clear when you switch accounts or quit. **Settings → Library** controls suggestions as you type a filter. **View → Library Status** shows which books need audio, which are downloaded or matched, and which Audible lists as unavailable. The **View** menu also controls the sidebar and the library status bar.
 
 ## Conversion and file names
 

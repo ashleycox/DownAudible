@@ -218,6 +218,7 @@ final class WorkspaceModel {
                 accounts = [account]
                 activeAccountID = account.id
             }
+            migrateLibrarySort()
             if let account = activeAccount ?? accounts.first {
                 try await activate(account)
             }
@@ -296,6 +297,34 @@ final class WorkspaceModel {
         if let index = accounts.firstIndex(where: { $0.id == account.id }) {
             accounts[index].name = Self.accountName(name, account.marketplace)
         }
+    }
+
+    func librarySort(for accountID: UUID) -> LibrarySort {
+        accounts.first { $0.id == accountID }?.librarySort ?? LibrarySort()
+    }
+
+    func setLibrarySort(_ sort: LibrarySort, for accountID: UUID) {
+        guard let index = accounts.firstIndex(where: { $0.id == accountID }),
+              accounts[index].librarySort != sort else { return }
+        accounts[index].librarySort = sort
+    }
+
+    private func migrateLibrarySort() {
+        let field = defaults.string(forKey: "LibrarySortField")
+        let direction = defaults.string(forKey: "LibrarySortDirection")
+        guard field != nil || direction != nil else { return }
+        let previous = LibrarySort(
+            field: field.flatMap(LibrarySortField.init(rawValue:)) ?? .title,
+            direction: direction.flatMap(LibrarySortDirection.init(rawValue:)) ?? .ascending
+        )
+        let migrated = accounts.map { account in
+            var account = account
+            if account.librarySort == nil { account.librarySort = previous }
+            return account
+        }
+        if migrated != accounts { accounts = migrated }
+        defaults.removeObject(forKey: "LibrarySortField")
+        defaults.removeObject(forKey: "LibrarySortDirection")
     }
 
     func removeAccount(_ account: SavedAudibleAccount) async {

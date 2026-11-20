@@ -258,7 +258,8 @@ private struct WorkspaceView: View {
             Group {
                 switch model.page ?? .library {
                 case .library:
-                    LibraryView(model: model, showsStatusBar: showsStatusBar, filters: $libraryFilters)
+                    LibraryView(model: model, showsStatusBar: showsStatusBar, sort: librarySort, filters: $libraryFilters)
+                        .id(model.activeAccountID)
                 case .transfers:
                     TransfersView(model: model, requestingBatchRestart: $requestingBatchRestart)
                 case .convert:
@@ -299,6 +300,15 @@ private struct WorkspaceView: View {
 
     private var remainingJobs: Int {
         model.isTransferring ? model.transfers.count - model.finishedCount : 0
+    }
+
+    private var librarySort: Binding<LibrarySort> {
+        guard let accountID = model.activeAccountID else { return .constant(LibrarySort()) }
+        return Binding {
+            model.librarySort(for: accountID)
+        } set: { sort in
+            model.setLibrarySort(sort, for: accountID)
+        }
     }
 
     private var workspaceNotice: Binding<WorkspaceModel.Notice?> {

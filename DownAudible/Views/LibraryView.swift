@@ -5,9 +5,9 @@ struct LibraryView: View {
     @Environment(\.openWindow) private var openWindow
     @Bindable var model: WorkspaceModel
     let showsStatusBar: Bool
+    @Binding var sort: LibrarySort
     @Binding var filters: LibraryFilters
-    @AppStorage("LibrarySortField") private var sortField = LibrarySortField.title
-    @AppStorage("LibrarySortDirection") private var sortDirection = LibrarySortDirection.ascending
+    @AppStorage(LibraryFilters.suggestionsPreferenceKey) private var showsFilterSuggestions = true
     @FocusState private var searchFocused: Bool
     @State private var search = ""
     @State private var showingSearch = false
@@ -43,7 +43,8 @@ struct LibraryView: View {
             AudibleCLIImportView(model: model)
         }
         .sheet(item: $editingFilter) { field in
-            LibraryTextFilterView(field: field, value: filters[field]) { filters[field] = $0 }
+            let suggestions = showsFilterSuggestions ? LibraryFilterSuggestions(field: field, books: model.books) : nil
+            LibraryTextFilterView(field: field, value: filters[field], suggestions: suggestions) { filters[field] = $0 }
         }
         .toolbar {
             if model.signedIn {
@@ -56,7 +57,7 @@ struct LibraryView: View {
                         LibrarySortItems(actions: browseActions)
                     }
                     .labelStyle(.iconOnly)
-                    .accessibilityValue("\(sortField.displayName), \(sortField.orderName(sortDirection))")
+                    .accessibilityValue("\(sort.field.displayName), \(sort.field.orderName(sort.direction))")
                     .help("Sort Library")
 
                     Menu {
@@ -115,24 +116,20 @@ struct LibraryView: View {
             importAccount: { showingImport = true }
         ))
         .focusedSceneValue(\.libraryBrowseActions, model.signedIn ? browseActions : nil)
-        .onChange(of: model.activeAccount?.id) {
-            search = ""
-        }
     }
 
     private var browseActions: LibraryBrowseActions {
-        LibraryBrowseActions(field: $sortField, direction: $sortDirection, filters: $filters) { editingFilter = $0 }
+        LibraryBrowseActions(field: $sort.field, direction: $sort.direction, filters: $filters) { editingFilter = $0 }
     }
 
     private var tableSortOrder: Binding<[KeyPathComparator<LibraryRow>]> {
         Binding {
-            guard let column = sortField.column else { return [] }
-            return [KeyPathComparator(column, comparator: .localizedStandard, order: sortDirection.tableOrder)]
+            guard let column = sort.field.column else { return [] }
+            return [KeyPathComparator(column, comparator: .localizedStandard, order: sort.direction.tableOrder)]
         } set: { order in
             guard let primary = order.first,
                   let field = LibrarySortField.allCases.first(where: { $0.column == primary.keyPath }) else { return }
-            sortField = field
-            sortDirection = primary.order == .forward ? .ascending : .descending
+            sort = LibrarySort(field: field, direction: primary.order == .forward ? .ascending : .descending)
         }
     }
 
@@ -323,7 +320,7 @@ struct LibraryView: View {
             let row = LibraryRow(book: book, status: status, missingFiles: model.missingOutputFiles(for: book))
             return query.isEmpty || row.matches(query) ? row : nil
         }
-        return sortField.sorted(rows, direction: sortDirection)
+        return sort.field.sorted(rows, direction: sort.direction)
     }
 
     private func refresh() {

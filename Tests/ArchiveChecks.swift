@@ -38,6 +38,7 @@ struct ArchiveChecks {
         let options = try JSONDecoder().decode(DownloadOptions.self, from: previous)
         check(options.savesOriginal && options.downloadAudio && options.downloadCover && !options.downloadChapters)
         checkBundleIdentifierMigration()
+        try checkLibraryBrowsing()
 
         let file = LocalAudioFile(url: root.appending(path: "Book.aax"), format: "aax", title: "Écho", author: "Me", asin: nil, durationSeconds: 10)
         let echo = try matchingBook("Echo", asin: "B000000001", authors: ["me"])
@@ -437,6 +438,35 @@ struct ArchiveChecks {
             _ = try await client.cliProfiles(config: config)
             fatalError("An early Audible helper exit should fail the request.")
         } catch AudibleError.service {}
+    }
+
+    private static func checkLibraryBrowsing() throws {
+        let previous = Data(#"{"id":"1D25B1E2-F9AC-4D68-9043-E5468118B94A","name":"First","marketplace":"uk","usesLegacySession":false}"#.utf8)
+        var first = try JSONDecoder().decode(SavedAudibleAccount.self, from: previous)
+        check(first.librarySort == nil)
+        first.librarySort = LibrarySort(field: .purchaseDate, direction: .descending)
+        let second = SavedAudibleAccount(id: UUID(), name: "Second", marketplace: .unitedKingdom)
+        let accounts = try JSONEncoder().encode([first, second])
+        let saved = try JSONDecoder().decode([SavedAudibleAccount].self, from: accounts)
+        check(saved[0].librarySort == LibrarySort(field: .purchaseDate, direction: .descending))
+        check(saved[1].librarySort == nil)
+
+        let futurePreference = Data(#"{"id":"1D25B1E2-F9AC-4D68-9043-E5468118B94A","name":"First","marketplace":"uk","usesLegacySession":false,"librarySort":{"field":"futureField","direction":"descending"}}"#.utf8)
+        let futureAccount = try JSONDecoder().decode(SavedAudibleAccount.self, from: futurePreference)
+        check(futureAccount.librarySort == LibrarySort(field: .title, direction: .descending))
+
+        let cafe = try matchingBook("Café Window", asin: "B000000001", authors: ["Ada Moss"])
+        let river = try matchingBook("Across the River", asin: "B000000002", authors: ["Ada Moss", "Moss James"])
+        let forest = try matchingBook("The Forest", asin: "B000000003", authors: ["Alba Lee"])
+        let authors = LibraryFilterSuggestions(field: .author, books: [cafe, river])
+        check(authors.matching("moss") == ["Moss James", "Ada Moss"])
+        check(authors.matching("moss ada") == ["Ada Moss"])
+        check(authors.matching("alba").isEmpty)
+        check(LibraryFilterSuggestions(field: .author, books: [forest]).matching("alba") == ["Alba Lee"])
+        let titles = LibraryFilterSuggestions(field: .title, books: [cafe, river])
+        check(titles.matching("CAFE WINDOW") == ["Café Window"])
+        check(titles.matching("Café Window").isEmpty)
+        check(titles.matching(" ").isEmpty)
     }
 
     private static func checkLibraryAudioCategories() {

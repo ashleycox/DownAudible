@@ -1,6 +1,26 @@
 import Foundation
 
-enum LibrarySortField: String, CaseIterable, Identifiable {
+struct LibrarySort: Codable, Hashable, Sendable {
+    var field: LibrarySortField
+    var direction: LibrarySortDirection
+
+    private enum CodingKeys: CodingKey { case field, direction }
+
+    init(field: LibrarySortField = .title, direction: LibrarySortDirection = .ascending) {
+        self.field = field
+        self.direction = direction
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try? decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            field: (try? values?.decode(LibrarySortField.self, forKey: .field)) ?? .title,
+            direction: (try? values?.decode(LibrarySortDirection.self, forKey: .direction)) ?? .ascending
+        )
+    }
+}
+
+enum LibrarySortField: String, Codable, Sendable, CaseIterable, Identifiable {
     case title, author, narrator, series, purchaseDate, releaseYear, duration, downloadStatus
 
     var id: Self { self }
@@ -105,7 +125,7 @@ enum LibrarySortField: String, CaseIterable, Identifiable {
     }
 }
 
-enum LibrarySortDirection: String, CaseIterable, Identifiable {
+enum LibrarySortDirection: String, Codable, Sendable, CaseIterable, Identifiable {
     case ascending, descending
 
     var id: Self { self }
@@ -113,6 +133,8 @@ enum LibrarySortDirection: String, CaseIterable, Identifiable {
 }
 
 struct LibraryFilters: Equatable {
+    static let suggestionsPreferenceKey = "ShowsLibraryFilterSuggestions"
+
     enum Field: String, CaseIterable, Identifiable {
         case title, author, series, narrator, genre, language, releaseYear
 
@@ -130,19 +152,24 @@ struct LibraryFilters: Equatable {
             }
         }
 
-        func matches(_ book: AudibleBook, text: String) -> Bool {
+        func values(for book: AudibleBook) -> [String] {
             switch self {
-            case .title:
-                return book.title.localizedStandardContains(text) || book.subtitle?.localizedStandardContains(text) == true
-            case .author: return book.authors.contains { $0.localizedStandardContains(text) }
-            case .series: return book.series?.localizedStandardContains(text) == true
-            case .narrator: return book.narrators.contains { $0.localizedStandardContains(text) }
-            case .genre: return book.genres?.contains { $0.localizedStandardContains(text) } == true
-            case .language: return book.language?.localizedStandardContains(text) == true
-            case .releaseYear:
+            case .title: [book.title] + (book.subtitle.map { [$0] } ?? [])
+            case .author: book.authors
+            case .series: book.series.map { [$0] } ?? []
+            case .narrator: book.narrators
+            case .genre: book.genres ?? []
+            case .language: book.language.map { [$0] } ?? []
+            case .releaseYear: LibrarySortField.releaseYear(book.releaseDate).map { [String($0)] } ?? []
+            }
+        }
+
+        func matches(_ book: AudibleBook, text: String) -> Bool {
+            if self == .releaseYear {
                 guard let year = Int(text) else { return false }
                 return LibrarySortField.releaseYear(book.releaseDate) == year
             }
+            return values(for: book).contains { $0.localizedStandardContains(text) }
         }
     }
 
