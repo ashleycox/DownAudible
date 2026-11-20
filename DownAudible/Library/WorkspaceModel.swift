@@ -11,6 +11,19 @@ final class WorkspaceModel {
         let message: String
     }
 
+    enum LibraryDownloadScope {
+        case missing, entireLibrary, visibleResults, selectedBooks
+
+        var description: String {
+            switch self {
+            case .missing: "Missing audio across the loaded library."
+            case .entireLibrary: "Every title in the loaded library."
+            case .visibleResults: "Only the titles currently shown in the library table."
+            case .selectedBooks: "Only the selected titles."
+            }
+        }
+    }
+
     struct TransferNotificationSelection: Equatable {
         let id = UUID()
         let transferIDs: Set<UUID>
@@ -33,7 +46,10 @@ final class WorkspaceModel {
     var isPreparingFiles = false
     private(set) var isCheckingFiles = false
     var books: [AudibleBook] = []
+    private(set) var libraryLoadError: String?
     var transfers: [Transfer] = []
+    private(set) var transferHistory: [TransferHistoryBatch] = []
+    private(set) var transferHistorySelection: UUID?
     private(set) var transferNotificationSelection: TransferNotificationSelection?
     var selectedBooks: Set<AudibleBook.ID> = []
     var selectedFiles: Set<LocalAudioFile.ID> = []
@@ -103,6 +119,8 @@ final class WorkspaceModel {
     private var validLocalMatches: [String: [URL]] = [:]
     private(set) var isTransferring = false
     private(set) var didRestoreTransfers = false
+    private var isFinishingForQuit = false
+    private var acceptingDownloadRunID: UUID?
 
     private static let legacyBooksImportError = "The files were saved. Books couldn’t open them."
 
@@ -116,6 +134,9 @@ final class WorkspaceModel {
     @ObservationIgnored private var queueSaveTask: Task<Void, Never>?
     @ObservationIgnored private var queueRevision = 0
     @ObservationIgnored private var pendingQueueWrites = 0
+    @ObservationIgnored private var completedQueueRevision = 0
+    @ObservationIgnored private var queueSaveFailed = false
+    @ObservationIgnored private var scheduledTransferIndices: [Int] = []
     @ObservationIgnored private var activeJobs: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored private var batchEncounteredError = false
     @ObservationIgnored private var feedbackProgress: [UUID: TransferFeedbackProgress] = [:]
@@ -166,14 +187,20 @@ final class WorkspaceModel {
     var canSwitchAccounts: Bool { didRestoreTransfers && !accountBusy && !signInBusy && !isRefreshing && !isScanning }
     var canRemoveAccounts: Bool { canSwitchAccounts && !isTransferring }
     var activeAudibleClient: AudibleClient? { signedIn ? client(for: activeAccount) : nil }
-    var hasPendingQueueWrite: Bool { queueSaveTask != nil || pendingQueueWrites > 0 }
-    var canRetry: Bool { canRetryTransfers && transfers.contains(where: \.canRetry) }
-    var canRestart: Bool { canRetryTransfers && transfers.contains(where: \.canRestart) }
-    var canClearCompleted: Bool {
-        !isTransferring && transfers.contains { if case .done(_, nil) = $0.status { true } else { false } }
+    var hasPendingQueueWrite: Bool { queueSaveTask != nil || pendingQueueWrites > 0 || queueSaveFailed }
+    var displayedTransfers: [Transfer] {
+        transferHistory.first { $0.id == transferHistorySelection }?.transfers ?? transfers
     }
-    private var canRetryTransfers: Bool {
-        guard !isTransferring, let batch = lastBatch else { return false }
+    var canRetry: Bool { canRetryBatch(transferHistorySelection) && displayedTransfers.contains(where: \.canRetry) }
+    var canRestart: Bool { canRetryBatch(transferHistorySelection) && displayedTransfers.contains(where: \.canRestart) }
+    var canClearCompleted: Bool {
+        !isTransferring && !isFinishingForQuit && displayedTransfers.contains {
+            if case .done(_, nil) = $0.status { true } else { false }
+        }
+    }
+    private func canRetryBatch(_ historyID: UUID?) -> Bool {
+        let batch = if let historyID { transferHistory.first { $0.id == historyID }?.batch } else { lastBatch }
+        guard !isTransferring, !isFinishingForQuit, let batch else { return false }
         if batch.work.contains(where: \.isDownload) {
             guard let id = batch.account?.id else { return false }
             return accounts.contains { $0.id == id }
@@ -202,8 +229,15 @@ final class WorkspaceModel {
         canRequestDownloads && !isRefreshing && !isScanning && !isCheckingFiles && !missingBooks.isEmpty
     }
 
-    var canStartDownloads: Bool { didRestoreTransfers && signedIn && !accountBusy && !signInBusy && !isTransferring }
+    var canStartDownloads: Bool {
+        didRestoreTransfers && signedIn && !accountBusy && !signInBusy && !isTransferring && !isFinishingForQuit
+    }
     var canRequestDownloads: Bool { canStartDownloads && downloadRequest == nil }
+    var canAddToDownloadQueue: Bool {
+        acceptingDownloadRunID != nil && !isFinishingForQuit && signedIn && !accountBusy && !signInBusy
+            && activeAccountID != nil && lastBatch?.account?.id == activeAccountID
+            && (!batchEncounteredError || lastBatch?.preferences.continueAfterError == true)
+    }
     var selectedAudiobooks: [AudibleBook] { books.filter { selectedBooks.contains($0.id) } }
 
     var finishedCount: Int { transfers.count(where: \.isFinished) }
@@ -399,6 +433,7 @@ final class WorkspaceModel {
     private func clearLibrary() {
         signedIn = false
         books = []
+        libraryLoadError = nil
         selectedBooks = []
         downloadRequest = nil
         exportedFiles = [:]
@@ -433,20 +468,34 @@ final class WorkspaceModel {
         guard signedIn, !isRefreshing, !isScanning else { return }
         if let start = apiOptions.purchaseStart, let end = apiOptions.purchaseEnd,
            Calendar.current.compare(start, to: end, toGranularity: .day) == .orderedDescending {
-            notice = Notice(title: "Check the purchase dates", message: "Choose an end date on or after the start date in Settings.")
+            libraryRefreshFailed("Choose a purchase end date on or after the start date in Settings > Library.")
             return
         }
+        let account = activeAccount
         isRefreshing = true
         defer { isRefreshing = false }
         do {
-            books = try await client(for: activeAccount).library()
+            let loadedBooks = try await client(for: account).library()
+            try Task.checkCancellation()
+            guard signedIn, activeAccountID == account?.id else { return }
+            books = loadedBooks
+            libraryLoadError = nil
             selectedBooks.formIntersection(books.map(\.id))
             await refreshExportStatus()
             if let directory = localMatches.directory { await scanMatches(in: directory) }
         } catch is CancellationError {
             return
         } catch {
-            show("Couldn’t load your library", error: error)
+            guard signedIn, activeAccountID == account?.id else { return }
+            libraryRefreshFailed(error.localizedDescription)
+        }
+    }
+
+    private func libraryRefreshFailed(_ message: String) {
+        if books.isEmpty {
+            libraryLoadError = message
+        } else {
+            notice = Notice(title: "Couldn’t refresh your library", message: message)
         }
     }
 
@@ -638,8 +687,62 @@ final class WorkspaceModel {
                 notice = Notice(title: "Library is up to date", message: "Every downloadable title has a saved or matched audio file.")
                 return
             }
-            requestDownloads(missing, customizing: customizing, ensureAudio: true)
+            if customizing {
+                requestDownloads(missing, customizing: true, ensureAudio: true)
+            } else {
+                reviewBulkDownload(missing, scope: .missing, ensureAudio: true)
+            }
         }
+    }
+
+    func reviewBulkDownload(_ books: [AudibleBook], scope: LibraryDownloadScope, ensureAudio: Bool = false) {
+        guard canRequestDownloads, !books.isEmpty, let accountID = activeAccountID else { return }
+        if !ensureAudio, !downloadOptions.hasSelection {
+            requestDownloads(books)
+            return
+        }
+        guard confirmLibraryDownload(
+            count: books.count, message: "\(scope.description) The batch uses your saved download options."
+        ) else { return }
+        let loadedIDs = Set(self.books.map(\.id))
+        guard activeAccountID == accountID, canRequestDownloads,
+              books.allSatisfy({ loadedIDs.contains($0.id) }) else {
+            notice = Notice(title: "The batch could not start", message: "The library or download queue changed. Review your titles and choose the download again.")
+            return
+        }
+        requestDownloads(books, ensureAudio: ensureAudio)
+    }
+
+    func requestSelectedDownloads(_ books: [AudibleBook]) {
+        if books.count > 1 {
+            reviewBulkDownload(books, scope: .selectedBooks)
+        } else {
+            requestDownloads(books)
+        }
+    }
+
+    func reviewAddingToDownloadQueue(_ books: [AudibleBook]) {
+        guard let accountID = activeAccountID, let runID = acceptingDownloadRunID else { return }
+        let additions = downloadQueueAdditions(from: books)
+        guard !additions.isEmpty, confirmLibraryDownload(
+            count: additions.count, message: "These audiobooks use the running batch’s destination and options.", appending: true
+        ) else { return }
+        guard activeAccountID == accountID, acceptingDownloadRunID == runID,
+              downloadQueueAdditions(from: additions).count == additions.count else {
+            notice = Notice(title: "Couldn’t add the audiobooks", message: "The running batch changed or finished. Review your titles and choose a download again.")
+            return
+        }
+        addToDownloadQueue(additions)
+    }
+
+    private func confirmLibraryDownload(count: Int, message: String, appending: Bool = false) -> Bool {
+        let alert = NSAlert()
+        let titles = count == 1 ? "1 Audiobook" : "\(count.formatted()) Audiobooks"
+        alert.messageText = appending ? "Add \(titles) to Queue?" : "Download \(titles)?"
+        alert.informativeText = message
+        alert.addButton(withTitle: appending ? "Add to Queue" : "Download")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     func hasIncompleteDownload(for book: AudibleBook) -> Bool {
@@ -667,11 +770,13 @@ final class WorkspaceModel {
         startDownloads(for: books, options: options)
     }
 
-    func startDownloads(for books: [AudibleBook], options: DownloadOptions, restartsIncomplete: Bool = false) {
+    func startDownloads(
+        for books: [AudibleBook], options: DownloadOptions, restartsIncomplete: Bool = false, repairsArchive: Bool = false
+    ) {
         guard canStartDownloads, options.hasSelection, !restartsIncomplete || options.downloadAudio,
               let account = activeAccount else { return }
         let work = books.map { book in
-            TransferWork.library(book, matches: restartsIncomplete ? [] : sourceFiles(for: book))
+            TransferWork.library(book, matches: restartsIncomplete || repairsArchive ? [] : sourceFiles(for: book))
         }
         let jobLimit = options.makesConversion
             ? min(transferPreferences.jobLimit, transferPreferences.conversionJobLimit)
@@ -680,7 +785,7 @@ final class WorkspaceModel {
             TransferBatch(
                 work: work, account: account, apiOptions: apiOptions, layout: layout, options: options,
                 conversion: conversionPreferences, appleBooks: appleBooksDestination,
-                preferences: transferPreferences, jobLimit: jobLimit
+                preferences: transferPreferences, jobLimit: jobLimit, repairsArchive: repairsArchive ? true : nil
             ), restartIncomplete: restartsIncomplete
         )
     }
@@ -713,7 +818,45 @@ final class WorkspaceModel {
         run(batch)
     }
 
-    func cancelBatch() { activeTransfer?.cancel() }
+    func downloadQueueAdditions(from books: [AudibleBook]) -> [AudibleBook] {
+        guard canAddToDownloadQueue, let batch = lastBatch else { return [] }
+        let libraryIDs = Set(self.books.map(\.id))
+        var queuedIDs = Set(batch.work.compactMap(\.bookID))
+        return books.filter { libraryIDs.contains($0.id) && queuedIDs.insert($0.id).inserted }
+    }
+
+    func addToDownloadQueue(_ books: [AudibleBook]) {
+        let additions = downloadQueueAdditions(from: books)
+        guard !additions.isEmpty, var batch = lastBatch else { return }
+        let firstNewIndex = batch.work.count
+        batch.work += additions.map { .library($0, matches: sourceFiles(for: $0)) }
+        transfers += additions.map { Transfer(title: $0.title) }
+        scheduledTransferIndices.append(contentsOf: firstNewIndex..<batch.work.count)
+        lastBatch = batch
+        transferHistorySelection = nil
+        scheduleQueueSave()
+    }
+
+    func cancelBatch() {
+        acceptingDownloadRunID = nil
+        transferHistorySelection = nil
+        activeTransfer?.cancel()
+    }
+
+    func selectTransferHistory(_ historyID: UUID?) {
+        guard historyID == nil || transferHistory.contains(where: { $0.id == historyID }) else { return }
+        transferHistorySelection = historyID
+    }
+
+    func selectHistoryForNotification(_ ids: Set<UUID>) {
+        if transfers.contains(where: { ids.contains($0.id) }) {
+            transferHistorySelection = nil
+        } else {
+            transferHistorySelection = transferHistory.first { entry in
+                entry.transfers.contains { ids.contains($0.id) }
+            }?.id
+        }
+    }
 
     func showNotifiedTransfers(_ ids: [UUID]) {
         transferNotificationSelection = TransferNotificationSelection(transferIDs: Set(ids))
@@ -752,21 +895,25 @@ final class WorkspaceModel {
         }
     }
 
-    func cancelAndWaitForTransfers() async {
+    func cancelAndSaveTransfersForQuit() async throws {
+        isFinishingForQuit = true
+        acceptingDownloadRunID = nil
         activeTransfer?.cancel()
         await activeTransfer?.value
         queueSaveTask?.cancel()
         queueSaveTask = nil
-        await persistQueue()
+        try await saveQueue()
     }
 
-    func waitForTransfersBeforeUpdating() async {
-        while let activeTransfer {
-            await activeTransfer.value
-        }
-        await queueSaveTask?.value
-        if hasPendingQueueWrite {
-            await persistQueue()
+    func resumeAfterCancelledQuit() { isFinishingForQuit = false }
+
+    func waitForTransfersBeforeUpdating() async throws {
+        while true {
+            while let activeTransfer { await activeTransfer.value }
+            guard hasPendingQueueWrite else { return }
+            queueSaveTask?.cancel()
+            queueSaveTask = nil
+            try await saveQueue()
         }
     }
 
@@ -778,18 +925,27 @@ final class WorkspaceModel {
         }
     }
 
-    func retryBatch() { retryTransfers(transfers.map(\.id), restartIncomplete: false) }
+    func retryBatch() { retryTransfers(displayedTransfers.map(\.id), historyID: transferHistorySelection) }
 
-    func retryTransfers(_ ids: [UUID], restartIncomplete: Bool = false) {
-        guard canRetryTransfers, var batch = lastBatch else { return }
+    func retryTransfers(_ ids: [UUID], restartIncomplete: Bool = false, historyID: UUID? = nil) {
+        guard canRetryBatch(historyID) else { return }
+        let historicalBatch = transferHistory.first { $0.id == historyID }
+        guard var batch = historicalBatch?.batch ?? lastBatch else { return }
+        let items = historicalBatch?.transfers ?? transfers
         let ids = Set(ids)
-        let selected = transfers.indices.filter {
-            let transfer = transfers[$0]
-            return ids.contains(transfer.id) && transfer.canRetry && (!restartIncomplete || transfer.canRestart)
+        let selected = items.indices.filter {
+            let item = items[$0]
+            return ids.contains(item.id) && item.canRetry && (!restartIncomplete || item.canRestart)
+        }
+        guard !selected.isEmpty else { return }
+        guard batch.layout.isValid else {
+            show("Check the folder and filename templates", error: ArchiveError.invalidTemplate)
+            return
         }
         for index in selected {
             if case .library(let book, _) = batch.work[index], activeAccountID == batch.account?.id {
-                batch.work[index] = .library(book, matches: restartIncomplete ? [] : sourceFiles(for: book))
+                let requiresDownload = restartIncomplete || batch.repairsArchive == true
+                batch.work[index] = .library(book, matches: requiresDownload ? [] : sourceFiles(for: book))
             }
         }
         if selected.contains(where: { index in
@@ -802,20 +958,41 @@ final class WorkspaceModel {
             }
             batch.activation = enteredActivationBytes
         }
+        if let historicalBatch {
+            transferHistory.removeAll { $0.id == historicalBatch.id }
+            archiveCurrentTransfers()
+            transfers = historicalBatch.transfers
+        }
         run(batch, indices: selected, restartIncomplete: restartIncomplete)
     }
 
     func clearCompletedTransfers() {
-        let ids = transfers.compactMap { transfer in
+        let ids = displayedTransfers.compactMap { transfer in
             if case .done(_, nil) = transfer.status { return transfer.id }
             return nil
         }
-        removeTransfers(ids)
+        removeTransfers(ids, historyID: transferHistorySelection)
     }
 
-    func removeTransfers(_ ids: [UUID]) {
-        guard !isTransferring, var batch = lastBatch else { return }
+    func removeTransfers(_ ids: [UUID], historyID: UUID? = nil) {
+        guard !isTransferring, !isFinishingForQuit, !ids.isEmpty else { return }
         let ids = Set(ids)
+        if let historyID {
+            guard let index = transferHistory.firstIndex(where: { $0.id == historyID }) else { return }
+            var entry = transferHistory[index]
+            let kept = entry.transfers.indices.filter { !ids.contains(entry.transfers[$0].id) }
+            if kept.isEmpty {
+                transferHistory.remove(at: index)
+                if transferHistorySelection == historyID { transferHistorySelection = nil }
+            } else {
+                entry.transfers = kept.map { entry.transfers[$0] }
+                entry.batch.work = kept.map { entry.batch.work[$0] }
+                transferHistory[index] = entry
+            }
+            scheduleQueueSave()
+            return
+        }
+        guard var batch = lastBatch else { return }
         let kept = transfers.indices.filter { !ids.contains(transfers[$0].id) }
         transfers = kept.map { transfers[$0] }
         batch.work = kept.map { batch.work[$0] }
@@ -823,9 +1000,16 @@ final class WorkspaceModel {
         scheduleQueueSave()
     }
 
+    private func archiveCurrentTransfers() {
+        guard let lastBatch, !transfers.isEmpty else { return }
+        let entry = TransferHistoryBatch(date: lastBatch.startedAt ?? .now, batch: lastBatch, transfers: transfers)
+        transferHistory.insert(entry, at: 0)
+        if transferHistory.count > TransferQueueSnapshot.historyLimit { transferHistory.removeLast() }
+    }
+
     private func run(_ batch: TransferBatch, indices: [Int]? = nil, restartIncomplete: Bool = false) {
         let selected = indices ?? Array(batch.work.indices)
-        guard didRestoreTransfers, !isTransferring, !selected.isEmpty else { return }
+        guard didRestoreTransfers, !isTransferring, !isFinishingForQuit, !selected.isEmpty else { return }
         guard batch.layout.isValid else {
             show("Check the folder and filename templates", error: ArchiveError.invalidTemplate)
             return
@@ -833,8 +1017,8 @@ final class WorkspaceModel {
         isTransferring = true
         batchEncounteredError = false
         feedbackProgress.removeAll(keepingCapacity: true)
-        lastBatch = batch
         if indices == nil {
+            archiveCurrentTransfers()
             transfers = batch.work.map { work in
                 Transfer(title: work.title, restartPending: restartIncomplete)
             }
@@ -844,6 +1028,12 @@ final class WorkspaceModel {
                 if restartIncomplete { transfers[index].restartPending = true }
             }
         }
+        var startedBatch = batch
+        startedBatch.startedAt = .now
+        lastBatch = startedBatch
+        scheduledTransferIndices = selected
+        acceptingDownloadRunID = batch.work.first?.isDownload == true && batch.repairsArchive != true ? UUID() : nil
+        transferHistorySelection = nil
         page = .transfers
 
         activeTransfer = Task { [self] in
@@ -854,47 +1044,52 @@ final class WorkspaceModel {
             await persistQueue()
             await withTaskGroup(of: Void.self) { group in
                 var next = 0
-                var stopped = false
-                let limit = min(selected.count, max(1, min(12, batch.jobLimit)))
-                for _ in 0..<limit {
-                    let index = selected[next]
-                    group.addTask { await self.execute(batch, at: index) }
-                    next += 1
+                var running = 0
+                let limit = max(1, min(12, batch.jobLimit))
+                while true {
+                    let canStart = !Task.isCancelled && (!batchEncounteredError || batch.preferences.continueAfterError)
+                    if !canStart { acceptingDownloadRunID = nil }
+                    while canStart, next < scheduledTransferIndices.count, running < limit {
+                        let index = scheduledTransferIndices[next]
+                        next += 1
+                        guard !transfers[index].isFinished, let updatedBatch = lastBatch else { continue }
+                        group.addTask { await self.execute(updatedBatch, at: index) }
+                        running += 1
+                    }
+                    guard running > 0, await group.next() != nil else { break }
+                    running -= 1
                 }
-                while await group.next() != nil {
-                    stopped = batchEncounteredError && !batch.preferences.continueAfterError
-                    guard !stopped, !Task.isCancelled, next < selected.count else { continue }
-                    let index = selected[next]
-                    group.addTask { await self.execute(batch, at: index) }
-                    next += 1
-                }
-                for index in selected.dropFirst(next) where !transfers[index].isFinished {
+                acceptingDownloadRunID = nil
+                let stopped = !Task.isCancelled && batchEncounteredError && !batch.preferences.continueAfterError
+                for index in scheduledTransferIndices.dropFirst(next) where !transfers[index].isFinished {
                     transfers[index].status = stopped ? .stopped : .cancelled
                 }
             }
             await recheckFiles()
             await persistQueue()
             if !Task.isCancelled {
-                announceTransferResults(for: batch, indices: selected)
+                announceTransferResults(indices: scheduledTransferIndices)
             }
+            scheduledTransferIndices.removeAll()
             isTransferring = false
             activeTransfer = nil
         }
     }
 
-    private func announceTransferResults(for batch: TransferBatch, indices: [Int]) {
+    private func announceTransferResults(indices: [Int]) {
         var jobsByEvent: [TransferFeedbackEvent: [TransferNotificationJob]] = [:]
+        var finishedWork = false
         for index in indices {
             let transfer = transfers[index]
-            let progress = feedbackProgress[transfer.id, default: TransferFeedbackProgress()]
-            let events = progress.outcomes(
-                isDownload: batch.work[index].isDownload, requestsConversion: batch.options.makesConversion,
-                status: transfer.status
-            )
+            switch transfer.status {
+            case .done, .failed: finishedWork = true
+            default: continue
+            }
+            let events = feedbackProgress[transfer.id]?.outcomes(for: transfer.status) ?? []
             let job = TransferNotificationJob(id: transfer.id, title: transfer.title)
             for event in events { jobsByEvent[event, default: []].append(job) }
         }
-        guard !jobsByEvent.isEmpty else { return }
+        guard finishedWork else { return }
         let events = TransferFeedbackEvent.allCases.filter { $0 == .queueFinished || jobsByEvent[$0] != nil }
         let sounds = events.compactMap { event -> QueueCompletionSound? in
             let settings = transferFeedback[event]
@@ -916,12 +1111,7 @@ final class WorkspaceModel {
     }
 
     private func recordTransferFeedback(_ milestone: ArchiveWorker.FeedbackMilestone, id: UUID) {
-        switch milestone {
-        case .downloaded:
-            feedbackProgress[id, default: TransferFeedbackProgress()].downloaded = true
-        case .preparingConversion:
-            feedbackProgress[id, default: TransferFeedbackProgress()].converting = true
-        }
+        feedbackProgress[id]?.record(milestone)
     }
 
     private func execute(_ batch: TransferBatch, at index: Int) async {
@@ -948,6 +1138,10 @@ final class WorkspaceModel {
         }
         transfers[index].status = .active("Preparing", nil)
         let id = transfers[index].id
+        feedbackProgress[id] = TransferFeedbackProgress(isDownload: batch.work[index].isDownload)
+        let feedback: @Sendable (ArchiveWorker.FeedbackMilestone) async -> Void = { [weak self] milestone in
+            await self?.recordTransferFeedback(milestone, id: id)
+        }
         let progress: ArchiveWorker.Progress = { [weak self] name, fraction in
             await self?.updateProgress(at: index, id: id, description: name, fraction: fraction)
         }
@@ -962,11 +1156,10 @@ final class WorkspaceModel {
                     book, account: archiveID(for: account), audible: client,
                     matches: restart ? [] : matches, layout: batch.layout, options: batch.options,
                     existingFiles: batch.preferences.existingFiles, conversion: batch.conversion,
-                    requestID: id, restartIncomplete: restart, didRestart: { [weak self] in
+                    requestID: id, repairAudio: batch.repairsArchive == true, restartIncomplete: restart,
+                    didRestart: { [weak self] in
                         await self?.acknowledgeRestart(at: index, id: id)
-                    }, feedback: { [weak self] milestone in
-                        await self?.recordTransferFeedback(milestone, id: id)
-                    }, progress: progress
+                    }, feedback: feedback, progress: progress
                 )
                 transfers[index].restartPending = false
                 if batch.options.downloadAudio, activeAccountID == account.id, layout == batch.layout {
@@ -976,7 +1169,7 @@ final class WorkspaceModel {
                 receipt = try await archive.convert(
                     file, audible: client, layout: batch.layout, activationBytes: batch.activation,
                     existingFiles: batch.preferences.existingFiles, conversion: batch.conversion,
-                    requestID: id, progress: progress
+                    requestID: id, feedback: feedback, progress: progress
                 )
             }
 
@@ -1043,8 +1236,9 @@ final class WorkspaceModel {
 
     private func restoreTransfers() async {
         do {
-            guard let snapshot = try await queue.load(),
-                  let batch = snapshot.batch, batch.work.count == snapshot.transfers.count else { return }
+            guard let snapshot = try await queue.load() else { return }
+            transferHistory = snapshot.history
+            guard let batch = snapshot.batch else { return }
             let partialFolders = await partialFolders(for: batch)
             lastBatch = batch
             transfers = zip(snapshot.transfers, batch.work).map { saved, work in
@@ -1071,22 +1265,43 @@ final class WorkspaceModel {
     private func scheduleQueueSave() {
         guard queueSaveTask == nil else { return }
         queueSaveTask = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(400))
-            guard let self else { return }
+            do {
+                try await Task.sleep(for: .milliseconds(400))
+            } catch {
+                return
+            }
+            guard let self, !Task.isCancelled else { return }
             self.queueSaveTask = nil
-            if !Task.isCancelled { await self.persistQueue() }
+            await self.persistQueue()
         }
     }
 
     private func persistQueue() async {
+        do {
+            try await saveQueue()
+        } catch {
+            if queueSaveFailed && !isFinishingForQuit { show("Couldn’t save the transfer queue", error: error) }
+        }
+    }
+
+    private func saveQueue() async throws {
         queueRevision += 1
+        let revision = queueRevision
         pendingQueueWrites += 1
         defer { pendingQueueWrites -= 1 }
-        let snapshot = TransferQueueSnapshot(batch: lastBatch, transfers: transfers)
+        let snapshot = TransferQueueSnapshot(batch: lastBatch, transfers: transfers, history: transferHistory)
         do {
-            try await queue.save(snapshot, revision: queueRevision)
+            try await queue.save(snapshot, revision: revision)
+            if revision > completedQueueRevision {
+                completedQueueRevision = revision
+                queueSaveFailed = false
+            }
         } catch {
-            show("Couldn’t save the transfer queue", error: error)
+            if revision > completedQueueRevision {
+                completedQueueRevision = revision
+                queueSaveFailed = true
+            }
+            throw error
         }
     }
 
@@ -1104,17 +1319,66 @@ final class WorkspaceModel {
         if panel.runModal() == .OK { transferPreferences.logFile = panel.url }
     }
 
-    func exportLibrary(_ format: LibraryExportFormat) async {
+    func exportLibrary(_ format: LibraryExportFormat, visibleBooks: [AudibleBook]? = nil) async {
+        let titles = visibleBooks ?? books
         let panel = NSSavePanel()
         panel.allowedContentTypes = [format.contentType]
-        panel.nameFieldStringValue = "Audible Library.\(format.rawValue)"
+        let name = visibleBooks == nil ? "Audible Library" : "Audible Library Results"
+        panel.nameFieldStringValue = "\(name).\(format.rawValue)"
+        if visibleBooks != nil {
+            panel.message = titles.count == 1 ? "Export the visible audiobook."
+                : "Export the \(titles.count.formatted()) visible audiobooks."
+        }
         panel.prompt = "Export"
         guard panel.runModal() == .OK, let path = panel.url else { return }
         do {
-            try await format.write(books, to: path)
+            try await format.write(titles, to: path)
         } catch {
             show("Couldn’t export the library", error: error)
         }
+    }
+
+    var showingArchiveVerification = false
+
+    var canVerifyArchive: Bool {
+        signedIn && activeAccount != nil && !books.isEmpty && !isRefreshing && !isScanning
+            && !isTransferring && downloadRequest == nil
+    }
+
+    func verifyArchive(
+        progress: @escaping @MainActor @Sendable (Int, Int) -> Void
+    ) async throws -> ArchiveVerificationReport {
+        guard let account = activeAccount, canVerifyArchive else {
+            throw isTransferring ? ArchiveVerificationError.transfersRunning : ArchiveVerificationError.archiveChanged
+        }
+        let layout = layout
+        let books = books.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+        var matches: [String: [URL]] = [:]
+        for book in books { matches[book.id] = localMatches.files(for: book.id) }
+        let issues = try await archive.verifyArchive(
+            books: books, account: archiveID(for: account), layout: layout, matches: matches
+        ) { checked, total in
+            await progress(checked, total)
+        }
+        guard signedIn, activeAccountID == account.id, self.layout == layout else {
+            throw ArchiveVerificationError.archiveChanged
+        }
+        return ArchiveVerificationReport(accountID: account.id, layout: layout, checkedCount: books.count, issues: issues)
+    }
+
+    func startArchiveRepair(_ report: ArchiveVerificationReport, selecting selection: Set<AudibleBook.ID>) throws {
+        guard signedIn, let account = activeAccount, account.id == report.accountID, layout == report.layout else {
+            throw ArchiveVerificationError.archiveChanged
+        }
+        guard canStartDownloads && downloadRequest == nil else { throw ArchiveVerificationError.transfersRunning }
+        guard layout.isValid else { throw ArchiveError.invalidTemplate }
+        let allowed = Set(report.issues.filter(\.canRepair).map(\.id)).intersection(selection)
+        let titles = books.filter { allowed.contains($0.id) && $0.isDownloadable }
+        guard !titles.isEmpty else { throw ArchiveVerificationError.archiveChanged }
+        var options = DownloadOptions()
+        options.convert = downloadOptions.convert
+        options.keepOriginal = downloadOptions.keepOriginal
+        startDownloads(for: titles, options: options, repairsArchive: true)
     }
 
     private func show(_ title: String, error: any Error) {

@@ -4,6 +4,12 @@
 
 Choose where to save your archive in **Settings > Files**. A download sheet can also change the destination. To link audio from an existing archive, choose **Match Existing Folder…** in Library and select the archive folder.
 
+## Verify and repair the archive
+
+Choose **Audiobooks > Library > Verify and Repair Archive…** or use the same command in **Library Actions**. DownAudible checks the current account’s archive destination and matched audio for a complete copy of each book. It decodes MP3, M4A, and M4B audio to check playback. For protected Audible files, it checks the file structure and any recorded size. Choose **Cancel** to stop the check.
+
+The report lists titles with missing, incomplete, or unreadable audio. Select titles in the report or choose **Select All Repairable**. Choose **Repair Selected** or **Repair … Titles** to add just those titles to **Downloads**. Repair resumes valid partial audio when possible and uses your current audio download and conversion settings. DownAudible saves replacement audio alongside existing files. If Audible no longer offers a title for download, the report shows it as unavailable.
+
 ## Templates
 
 Use a slash to start another folder. With the default template `{format}/{author}/{title}`, an AAX and its M4B copy go into separate folders.

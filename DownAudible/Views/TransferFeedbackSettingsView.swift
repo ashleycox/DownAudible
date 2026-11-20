@@ -6,6 +6,7 @@ struct TransferFeedbackSettingsView: View {
     @Bindable var model: WorkspaceModel
     @State private var event = TransferFeedbackEvent.downloadCompleted
     @State private var choosingFile = false
+    @State private var choosingFileFor: TransferFeedbackEvent?
     @State private var importingFile = false
     @State private var notificationStatus: TransferNotificationStatus?
     @State private var statusRefresh = 0
@@ -61,7 +62,11 @@ struct TransferFeedbackSettingsView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             statusRefresh += 1
         }
-        .fileImporter(isPresented: $choosingFile, allowedContentTypes: [.audio], onCompletion: importSound)
+        .fileImporter(isPresented: $choosingFile, allowedContentTypes: [.audio], allowsMultipleSelection: false) { result in
+            importSound(result)
+        } onCancellation: {
+            choosingFileFor = nil
+        }
         .alert("Transfer Alert", isPresented: $showingProblem) {
             Button("OK", role: .cancel) {}
                 .appHelp("Close this transfer alert message.")
@@ -72,12 +77,12 @@ struct TransferFeedbackSettingsView: View {
 
     private var notificationPermissions: some View {
         Section("macOS Notifications") {
-            LabeledContent("Permission", value: permissionDescription)
-                .appHelp("Shows whether macOS lets DownAudible send notifications.")
-            LabeledContent("Notification Center", value: settingDescription(notificationStatus?.appearsInNotificationCenter))
-                .appHelp("Shows whether DownAudible notifications can appear in Notification Center.")
-            LabeledContent("Banners and Alerts", value: settingDescription(notificationStatus?.showsBanners))
-                .appHelp("Shows whether macOS can show DownAudible banners or alerts on screen.")
+            permissionRow("Permission", value: permissionDescription,
+                          help: "Shows whether macOS lets DownAudible send notifications.")
+            permissionRow("Notification Center", value: settingDescription(notificationStatus?.appearsInNotificationCenter),
+                          help: "Shows whether DownAudible notifications can appear in Notification Center.")
+            permissionRow("Banners and Alerts", value: settingDescription(notificationStatus?.showsBanners),
+                          help: "Shows whether macOS can show DownAudible banners or alerts on screen.")
 
             HStack {
                 if notificationStatus?.authorization == .notRequested {
@@ -100,6 +105,14 @@ struct TransferFeedbackSettingsView: View {
         }
     }
 
+    private func permissionRow(_ label: String, value: String, help: String) -> some View {
+        LabeledContent(label, value: value)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(label)
+            .accessibilityValue(value)
+            .appHelp(help)
+    }
+
     private var permissionDescription: String {
         switch notificationStatus?.authorization {
         case .notRequested: "Permission not requested"
@@ -116,7 +129,18 @@ struct TransferFeedbackSettingsView: View {
     @ViewBuilder
     private func soundControls(_ sound: Binding<QueueCompletionSound>) -> some View {
         let selected = sound.wrappedValue
-        Picker("Sound", selection: previewing(sound.source)) {
+        let event = event
+        Picker("Sound", selection: Binding {
+            sound.wrappedValue.source
+        } set: { source in
+            guard source != sound.wrappedValue.source else { return }
+            if source == .custom, sound.wrappedValue.customFile == nil {
+                chooseSoundFile(for: event)
+            } else {
+                sound.wrappedValue.source = source
+                preview(event)
+            }
+        }) {
             ForEach(QueueCompletionSound.Source.allCases.filter { $0 != .off }) { source in
                 Text(source.displayName).tag(source)
             }
@@ -147,7 +171,7 @@ struct TransferFeedbackSettingsView: View {
                 let name = selected.customFile?.name ?? "No file chosen"
                 Text(name).lineLimit(1).truncationMode(.middle).appHelp(name)
             }
-            Button("Choose Sound File…") { choosingFile = true }
+            Button("Choose Sound File…") { chooseSoundFile(for: event) }
                 .appHelp("Open and preview an audio file. DownAudible keeps a copy so it stays available if the original moves.")
         }
         Button("Play Sound", systemImage: "play") { preview(event) }
@@ -186,13 +210,20 @@ struct TransferFeedbackSettingsView: View {
         }
     }
 
-    private func importSound(_ result: Result<URL, Error>) {
-        let event = event
+    private func chooseSoundFile(for event: TransferFeedbackEvent) {
+        choosingFileFor = event
+        choosingFile = true
+    }
+
+    private func importSound(_ result: Result<[URL], Error>) {
+        guard let event = choosingFileFor else { return }
+        choosingFileFor = nil
         importingFile = true
         Task {
             defer { importingFile = false }
             do {
-                try await model.installTransferSound(from: result.get(), for: event)
+                guard let file = try result.get().first else { return }
+                try await model.installTransferSound(from: file, for: event)
                 preview(event)
             } catch is CancellationError {
             } catch {

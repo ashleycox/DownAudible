@@ -5,6 +5,7 @@ struct LibraryWorkspaceActions {
     let find: () -> Void
     let signIn: () -> Void
     let importAccount: () -> Void
+    let visibleBooks: [AudibleBook]
 }
 
 extension FocusedValues {
@@ -50,6 +51,35 @@ struct LibraryContextCommands: View {
             }
             .appHelp("Connect another Audible account or manage the current sign-in.")
         }
+    }
+}
+
+struct LibraryVisibleExportCommands: View {
+    @FocusedValue(\.libraryWorkspaceActions) private var context
+    let model: WorkspaceModel
+
+    var body: some View {
+        if let context {
+            LibraryVisibleExportMenu(model: model, books: context.visibleBooks)
+        }
+    }
+}
+
+struct LibraryVisibleExportMenu: View {
+    let model: WorkspaceModel
+    let books: [AudibleBook]
+
+    var body: some View {
+        Menu("Export Visible Results") {
+            ForEach(LibraryExportFormat.allCases) { format in
+                Button("\(format.rawValue.uppercased())…") {
+                    Task { await model.exportLibrary(format, visibleBooks: books) }
+                }
+                .appHelp("Save the audiobooks shown in the table as \(format.rawValue.uppercased()).")
+            }
+        }
+        .disabled(books.isEmpty || model.isRefreshing)
+        .appHelp("Export the titles shown in the library table in their current order.")
     }
 }
 

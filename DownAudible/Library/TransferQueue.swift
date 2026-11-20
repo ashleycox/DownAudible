@@ -29,18 +29,44 @@ struct TransferBatch: Codable, Sendable {
     let appleBooks: AppleBooksDestination
     let preferences: TransferPreferences
     let jobLimit: Int
+    var repairsArchive: Bool? = nil
+    var startedAt: Date? = nil
 
     // An activation code entered in Convert Files is only held for this session.
     var activation: String? = nil
 
     enum CodingKeys: CodingKey {
-        case work, account, apiOptions, layout, options, conversion, appleBooks, preferences, jobLimit
+        case work, account, apiOptions, layout, options, conversion, appleBooks, preferences, jobLimit, repairsArchive, startedAt
     }
 }
 
+struct TransferHistoryBatch: Codable, Identifiable, Sendable {
+    var id = UUID()
+    var date = Date()
+    var batch: TransferBatch
+    var transfers: [Transfer]
+}
+
 struct TransferQueueSnapshot: Codable, Sendable {
+    static let historyLimit = 10
+
     var batch: TransferBatch?
     var transfers: [Transfer]
+    let history: [TransferHistoryBatch]
+
+    init(batch: TransferBatch?, transfers: [Transfer], history: [TransferHistoryBatch] = []) {
+        self.batch = batch
+        self.transfers = transfers
+        self.history = Array(history.prefix(Self.historyLimit))
+    }
+
+    init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        batch = try values.decodeIfPresent(TransferBatch.self, forKey: .batch)
+        transfers = try values.decode([Transfer].self, forKey: .transfers)
+        history = Array((try values.decodeIfPresent([TransferHistoryBatch].self, forKey: .history) ?? [])
+            .prefix(Self.historyLimit))
+    }
 }
 
 actor TransferQueueStore {
@@ -67,15 +93,19 @@ actor TransferQueueStore {
     }
 
     func load() throws -> TransferQueueSnapshot? {
-        guard FileManager.default.fileExists(atPath: path.path) else { return nil }
         let data: Data
         do {
             data = try Data(contentsOf: path)
+        } catch CocoaError.fileNoSuchFile, CocoaError.fileReadNoSuchFile {
+            return nil
         } catch {
             throw QueueError.readFailed
         }
         guard let snapshot = try? JSONDecoder().decode(TransferQueueSnapshot.self, from: data),
-              (snapshot.batch?.work.count ?? 0) == snapshot.transfers.count else { throw QueueError.incomplete }
+              (snapshot.batch?.work.count ?? 0) == snapshot.transfers.count,
+              snapshot.history.allSatisfy({ $0.batch.work.count == $0.transfers.count }) else {
+            throw QueueError.incomplete
+        }
         return snapshot
     }
 

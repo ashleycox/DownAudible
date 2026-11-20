@@ -64,11 +64,14 @@ nonisolated struct TransferFeedbackPreferences: Codable, Sendable {
                 case (false, false): delivery = .off
                 }
             }
+            setDelivery(delivery)
         }
 
         mutating func setDelivery(_ value: Delivery) {
             delivery = value
-            if delivery.playsSound && sound.source == .off { sound.source = .builtIn }
+            if delivery.playsSound && (sound.source == .off || (sound.source == .custom && sound.customFile == nil)) {
+                sound.source = .builtIn
+            }
         }
     }
 
@@ -81,20 +84,39 @@ nonisolated struct TransferFeedbackPreferences: Codable, Sendable {
 }
 
 nonisolated struct TransferFeedbackProgress {
-    var downloaded = false
-    var converting = false
+    private enum Stage {
+        case download, conversion
+    }
 
-    func outcomes(isDownload: Bool, requestsConversion: Bool, status: Transfer.Status) -> [TransferFeedbackEvent] {
+    private var stage: Stage
+    private var downloaded = false
+    private var converted = false
+
+    init(isDownload: Bool) {
+        stage = isDownload ? .download : .conversion
+    }
+
+    mutating func record(_ milestone: ArchiveWorker.FeedbackMilestone) {
+        switch milestone {
+        case .downloading: stage = .download
+        case .downloaded: downloaded = true
+        case .preparingConversion: stage = .conversion
+        case .converted: converted = true
+        }
+    }
+
+    func outcomes(for status: Transfer.Status) -> [TransferFeedbackEvent] {
+        var completed: [TransferFeedbackEvent] = []
+        if downloaded { completed.append(.downloadCompleted) }
+        if converted { completed.append(.conversionCompleted) }
         switch status {
         case .done:
-            guard isDownload else { return [.conversionCompleted] }
-            var events: [TransferFeedbackEvent] = downloaded || !requestsConversion ? [.downloadCompleted] : []
-            if requestsConversion { events.append(.conversionCompleted) }
-            return events
+            return completed
         case .failed:
-            guard isDownload else { return [.conversionFailed] }
-            guard converting else { return [.downloadFailed] }
-            return downloaded ? [.downloadCompleted, .conversionFailed] : [.conversionFailed]
+            switch stage {
+            case .download: return completed.filter { $0 != .downloadCompleted } + [.downloadFailed]
+            case .conversion: return completed.filter { $0 != .conversionCompleted } + [.conversionFailed]
+            }
         default:
             return []
         }

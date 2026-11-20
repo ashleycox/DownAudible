@@ -127,7 +127,7 @@ See [Downloads and Recovery](help-07-transfers.md) for queue controls.
 | Sound | Choose **macOS Sound**, **Built-in Chime** or **Custom Audio File** when delivery includes sound. The initial sound is the **Soft Bell** built-in chime. |
 | macOS sound | Chooses a sound installed by macOS. **Glass** is the initial selection in **macOS Sound** mode. |
 | Chime | Choose **Soft Bell**, **Rising Notes**, **Warm Chord**, **Wood Tap**, **Falling Notes**, **Bright Ping**, **Gentle Pulse**, **Two Tone**, **Airy Sweep** or **Marimba** in **Built-in Chime** mode. **Soft Bell** is the initial selection. |
-| Sound file | Shows the selected custom file. Use **Choose Sound File…** to choose an audio file for the app to copy into Application Support. |
+| Sound file | Shows the selected custom file. Select **Custom Audio File** to choose your first file, or use **Choose Sound File…** to replace it. The current sound stays selected until the new file is ready. |
 | Play Sound | Previews the sound for the selected event. DownAudible also previews a sound when you change it or choose a custom file. |
 
-DownAudible groups each outcome into one alert when an active queue or retry finishes. Click a transfer notification to go to its jobs in **Downloads**. The **Queue Finished** sound plays after the outcome sounds. Cancelled queues and restored history are quiet.
+DownAudible groups each outcome into one alert when an active queue or retry finishes. Click a transfer notification to go to its jobs in **Downloads**. If enabled, **Queue Finished** plays after the outcome sounds, including for retries that only send saved audio to Books. Cancelled queues and restored history are quiet.

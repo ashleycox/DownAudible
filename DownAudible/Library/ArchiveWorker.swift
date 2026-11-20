@@ -51,6 +51,22 @@ actor ArchiveWorker {
             conversions?[key] = urls
         }
 
+        mutating func retireBrokenCopies() {
+            guard let history else { return }
+            var kept: [[URL]] = []
+            var broken: Set<URL> = []
+            for group in history {
+                if group.allSatisfy(contains) {
+                    kept.append(group)
+                } else {
+                    broken.formUnion(group)
+                }
+            }
+            self.history = kept
+            let retired = broken.subtracting(audioGroups.joined())
+            for url in retired { fileSizes?.removeValue(forKey: url) }
+        }
+
         mutating func markOriginalsRemoved(_ urls: Set<URL>) -> Bool {
             var storedOriginals = Set(originals.map(\.url))
             storedOriginals.formUnion((history ?? []).joined())
@@ -70,6 +86,68 @@ actor ArchiveWorker {
     private struct AAXCleanup: Codable {
         let recipe: String
         let sources: [AAXOriginal]
+        // Older records did not identify the outputs. They cannot authorize a move to Trash.
+        let outputs: [AAXOutput]?
+
+        init(recipe: String, sources: [AAXOriginal], converted: [URL]) {
+            self.recipe = recipe
+            self.sources = sources
+            let fingerprints = converted.compactMap(AAXOutput.init)
+            outputs = fingerprints.count == converted.count ? fingerprints : nil
+        }
+
+        func verifies(_ converted: [URL]) -> Bool {
+            guard let outputs, outputs.map(\.url) == converted else { return false }
+            return outputs.allSatisfy(\.isCurrent) && outputs.allSatisfy { AAXOutput(url: $0.url) == $0 }
+                && outputs.allSatisfy(\.isCurrent)
+        }
+    }
+
+    private struct AAXOutput: Codable, Equatable {
+        let url: URL
+        private let digest: Data
+        private let revision: FileRevision
+
+        var isCurrent: Bool { FileRevision(url) == revision }
+
+        init?(url: URL) {
+            guard url.pathExtension.lowercased() == "mp3", let before = FileRevision(url),
+                  let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+            defer { try? handle.close() }
+            var hash = SHA256()
+            do {
+                while !Task.isCancelled, let data = try handle.read(upToCount: 1 << 20), !data.isEmpty {
+                    hash.update(data: data)
+                }
+            } catch {
+                return nil
+            }
+            guard !Task.isCancelled, FileRevision(url) == before else { return nil }
+            self.url = url
+            digest = Data(hash.finalize())
+            revision = before
+        }
+    }
+
+    private struct FileRevision: Codable, Equatable {
+        let inode: UInt64
+        let device: UInt64
+        let size: UInt64
+        let modified: Date
+
+        init?(_ url: URL) {
+            guard url.isFileURL,
+                  let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+                  attributes[.type] as? FileAttributeType == .typeRegular,
+                  let inode = attributes[.systemFileNumber] as? NSNumber,
+                  let device = attributes[.systemNumber] as? NSNumber,
+                  let size = attributes[.size] as? NSNumber, size.uint64Value > 0,
+                  let modified = attributes[.modificationDate] as? Date else { return nil }
+            self.inode = inode.uint64Value
+            self.device = device.uint64Value
+            self.size = size.uint64Value
+            self.modified = modified
+        }
     }
 
     private struct AAXOriginal: Codable, Equatable {
@@ -162,8 +240,10 @@ actor ArchiveWorker {
     }
 
     enum FeedbackMilestone: Sendable {
+        case downloading
         case downloaded
         case preparingConversion
+        case converted
     }
 
     func download(
@@ -176,6 +256,7 @@ actor ArchiveWorker {
         existingFiles: ExistingFiles,
         conversion: ConversionPreferences = .init(),
         requestID: UUID? = nil,
+        repairAudio: Bool = false,
         restartIncomplete: Bool = false,
         didRestart: @escaping @Sendable () async -> Void = {},
         feedback: @escaping @Sendable (FeedbackMilestone) async -> Void = { _ in },
@@ -191,10 +272,17 @@ actor ArchiveWorker {
         let restartsAudio = restartIncomplete && options.downloadAudio
             && IncompleteDownloads.containsAudio(for: book.id, account: account, root: layout.root)
         let sameAttempt = requestID != nil && requestID == previous.requestID
-        let reuse = (existingFiles == .reuse || sameAttempt) && !restartsAudio
+        let reuse = (sameAttempt || (existingFiles == .reuse && !repairAudio)) && !restartsAudio
         var record = reuse || !options.downloadAudio
             ? previous
             : Record(history: previous.audioGroups, fileSizes: previous.fileSizes, removedOriginals: previous.removedOriginals)
+        if repairAudio && !reuse {
+            record = previous
+            record.history = previous.audioGroups
+            record.originals = []
+            record.converted = nil
+            record.conversions = nil
+        }
         record.requestID = requestID
         if !options.downloadAudio && existingFiles == .saveNewCopy && !sameAttempt {
             if options.downloadCover {
@@ -206,7 +294,7 @@ actor ArchiveWorker {
             if options.downloadAnnotations { record.annotations = nil }
         }
         let recipe = try Self.recipeKey(conversion)
-        let cleansUpAAX = conversion.cleansUpAAX && options.makesConversion && !options.keepOriginal
+        let cleansUpAAX = !repairAudio && conversion.cleansUpAAX && options.makesConversion && !options.keepOriginal
         if !sameAttempt || !cleansUpAAX { record.aaxCleanup = nil }
         var converted = options.makesConversion ? record.outputs(for: conversion, key: recipe) : []
         let needsConversion = options.makesConversion && converted.isEmpty
@@ -221,6 +309,7 @@ actor ArchiveWorker {
             ? record.originals.map { Source(audio: $0) } : []
         if sources.isEmpty && (options.savesOriginal || needsConversion) {
             if matches.isEmpty {
+                await feedback(.downloading)
                 if !book.isDownloadable {
                     switch book.downloadUnavailableReason {
                     case .podcastSeries: throw AudibleError.podcastSeries
@@ -272,7 +361,7 @@ actor ArchiveWorker {
         let artwork = try await getArtwork(
             book, audible: audible, staging: staging, title: title, layout: layout,
             format: extrasFormat, saveFiles: options.downloadCover, embed: needsConversion && conversion.embedArtwork,
-            record: &record, key: key, issues: &issues, progress: progress
+            record: &record, key: key, issues: &issues, feedback: feedback, progress: progress
         )
 
         if needsConversion {
@@ -308,7 +397,8 @@ actor ArchiveWorker {
             }
             do {
                 converted = try await convertSources(sources)
-                record.aaxCleanup = originalsToTrash.isEmpty ? nil : AAXCleanup(recipe: recipe, sources: originalsToTrash)
+                record.aaxCleanup = originalsToTrash.isEmpty ? nil
+                    : AAXCleanup(recipe: recipe, sources: originalsToTrash, converted: converted)
             } catch {
                 try Task.checkCancellation()
                 guard audible.options.format == .preferAAX, book.isDownloadable,
@@ -316,6 +406,7 @@ actor ArchiveWorker {
                       (error as? AudibleError) == .activation || (error as? MediaError) == .activationRequired else {
                     throw error
                 }
+                await feedback(.downloading)
                 let audioDirectory = try IncompleteDownloads.audioFolder(
                     for: book.id, account: account, root: layout.root, restart: false
                 )
@@ -324,12 +415,14 @@ actor ArchiveWorker {
                     book, audible: audible, to: audioDirectory, format: .aaxcOnly, progress: progress
                 )
                 await feedback(.downloaded)
+                await feedback(.preparingConversion)
                 converted = try await convertSources(fallback)
                 record.aaxCleanup = nil
             }
             addedConverted = converted
             record.addConversion(converted, key: recipe)
             save(&record, for: key, written: converted)
+            await feedback(.converted)
             if usesAudioStaging {
                 do {
                     try IncompleteDownloads.clear(for: book.id, account: account, root: layout.root)
@@ -347,6 +440,7 @@ actor ArchiveWorker {
                     let destination = try saveExtra(pdf, title: title, layout: layout, format: extrasFormat)
                     record.pdf = destination
                     save(&record, for: key, written: [destination])
+                    await feedback(.downloaded)
                 } else {
                     let reason = extras.failed["PDF"] ?? .extraUnavailable
                     issues.append("Couldn’t download the PDF. \(reason.localizedDescription)")
@@ -360,9 +454,15 @@ actor ArchiveWorker {
 
         try await getJSONExtras(
             book, audible: audible, staging: staging, title: title, layout: layout, format: extrasFormat,
-            options: options, record: &record, key: key, issues: &issues, progress: progress
+            options: options, record: &record, key: key, issues: &issues, feedback: feedback, progress: progress
         )
 
+        let replacement = converted.isEmpty ? record.originals.map(\.url) : converted
+        if repairAudio && !replacement.isEmpty && replacement.allSatisfy(record.contains) {
+            // Complete copies and extra files stay indexed. Repair never deletes files from disk.
+            record.retireBrokenCopies()
+            save(&record, for: key, written: [])
+        }
         let cleanup = try finishAAXCleanup(record: &record, key: key, recipe: recipe, converted: converted)
         issues.append(contentsOf: cleanup.issues)
         let originals = options.savesOriginal ? sources.map(\.audio.url) : []
@@ -406,6 +506,7 @@ actor ArchiveWorker {
         existingFiles: ExistingFiles,
         conversion: ConversionPreferences = .init(),
         requestID: UUID? = nil,
+        feedback: @escaping @Sendable (FeedbackMilestone) async -> Void = { _ in },
         progress: @escaping Progress
     ) async throws -> ExportReceipt {
         let key = recordKey(layout, "Local file", file.url.standardizedFileURL.path)
@@ -439,6 +540,7 @@ actor ArchiveWorker {
             return ExportReceipt(url: first, converted: written)
         }
 
+        await feedback(.preparingConversion)
         guard Self.isFile(file.url) else { throw MediaError.sourceMissing }
         let original = conversion.cleansUpAAX ? AAXOriginal(url: file.url) : nil
         let credentials = try await mediaCredentials(
@@ -449,9 +551,10 @@ actor ArchiveWorker {
             title: ArchiveTitle(file), layout: layout, preferences: conversion, progress: progress
         )
         guard let first = converted.first else { throw ArchiveError.noAudio }
-        record.aaxCleanup = original.map { AAXCleanup(recipe: recipe, sources: [$0]) }
+        record.aaxCleanup = original.map { AAXCleanup(recipe: recipe, sources: [$0], converted: converted) }
         record.addConversion(converted, key: recipe)
         save(&record, for: key, written: converted)
+        await feedback(.converted)
         let cleanup = try finishAAXCleanup(
             record: &record, key: key, recipe: recipe, converted: converted, forgetArchivedOriginals: true
         )
@@ -475,13 +578,18 @@ actor ArchiveWorker {
     ) throws -> (removed: Set<URL>, issues: [String]) {
         guard let cleanup = record.aaxCleanup, cleanup.recipe == recipe, !converted.isEmpty else { return ([], []) }
         try Task.checkCancellation()
-        guard converted.allSatisfy(record.contains) else {
-            return ([], ["The MP3 export could not be verified. The AAX files were kept."])
+        guard converted.allSatisfy(record.contains), cleanup.verifies(converted) else {
+            try Task.checkCancellation()
+            return ([], [
+                "The MP3 export changed or could not be verified. The AAX files were kept. "
+                    + "In Settings > Files, set If a file is already saved to Save another copy, then start a new conversion."
+            ])
         }
 
         var removed: Set<URL> = []
         var changed = false
         var moveFailed = false
+        var outputChanged = false
         for original in cleanup.sources {
             // Leave any remaining files in place if cancellation arrives during a multipart cleanup.
             guard !Task.isCancelled else { break }
@@ -492,6 +600,10 @@ actor ArchiveWorker {
             guard AAXOriginal(url: original.url) == original else {
                 changed = true
                 continue
+            }
+            guard cleanup.outputs?.allSatisfy(\.isCurrent) == true else {
+                outputChanged = true
+                break
             }
             guard !Task.isCancelled else { break }
             do {
@@ -513,6 +625,7 @@ actor ArchiveWorker {
         if changedRecords { save(&record, for: key, written: []) }
         var issues: [String] = []
         if changed { issues.append("The MP3 export was saved. An AAX source changed during conversion and was kept.") }
+        if outputChanged { issues.append("The MP3 export changed during cleanup. The remaining AAX files were kept.") }
         if moveFailed || Task.isCancelled {
             issues.append("The MP3 export was saved. Some AAX files are still in place. Check that their folder allows moving files to Trash, or move them in Finder.")
         }
@@ -583,6 +696,74 @@ actor ArchiveWorker {
         return digest.map { ($0 < 16 ? "0" : "") + String($0, radix: 16) }.joined()
     }
 
+    func verifyArchive(
+        books: [AudibleBook], account: String, layout: ArchiveLayout, matches: [String: [URL]],
+        progress: @Sendable (Int, Int) async -> Void
+    ) async throws -> [ArchiveVerificationIssue] {
+        try Task.checkCancellation()
+        guard (try? layout.root.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true,
+              FileManager.default.isReadableFile(atPath: layout.root.path) else {
+            throw ArchiveVerificationError.folderUnavailable
+        }
+        loadRecords()
+        let directory = try MediaTools.workspace()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var verifier = try ArchiveAudioVerifier(media: media, directory: directory)
+        let root = layout.root.standardizedFileURL.path
+        let ids = Set(books.map(\.id))
+        var recordsByBook: [String: [Record]] = [:]
+        for (key, record) in records {
+            guard let parts = Self.recordParts(key), parts.root == root, parts.account == account,
+                  ids.contains(parts.asin) else { continue }
+            recordsByBook[parts.asin, default: []].append(record)
+        }
+        let partials = partialFolders(for: ids, account: account, root: layout.root)
+        var issues: [ArchiveVerificationIssue] = []
+        await progress(0, books.count)
+        for (index, book) in books.enumerated() {
+            try Task.checkCancellation()
+            let records = recordsByBook[book.id, default: []]
+            var groups: [([URL], [URL: Int])] = []
+            for record in records {
+                let removed = record.removedOriginals ?? []
+                for group in record.audioGroups where removed.isDisjoint(with: group) {
+                    groups.append((group, record.fileSizes ?? [:]))
+                }
+            }
+            if let matched = matches[book.id], !matched.isEmpty { groups.append((matched, [:])) }
+            var files: Set<URL> = []
+            var kind: ArchiveVerificationIssue.Kind = partials[book.id] == nil ? .missing : .incomplete
+            var hasCompleteCopy = false
+            for (group, sizes) in groups {
+                var problems: [ArchiveVerificationIssue.Kind] = []
+                for file in group {
+                    try Task.checkCancellation()
+                    guard let problem = try await verifier.problem(for: file, expectedSize: sizes[file]) else { continue }
+                    files.insert(file)
+                    problems.append(problem)
+                }
+                if problems.isEmpty {
+                    hasCompleteCopy = true
+                    break
+                }
+                if problems.contains(.unreadable) {
+                    kind = .unreadable
+                } else if kind == .missing && (problems.count < group.count || problems.contains(.incomplete)) {
+                    kind = .incomplete
+                }
+            }
+            if !hasCompleteCopy, book.isDownloadable || !groups.isEmpty || partials[book.id] != nil {
+                issues.append(ArchiveVerificationIssue(
+                    book: book, kind: kind,
+                    files: files.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+                ))
+            }
+            await progress(index + 1, books.count)
+        }
+        try Task.checkCancellation()
+        return issues
+    }
+
     func inventory(
         for ids: [String], account: String, layout: ArchiveLayout
     ) -> [String: ArchiveInventoryItem] {
@@ -629,7 +810,8 @@ actor ArchiveWorker {
     private func getArtwork(
         _ book: AudibleBook, audible: AudibleClient, staging: URL, title: ArchiveTitle,
         layout: ArchiveLayout, format: String, saveFiles: Bool, embed: Bool,
-        record: inout Record, key: String, issues: inout [String], progress: Progress
+        record: inout Record, key: String, issues: inout [String],
+        feedback: @Sendable (FeedbackMilestone) async -> Void, progress: Progress
     ) async throws -> URL? {
         guard saveFiles || embed else { return nil }
         var saved = record.covers?.filter { record.contains($0.value) } ?? [:]
@@ -658,6 +840,7 @@ actor ArchiveWorker {
                     saved[name] = destination
                     record.covers = saved
                     save(&record, for: key, written: [destination])
+                    await feedback(.downloaded)
                     if artwork == source { artwork = destination }
                 }
             }
@@ -700,7 +883,8 @@ actor ArchiveWorker {
     private func getJSONExtras(
         _ book: AudibleBook, audible: AudibleClient, staging: URL, title: ArchiveTitle,
         layout: ArchiveLayout, format: String, options: DownloadOptions,
-        record: inout Record, key: String, issues: inout [String], progress: Progress
+        record: inout Record, key: String, issues: inout [String],
+        feedback: @Sendable (FeedbackMilestone) async -> Void, progress: Progress
     ) async throws {
         let chapterStyle = audible.options.chapterStyle.rawValue
         let chapters = options.downloadChapters && !(record.chapters?[chapterStyle].map(record.contains) ?? false)
@@ -720,6 +904,7 @@ actor ArchiveWorker {
                         saved[chapterStyle] = destination
                         record.chapters = saved
                         save(&record, for: key, written: [destination])
+                        await feedback(.downloaded)
                     } else if let reason = extras.failed["chapters"] {
                         issues.append("Couldn’t download the chapter list. \(reason.localizedDescription)")
                     }
@@ -736,6 +921,7 @@ actor ArchiveWorker {
                         )
                         record.annotations = destination
                         save(&record, for: key, written: [destination])
+                        await feedback(.downloaded)
                     } else if let reason = extras.failed["annotations"] {
                         issues.append("Couldn’t download the notes. \(reason.localizedDescription)")
                     }

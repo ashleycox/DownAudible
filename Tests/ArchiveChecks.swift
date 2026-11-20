@@ -42,6 +42,7 @@ struct ArchiveChecks {
         checkBundleIdentifierMigration()
         try checkLibraryBrowsing()
         checkTransferNotifications()
+        checkTransferFeedback()
 
         let file = LocalAudioFile(url: root.appending(path: "Book.aax"), format: "aax", title: "Écho", author: "Me", asin: nil, durationSeconds: 10)
         let echo = try matchingBook("Echo", asin: "B000000001", authors: ["me"])
@@ -111,6 +112,36 @@ struct ArchiveChecks {
         check(TransferNotificationContent.transferIDs(in: [:]).isEmpty)
     }
 
+    private static func checkTransferFeedback() {
+        let output = URL(filePath: "/fixture.m4b")
+        let success = Transfer.Status.done(output, note: nil)
+        let failure = Transfer.Status.failed("Fixture failure")
+        var progress = TransferFeedbackProgress(isDownload: true)
+        check(progress.outcomes(for: success).isEmpty)
+        check(progress.outcomes(for: failure) == [.downloadFailed])
+        progress.record(.downloaded)
+        progress.record(.preparingConversion)
+        check(progress.outcomes(for: failure) == [.downloadCompleted, .conversionFailed])
+        progress.record(.downloading)
+        check(progress.outcomes(for: failure) == [.downloadFailed])
+        progress.record(.downloaded)
+        progress.record(.preparingConversion)
+        progress.record(.converted)
+        check(progress.outcomes(for: success) == [.downloadCompleted, .conversionCompleted])
+        check(progress.outcomes(for: .cancelled).isEmpty)
+
+        var conversion = TransferFeedbackProgress(isDownload: false)
+        check(conversion.outcomes(for: success).isEmpty)
+        check(conversion.outcomes(for: failure) == [.conversionFailed])
+        conversion.record(.converted)
+        check(conversion.outcomes(for: success) == [.conversionCompleted])
+
+        var settings = TransferFeedbackPreferences.Settings()
+        settings.sound.source = .custom
+        settings.setDelivery(.soundOnly)
+        check(settings.sound.source == .builtIn)
+    }
+
     private static func checkAAXCleanup(in workspace: URL) async throws {
         let defaults = UserDefaults.standard
         let originalIndex = defaults.object(forKey: "ArchiveIndex")
@@ -158,7 +189,8 @@ struct ArchiveChecks {
         }
         let retryMarker = trash.appending(path: "Allow Retry")
         let worker = ArchiveWorker(media: MediaTools(toolDirectory: tools)) { source in
-            if source.lastPathComponent == "Retry.aax", !FileManager.default.fileExists(atPath: retryMarker.path) {
+            if ["Retry.aax", "DamagedOutput.aax"].contains(source.lastPathComponent),
+               !FileManager.default.fileExists(atPath: retryMarker.path) {
                 throw CocoaError(.fileWriteNoPermission)
             }
             try FileManager.default.moveItem(at: source, to: trash.appending(path: source.lastPathComponent))
@@ -216,10 +248,29 @@ struct ArchiveChecks {
         let firstAttempt = try await convert(retry, preferences: cleanup, requestID: requestID)
         check(firstAttempt.removedAAX.isEmpty && firstAttempt.note?.contains("MP3 export was saved") == true)
         check(FileManager.default.fileExists(atPath: retry.url.path))
+
+        let damaged = try source("DamagedOutput")
+        let damagedRequestID = UUID()
+        let beforeDamage = try await convert(damaged, preferences: cleanup, requestID: damagedRequestID)
+        check(beforeDamage.removedAAX.isEmpty && beforeDamage.converted.count == 2)
+        let damagedChapter = beforeDamage.converted[1]
+        let oldBytes = try Data(contentsOf: damagedChapter)
+        let date = try damagedChapter.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+        let outputHandle = try FileHandle(forWritingTo: damagedChapter)
+        try outputHandle.write(contentsOf: Data(repeating: 0, count: oldBytes.count))
+        try outputHandle.close()
+        if let date {
+            try FileManager.default.setAttributes([.modificationDate: date], ofItemAtPath: damagedChapter.path)
+        }
+
         try Data().write(to: retryMarker)
         let secondAttempt = try await convert(retry, preferences: cleanup, requestID: requestID)
         check(secondAttempt.converted == firstAttempt.converted && secondAttempt.removedAAX == [retry.url])
         check(!FileManager.default.fileExists(atPath: retry.url.path))
+        let afterDamage = try await convert(damaged, preferences: cleanup, requestID: damagedRequestID)
+        check(afterDamage.removedAAX.isEmpty && afterDamage.note?.contains("could not be verified") == true)
+        check(FileManager.default.fileExists(atPath: damaged.url.path))
+        check(try Data(contentsOf: damagedChapter).count == oldBytes.count)
 
         let cancelled = try source("Cancelled")
         let (published, signal) = AsyncStream<Void>.makeStream()
@@ -516,6 +567,18 @@ struct ArchiveChecks {
         }
     }
 
+    private actor TransferFeedbackFixture {
+        private var progress = TransferFeedbackProgress(isDownload: true)
+
+        func record(_ milestone: ArchiveWorker.FeedbackMilestone) {
+            progress.record(milestone)
+        }
+
+        func outcomes(for status: Transfer.Status) -> [TransferFeedbackEvent] {
+            progress.outcomes(for: status)
+        }
+    }
+
     private static func checkDownloadAfterActivationFailure(in workspace: URL) async throws {
         let manager = FileManager.default
         let tools = workspace.appending(path: "FallbackTools", directoryHint: .isDirectory)
@@ -544,7 +607,12 @@ struct ArchiveChecks {
                     printf 'download %s\n' "$format" >> "$log"
                     case "$format" in
                         preferAAX) file=Book.aax ;;
-                        aaxcOnly) file=Book.mp3 ;;
+                        aaxcOnly)
+                            if [ -f "$(dirname "$0")/fail-aaxc" ]; then
+                                printf '%s\n' '{"error":"aaxcUnavailable"}'
+                                exit 0
+                            fi
+                            file=Book.mp3 ;;
                         *) exit 1 ;;
                     esac
                     printf '%s' "$file" > "$(field directory)/$file"
@@ -570,6 +638,7 @@ struct ArchiveChecks {
                 input=$(cat "$2")
                 for output do :; done
                 case "$input:$output" in
+                    Book.mp3:-|converted:-|converted-mp3:-) exit 0 ;;
                     Book.aax:*.mp3) printf '%s' converted-mp3 > "$output" ;;
                     Book.mp3:*) printf '%s' converted > "$output" ;;
                     *) exit 1 ;;
@@ -603,10 +672,13 @@ struct ArchiveChecks {
         var conversion = ConversionPreferences()
         conversion.embedArtwork = false
         conversion.embedChapters = false
+        let fallbackFeedback = TransferFeedbackFixture()
         let receipt = try await archive.download(
             book, account: profile.uuidString, audible: client, matches: [], layout: layout, options: options,
-            existingFiles: .reuse, conversion: conversion, progress: { _, _ in }
+            existingFiles: .reuse, conversion: conversion, feedback: { await fallbackFeedback.record($0) }, progress: { _, _ in }
         )
+        let completedEvents = await fallbackFeedback.outcomes(for: .done(receipt.url, note: nil))
+        check(completedEvents == [.downloadCompleted, .conversionCompleted])
         let requests = try String(contentsOf: tools.appending(path: "requests"), encoding: .utf8)
         check(requests.split(separator: "\n") == ["download preferAAX", "activation false", "activation true", "download aaxcOnly"])
         check(receipt.original.count == 1 && receipt.original[0].pathExtension == "aax")
@@ -614,6 +686,23 @@ struct ArchiveChecks {
         check(receipt.converted == [receipt.url] && receipt.url.pathExtension == "m4b")
         check(try Data(contentsOf: receipt.url) == Data("converted".utf8))
         check(!IncompleteDownloads.containsAudio(for: book.id, account: profile.uuidString, root: root))
+
+        let fallbackFailure = TransferFeedbackFixture()
+        let failureFlag = tools.appending(path: "fail-aaxc")
+        let failedBook = try matchingBook("Unavailable fallback fixture", asin: "B000000007")
+        try Data().write(to: failureFlag)
+        do {
+            _ = try await archive.download(
+                failedBook, account: profile.uuidString, audible: client, matches: [], layout: layout, options: options,
+                existingFiles: .saveNewCopy, conversion: conversion,
+                feedback: { await fallbackFailure.record($0) }, progress: { _, _ in }
+            )
+            fatalError("The fallback download should fail")
+        } catch AudibleError.aaxcUnavailable {
+            let events = await fallbackFailure.outcomes(for: .failed("Fixture failure"))
+            check(events == [.downloadFailed])
+        }
+        try manager.removeItem(at: failureFlag)
 
         try Data().write(to: tools.appending(path: "use-aax"))
         options.keepOriginal = false
@@ -637,6 +726,38 @@ struct ArchiveChecks {
             existingFiles: .reuse, conversion: conversion, progress: { _, _ in }
         )
         check(matchedReceipt.removedAAX.isEmpty && manager.fileExists(atPath: matched.path))
+
+        let missing = try matchingBook("Missing audio fixture", asin: "B000000003")
+        let incomplete = try matchingBook("Incomplete audio fixture", asin: "B000000004")
+        let partial = try IncompleteDownloads.audioFolder(
+            for: incomplete.id, account: profile.uuidString, root: root, restart: false
+        )
+        try Data("partial audio".utf8).write(to: partial.appending(path: "Book.aax.partial"))
+        try manager.removeItem(at: receipt.url)
+        let damage = Data(repeating: 0, count: try Data(contentsOf: cleaned.url).count)
+        try damage.write(to: cleaned.url, options: .atomic)
+        let verification = try await archive.verifyArchive(
+            books: [book, other, missing, incomplete], account: profile.uuidString, layout: layout,
+            matches: [other.id: [matched]], progress: { _, _ in }
+        )
+        let issues = Dictionary(uniqueKeysWithValues: verification.map { ($0.id, $0) })
+        check(issues[book.id]?.kind == .unreadable && issues[book.id]?.files.contains(cleaned.url) == true)
+        check(issues[other.id] == nil)
+        check(issues[missing.id]?.kind == .missing && issues[incomplete.id]?.kind == .incomplete)
+        check(try Data(contentsOf: cleaned.url) == damage)
+
+        let repaired = try await archive.download(
+            book, account: profile.uuidString, audible: client, matches: [], layout: layout, options: options,
+            existingFiles: .reuse, conversion: conversion, repairAudio: true, progress: { _, _ in }
+        )
+        check(repaired.url != cleaned.url && repaired.addedConverted == [repaired.url] && repaired.removedAAX.isEmpty)
+        check(try Data(contentsOf: cleaned.url) == damage)
+        let verifiedRepair = try await archive.verifyArchive(
+            books: [book], account: profile.uuidString, layout: layout, matches: [:], progress: { _, _ in }
+        )
+        check(verifiedRepair.isEmpty)
+        let repairedInventory = await archive.inventory(for: [book.id], account: profile.uuidString, layout: layout)
+        check(repairedInventory[book.id]?.missingFiles.isEmpty == true)
     }
 
     private static func checkAudibleHelperExit(in workspace: URL) async throws {
@@ -680,6 +801,19 @@ struct ArchiveChecks {
         check(titles.matching("CAFE WINDOW") == ["Café Window"])
         check(titles.matching("Café Window").isEmpty)
         check(titles.matching(" ").isEmpty)
+
+        let bookList = [cafe, river, forest]
+        var filters = LibraryFilters()
+        filters[.title] = "river"
+        filters[.author] = "Ada"
+        filters.status = .downloaded
+        let status: (AudibleBook) -> LibraryDownloadStatus = { $0.id == river.id ? .notDownloaded : .downloaded }
+        check(filters.rows(in: bookList, search: "", statusFor: status).isEmpty)
+        let matching = filters.rows(in: bookList, search: " cAFE ", excluding: .title, statusFor: status)
+        check(matching.map(\.id) == [cafe.id])
+        check(LibraryFilterSuggestions(field: .title, books: matching.map(\.book)).matching("win") == [cafe.title])
+        check(filters.rows(in: bookList, search: "forest", excluding: .title, statusFor: status).isEmpty)
+        check(filters.rows(in: bookList, search: "river", excluding: .title, statusFor: status).isEmpty)
     }
 
     private static func checkLibraryAudioCategories() {
@@ -955,9 +1089,46 @@ struct ArchiveChecks {
         }
         check(savedBook == book && matches == [file.url] && savedFile == file)
         check(label == "Downloading audio" && progress == 0.25)
-        try await store.save(empty, revision: 5)
+
+        var legacyJSON = try JSONSerialization.jsonObject(with: raw) as? [String: Any] ?? [:]
+        legacyJSON.removeValue(forKey: "history")
+        let legacySnapshot = try JSONDecoder().decode(
+            TransferQueueSnapshot.self, from: JSONSerialization.data(withJSONObject: legacyJSON)
+        )
+        check(legacySnapshot.history.isEmpty && legacySnapshot.batch?.repairsArchive == nil)
+        check(legacySnapshot.transfers.map(\.id) == [downloading.id, failed.id])
+
+        var repairBatch = batch
+        repairBatch.repairsArchive = true
+        let history = (0..<(TransferQueueSnapshot.historyLimit + 2)).map { index in
+            TransferHistoryBatch(
+                date: Date(timeIntervalSinceReferenceDate: Double(100 - index)), batch: repairBatch,
+                transfers: [Transfer(title: book.title, status: .done(file.url, note: nil)), Transfer(title: file.title)]
+            )
+        }
+        try await store.save(TransferQueueSnapshot(batch: nil, transfers: [], history: history), revision: 5)
+        guard let withHistory = try await reopened.load() else { fatalError("Transfer history did not reopen") }
+        check(withHistory.batch == nil && withHistory.transfers.isEmpty)
+        check(withHistory.history.map(\.id) == history.prefix(TransferQueueSnapshot.historyLimit).map(\.id))
+        check(withHistory.history[0].transfers.map(\.id) == history[0].transfers.map(\.id))
+        check(withHistory.history[0].batch.repairsArchive == true && withHistory.history[0].batch.activation == nil)
+
+        try await store.save(empty, revision: 6)
         let replaced = try await reopened.load()
-        check(replaced?.batch == nil && replaced?.transfers.isEmpty == true)
+        check(replaced?.batch == nil && replaced?.transfers.isEmpty == true && replaced?.history.isEmpty == true)
+
+        let blockedFolder = workspace.appending(path: "Unavailable Queue Support")
+        let blockedStore = TransferQueueStore(path: blockedFolder.appending(path: "Transfers.json"))
+        try Data().write(to: blockedFolder)
+        do {
+            try await blockedStore.save(snapshot, revision: 1)
+            fatalError("A failed queue write must be reported")
+        } catch {
+            check(error.localizedDescription.contains("couldn’t save its download queue"))
+        }
+        try FileManager.default.removeItem(at: blockedFolder)
+        try await blockedStore.save(snapshot, revision: 1)
+        check(try await blockedStore.load()?.transfers.map(\.id) == [downloading.id, failed.id])
     }
 
     @MainActor

@@ -67,7 +67,7 @@ nonisolated enum QueueSoundError: LocalizedError {
         switch self {
         case .unreadableFile: "Choose an audio file that DownAudible can play, such as a WAV, AIFF, M4A or MP3."
         case .cannotSaveFile: "DownAudible couldn’t save a copy of this sound in Application Support."
-        case .unavailable: "The selected sound is unavailable. Choose another sound in Settings > Jobs."
+        case .unavailable: "The selected sound is unavailable. Choose another sound in Settings > Notifications."
         case .playback: "DownAudible couldn’t play the selected sound. Choose another sound or check your audio output."
         }
     }

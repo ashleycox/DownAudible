@@ -2,46 +2,70 @@ import AppKit
 import SwiftUI
 
 struct TransfersView: View {
+    private struct RestartRequest {
+        let ids: [UUID]
+        let historyID: UUID?
+    }
+
     var model: WorkspaceModel
     @Binding var requestingBatchRestart: Bool
     @State private var selection: Set<UUID> = []
-    @State private var restartIDs: [UUID] = []
-    @State private var confirmingRestart = false
+    @State private var restartRequest: RestartRequest?
+    @State private var notificationScrollTarget: UUID?
+    @State private var missingNotificationJobs = false
 
     var body: some View {
         ScrollViewReader { proxy in
-            Group {
-                if model.transfers.isEmpty {
+            VStack(spacing: 0) {
+                if !model.transferHistory.isEmpty {
+                    historyPicker
+                    Divider()
+                }
+                if missingNotificationJobs {
+                    Label("These jobs are no longer in Downloads.", systemImage: "info.circle")
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .appHelp("The jobs were removed from Downloads or are no longer in Recent Batches.")
+                }
+                if model.displayedTransfers.isEmpty {
                     ContentUnavailableView(
                         "No Downloads", systemImage: WorkspacePage.transfers.icon,
                         description: Text("Downloads and conversions appear here when you start them.")
                     )
                 } else {
-                    VStack(spacing: 0) {
-                        List(model.transfers, selection: $selection) { transfer in
-                            TransferRow(transfer: transfer, showProgress: model.transferPreferences.showProgress)
-                                .tag(transfer.id)
-                                .id(transfer.id)
-                        }
-                        .contextMenu(forSelectionType: UUID.self) { ids in
-                            TransferSelectionActions(selection: selectedTransfers(ids))
-                        }
-                        Divider()
-                        footer
+                    List(model.displayedTransfers, selection: $selection) { transfer in
+                        TransferRow(transfer: transfer, showProgress: model.transferPreferences.showProgress)
+                            .tag(transfer.id)
+                            .id(transfer.id)
                     }
+                    .contextMenu(forSelectionType: UUID.self) { ids in
+                        TransferSelectionActions(selection: selectedTransfers(ids))
+                    }
+                    .task(id: notificationScrollTarget) {
+                        guard let target = notificationScrollTarget else { return }
+                        proxy.scrollTo(target)
+                        notificationScrollTarget = nil
+                    }
+                    Divider()
+                    footer
                 }
             }
             .onChange(of: model.didRestoreTransfers ? model.transferNotificationSelection : nil, initial: true) { _, request in
                 guard let request else { return }
-                let matchingIDs = model.transfers.lazy.map(\.id).filter { request.transferIDs.contains($0) }
+                model.selectHistoryForNotification(request.transferIDs)
+                let matchingIDs = model.displayedTransfers.lazy.map(\.id).filter { request.transferIDs.contains($0) }
                 selection = Set(matchingIDs)
-                if let first = matchingIDs.first { proxy.scrollTo(first) }
+                notificationScrollTarget = matchingIDs.first
+                missingNotificationJobs = !request.transferIDs.isEmpty && matchingIDs.isEmpty
                 model.didShowNotifiedTransfers(request.id)
             }
+            .onChange(of: model.displayedTransfers.map(\.id)) { _, ids in selection.formIntersection(ids) }
         }
         .focusedSceneValue(\.transferSelection, selectedTransfers(selection))
         .toolbar {
-            if !model.transfers.isEmpty {
+            if !model.displayedTransfers.isEmpty {
                 ToolbarItem {
                     Menu("Download Actions", systemImage: "ellipsis.circle") {
                         Button("Restart Incomplete Downloads…", systemImage: "arrow.counterclockwise",
@@ -59,11 +83,13 @@ struct TransfersView: View {
         }
         .confirmationDialog(
             "Restart from the beginning?",
-            isPresented: $confirmingRestart,
+            isPresented: Binding { restartRequest != nil } set: { if !$0 { restartRequest = nil } },
             titleVisibility: .visible,
-            presenting: restartIDs
-        ) { ids in
-            Button("Restart Downloads") { model.retryTransfers(ids, restartIncomplete: true) }
+            presenting: restartRequest
+        ) { request in
+            Button("Restart Downloads") {
+                model.retryTransfers(request.ids, restartIncomplete: true, historyID: request.historyID)
+            }
                 .keyboardShortcut(.defaultAction)
                 .appHelp("Discard the selected partial downloads and start them again.")
         } message: { _ in
@@ -76,27 +102,64 @@ struct TransfersView: View {
         }
     }
 
-    private func askToRestartBatch() {
-        askToRestart(model.transfers.filter(\.canRestart))
+    private var historyPicker: some View {
+        HStack {
+            Picker("Show", selection: Binding { model.transferHistorySelection } set: { id in
+                selection.removeAll()
+                notificationScrollTarget = nil
+                missingNotificationJobs = false
+                model.selectTransferHistory(id)
+            }) {
+                Text("Current Batch").tag(Optional<UUID>.none)
+                Section("Recent Batches") {
+                    ForEach(model.transferHistory) { entry in
+                        let date = entry.date.formatted(.dateTime.month(.abbreviated).day().year().hour().minute())
+                        let scope = entry.batch.work.first?.isDownload == true
+                            ? entry.batch.account?.name ?? "Audible" : "Convert Files"
+                        let count = entry.transfers.count
+                        Text("\(date) · \(scope) · \(count.formatted()) \(count == 1 ? "job" : "jobs")")
+                            .tag(Optional(entry.id))
+                    }
+                }
+            }
+            .pickerStyle(.menu)
+            .appHelp("Switch between the current batch and earlier downloads or conversions.")
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(.bar)
     }
 
-    private func askToRestart(_ transfers: [Transfer]) {
-        restartIDs = transfers.map(\.id)
-        confirmingRestart = !restartIDs.isEmpty
+    private func askToRestartBatch() {
+        askToRestart(model.displayedTransfers.filter(\.canRestart), historyID: model.transferHistorySelection)
+    }
+
+    private func askToRestart(_ transfers: [Transfer], historyID: UUID?) {
+        guard !transfers.isEmpty else { return }
+        restartRequest = RestartRequest(ids: transfers.map(\.id), historyID: historyID)
     }
 
     private func selectedTransfers(_ ids: Set<UUID>) -> TransferSelection {
-        TransferSelection(model: model, items: model.transfers.filter { ids.contains($0.id) }, askToRestart: askToRestart)
+        let historyID = model.transferHistorySelection
+        return TransferSelection(model: model, items: model.displayedTransfers.filter { ids.contains($0.id) }, historyID: historyID) {
+            askToRestart($0, historyID: historyID)
+        }
     }
 
     private var footer: some View {
-        HStack(spacing: 12) {
+        let transfers = model.displayedTransfers
+        let completed = transfers.count { if case .done = $0.status { true } else { false } }
+        let isRunning = model.transferHistorySelection == nil && model.isTransferring
+        return HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("\(model.finishedCount.formatted()) of \(model.transfers.count.formatted()) finished")
+                Text("\(completed.formatted()) of \(transfers.count.formatted()) completed")
                     .foregroundStyle(.secondary)
                     .font(.callout)
-                if model.isTransferring && model.transferPreferences.showProgress {
-                    ProgressView(value: Double(model.finishedCount), total: Double(model.transfers.count))
+                    .appHelp("Counts jobs that saved their output, including jobs with a warning.")
+                if isRunning && model.transferPreferences.showProgress {
+                    let finished = transfers.count(where: \.isFinished)
+                    ProgressView(value: Double(finished), total: Double(transfers.count))
                         .labelsHidden()
                         .accessibilityLabel("Batch progress")
                         .frame(maxWidth: 160)
@@ -104,7 +167,7 @@ struct TransfersView: View {
                 }
             }
             Spacer()
-            if model.isTransferring {
+            if isRunning {
                 Button("Cancel Batch", role: .cancel) { model.cancelBatch() }
                     .appHelp("Stop running jobs and leave unfinished work available to retry.")
             } else if model.canRetry {
@@ -136,6 +199,7 @@ struct TransferSelectionCommands: View {
 private struct TransferSelection {
     let model: WorkspaceModel
     let items: [Transfer]
+    let historyID: UUID?
     let askToRestart: ([Transfer]) -> Void
 }
 
@@ -157,7 +221,7 @@ private struct TransferSelectionActions: View {
             default: nil
             }
         }
-        let canCancel = model.isTransferring && items.contains { !$0.isFinished }
+        let canCancel = selection.historyID == nil && model.isTransferring && items.contains { !$0.isFinished }
         let canAddToBooks = files.contains(where: AppleBooks.supports)
 
         if inMenuBar || canCancel {
@@ -169,7 +233,9 @@ private struct TransferSelectionActions: View {
             .appHelp("Stop the selected transfer jobs.")
         }
         if inMenuBar || !incomplete.isEmpty {
-            Button(inMenuBar ? "Retry Selected Transfers" : "Retry") { model.retryTransfers(incomplete.map(\.id)) }
+            Button(inMenuBar ? "Retry Selected Transfers" : "Retry") {
+                model.retryTransfers(incomplete.map(\.id), historyID: selection.historyID)
+            }
                 .keyboardShortcut(shortcut("r"))
                 .disabled(incomplete.isEmpty || !model.canRetry)
                 .appHelp("Retry the selected unfinished jobs and reuse any valid partial downloads.")
@@ -209,7 +275,7 @@ private struct TransferSelectionActions: View {
         }
         if inMenuBar || !items.isEmpty {
             Divider()
-            Button("Remove from List") { model.removeTransfers(ids) }
+            Button("Remove from List") { model.removeTransfers(ids, historyID: selection.historyID) }
                 .keyboardShortcut(shortcut(.delete))
                 .disabled(items.isEmpty || model.isTransferring)
                 .appHelp("Remove the selected entries from Downloads and keep files already saved.")

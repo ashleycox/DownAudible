@@ -8,9 +8,19 @@ Open **Downloads** to follow downloads and conversions. Each row shows whether t
 
 If a finished item warns that Books couldn’t open its files, use **Retry Incomplete** to try the Books step again with the saved audio.
 
+## Add books to the current batch
+
+While downloads are running, select more titles from the same account in **Library**. Use **Add Selected to Queue…** from the **Download** toolbar menu or **Audiobooks > Download**. Use **Add Visible Results to Queue…** to add the books shown by your search and filters. Review the count before adding them. The added jobs use the current batch’s destination and options. Each title can appear once in a batch.
+
+## Find an earlier batch
+
+In **Downloads**, use **Show** to switch between **Current Batch** and **Recent Batches**. DownAudible keeps up to ten earlier batches. Select a job to reveal its saved files or copy an error. When the current batch finishes, the retry commands can resume an earlier batch with its saved settings.
+
 ## Resume after quitting
 
 DownAudible asks what to do if you quit while a batch is running. Choose **Keep DownAudible Open** to let it finish. Choose **Quit and Save Progress** to keep your place, then use **Retry Incomplete** in **Downloads** after reopening the app. DownAudible stores the job settings and the list of unfinished items. It resumes an audio download from a partial file when Audible confirms that the source still matches. Otherwise, it downloads that file from the start. A conversion that stopped partway through starts over.
+
+If DownAudible can’t save the queue, use **Keep DownAudible Open** to stay in the app or **Try Saving Again** after addressing the reported problem. **Quit Without Saving** closes the app and may leave the queue at its last saved state. Partial audio stays on disk.
 
 ## Set limits
 
@@ -26,7 +36,7 @@ Check **macOS Notifications** at the top of the pane. Choose **Enable Notificati
 
 When delivery includes sound, choose **macOS Sound**, one of the ten **Built-in Chime** sounds, or **Custom Audio File**. Use **Choose Sound File…** to import your own sound. DownAudible keeps a copy in Application Support. DownAudible previews a sound as you select it. Use **Play Sound** to hear it again.
 
-At the end of a batch, DownAudible groups jobs by outcome and reports each outcome once. A title can finish downloading and then fail conversion. Click a transfer notification to open **Downloads** and select its jobs if they are still in the list. **Queue Finished** plays after the separate event sounds. Cancelling the whole batch or reopening the app with a saved queue stays silent.
+At the end of a batch, DownAudible groups jobs by outcome and reports each outcome once. A title can finish downloading and then fail conversion. Click a transfer notification to open **Downloads** and select its jobs in the current or an earlier batch. **Queue Finished** plays after the separate event sounds. Cancelling the whole batch or reopening the app with a saved queue stays silent.
 
 ## Keep a log
 

@@ -6,6 +6,7 @@ final class DownAudibleAppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterD
     weak var model: WorkspaceModel?
     private(set) lazy var softwareUpdater = SoftwareUpdater(delegate: self)
     private var awaitingTransfers = false
+    private var rejectPostponedUpdate = false
     private var transferNotificationTask: Task<Void, Never>?
 
     func applicationWillFinishLaunching(_ notification: Notification) {
@@ -39,11 +40,16 @@ final class DownAudibleAppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterD
     ) -> Bool {
         guard let model, model.isTransferring || model.hasPendingQueueWrite else { return false }
         Task {
-            await model.waitForTransfersBeforeUpdating()
+            let canInstall = await saveQueueBeforeUpdating(model)
+            // Sparkle rechecks permission to relaunch when this continuation runs.
+            rejectPostponedUpdate = !canInstall
             installHandler()
+            rejectPostponedUpdate = false
         }
         return true
     }
+
+    func updaterShouldRelaunchApplication(_ updater: SPUUpdater) -> Bool { !rejectPostponedUpdate }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         if awaitingTransfers { return .terminateLater }
@@ -60,9 +66,52 @@ final class DownAudibleAppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterD
 
         awaitingTransfers = true
         Task {
-            await model.cancelAndWaitForTransfers()
-            sender.reply(toApplicationShouldTerminate: true)
+            let canQuit = await saveQueueBeforeQuit(model)
+            if !canQuit { model.resumeAfterCancelledQuit() }
+            awaitingTransfers = false
+            sender.reply(toApplicationShouldTerminate: canQuit)
         }
         return .terminateLater
+    }
+
+    private func saveQueueBeforeQuit(_ model: WorkspaceModel) async -> Bool {
+        while true {
+            do {
+                try await model.cancelAndSaveTransfersForQuit()
+                return true
+            } catch {
+                switch queueSaveFailureAlert(error, quitting: true) {
+                case .alertSecondButtonReturn: continue
+                case .alertThirdButtonReturn: return true
+                default: return false
+                }
+            }
+        }
+    }
+
+    private func saveQueueBeforeUpdating(_ model: WorkspaceModel) async -> Bool {
+        while true {
+            do {
+                try await model.waitForTransfersBeforeUpdating()
+                return true
+            } catch {
+                guard queueSaveFailureAlert(error, quitting: false) == .alertSecondButtonReturn else { return false }
+            }
+        }
+    }
+
+    private func queueSaveFailureAlert(_ error: any Error, quitting: Bool) -> NSApplication.ModalResponse {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Couldn’t save the transfer queue"
+        if quitting {
+            alert.informativeText = "\(error.localizedDescription) If you quit now, DownAudible may lose changes to the queue. Partial download files are still on disk."
+        } else {
+            alert.informativeText = "\(error.localizedDescription) DownAudible needs to save the queue before installing the update."
+        }
+        alert.addButton(withTitle: "Keep DownAudible Open")
+        alert.addButton(withTitle: "Try Saving Again")
+        if quitting { alert.addButton(withTitle: "Quit Without Saving").hasDestructiveAction = true }
+        return alert.runModal()
     }
 }

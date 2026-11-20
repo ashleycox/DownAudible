@@ -103,6 +103,7 @@ struct DownAudibleApp: App {
                     .keyboardShortcut("r", modifiers: [.command, .shift])
                     .disabled(!model.signedIn || model.isRefreshing || model.isScanning || model.isCheckingFiles)
                     .appHelp("Check that the saved or matched audio files are still present.")
+                    ArchiveVerificationButton(model: model)
 
                     Divider()
                     LibraryContextCommands(model: model)
@@ -120,6 +121,7 @@ struct DownAudibleApp: App {
                     }
                     .disabled(!model.signedIn || model.isRefreshing)
                     .appHelp("Save the loaded library as a structured list.")
+                    LibraryVisibleExportCommands(model: model)
                 }
                 .appHelp("Open the library or use its refresh, file matching, and export commands.")
 
@@ -328,6 +330,9 @@ private struct WorkspaceView: View {
         }
         .sheet(item: $model.downloadRequest) { request in
             DownloadOptionsView(model: model, request: request)
+        }
+        .sheet(isPresented: $model.showingArchiveVerification) {
+            ArchiveVerificationView(model: model)
         }
         .sheet(isPresented: $showingOnboarding, onDismiss: openSetupManualIfRequested) {
             OnboardingView(model: model, softwareUpdater: softwareUpdater) { destination in

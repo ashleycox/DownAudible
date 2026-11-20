@@ -17,9 +17,11 @@ struct LibraryView: View {
     @State private var showingImport = false
 
     var body: some View {
+        let rows = model.signedIn ? visibleRows : []
+        let visibleBooks = rows.map(\.book)
         Group {
             if model.signedIn {
-                library
+                library(rows: rows)
                     .searchable(text: $search, isPresented: $showingSearch, prompt: "Search Library")
                     .searchFocused($searchFocused)
             } else {
@@ -45,8 +47,7 @@ struct LibraryView: View {
             AudibleCLIImportView(model: model)
         }
         .sheet(item: $editingFilter) { field in
-            let suggestions = showsFilterSuggestions ? LibraryFilterSuggestions(field: field, books: model.books) : nil
-            LibraryTextFilterView(field: field, value: filters[field], suggestions: suggestions) { filters[field] = $0 }
+            LibraryTextFilterView(field: field, value: filters[field], suggestions: suggestions(for: field)) { filters[field] = $0 }
         }
         .toolbar {
             if model.signedIn {
@@ -73,9 +74,9 @@ struct LibraryView: View {
                     .appHelp("Narrow the library by book details or download status. Open this menu with Shift–Command–F.")
 
                     Menu("Download", systemImage: "arrow.down.to.line") {
-                        LibraryDownloadActions(model: model)
+                        LibraryDownloadActions(model: model, visibleBooks: visibleBooks)
                     }
-                    .disabled(model.books.isEmpty || !model.canRequestDownloads)
+                    .disabled(model.books.isEmpty || !(model.canRequestDownloads || model.canAddToDownloadQueue))
                     .labelStyle(.iconOnly)
                     .appHelp("Choose which audiobooks to download and whether to review the batch settings first.")
 
@@ -87,6 +88,8 @@ struct LibraryView: View {
                         }
                             .disabled(model.isScanning || model.isRefreshing || model.isCheckingFiles)
                             .appHelp("Check that audio files in the archive and matched folder are still present.")
+                        ArchiveVerificationButton(model: model)
+                        LibraryVisibleExportMenu(model: model, books: visibleBooks)
                         Divider()
                         LibraryFolderActions(model: model)
                         let selection = model.selectedAudiobooks
@@ -118,7 +121,8 @@ struct LibraryView: View {
                 searchFocused = true
             },
             signIn: { openSignIn(adding: model.signedIn) },
-            importAccount: { showingImport = true }
+            importAccount: { showingImport = true },
+            visibleBooks: visibleBooks
         ))
         .focusedSceneValue(\.libraryBrowseActions, model.signedIn ? browseActions : nil)
     }
@@ -176,9 +180,8 @@ struct LibraryView: View {
         .appHelp("Switch accounts or manage the current Audible sign-in.")
     }
 
-    private var library: some View {
-        let rows = visibleRows
-        return VStack(spacing: 0) {
+    private func library(rows: [LibraryRow]) -> some View {
+        VStack(spacing: 0) {
             if !filters.isEmpty {
                 activeFilters
                 Divider()
@@ -210,12 +213,18 @@ struct LibraryView: View {
             .contextMenu(forSelectionType: AudibleBook.ID.self) { ids in
                 let books = rows.filter { ids.contains($0.id) }.map(\.book)
                 if !books.isEmpty {
-                    Button("Download") { model.requestDownloads(books) }
-                        .disabled(!model.canRequestDownloads)
-                        .appHelp("Download these audiobooks using the saved settings.")
-                    Button("Download As…") { model.requestDownloads(books, customizing: true) }
-                        .disabled(!model.canRequestDownloads)
-                        .appHelp("Review the options before downloading these audiobooks.")
+                    if model.canAddToDownloadQueue {
+                        Button("Add to Queue…") { model.reviewAddingToDownloadQueue(books) }
+                            .disabled(model.downloadQueueAdditions(from: books).isEmpty)
+                            .appHelp("Add these audiobooks using the running batch’s destination and options.")
+                    } else {
+                        Button("Download") { model.requestSelectedDownloads(books) }
+                            .disabled(!model.canRequestDownloads)
+                            .appHelp("Download these audiobooks using the saved settings.")
+                        Button("Download As…") { model.requestDownloads(books, customizing: true) }
+                            .disabled(!model.canRequestDownloads)
+                            .appHelp("Review the options before downloading these audiobooks.")
+                    }
                     LibraryRestartAction(model: model, books: books)
                     Divider()
                     LibraryBookActions(model: model, books: books)
@@ -257,6 +266,15 @@ struct LibraryView: View {
             ProgressView("Loading your library…")
                 .controlSize(.regular)
                 .appHelp("DownAudible is fetching audiobook information from Audible.")
+        } else if model.books.isEmpty, let error = model.libraryLoadError {
+            ContentUnavailableView {
+                Label("Couldn’t load your library", systemImage: "exclamationmark.circle")
+            } description: {
+                Text(error)
+            } actions: {
+                Button("Retry", action: refresh)
+                    .appHelp("Try to fetch the Audible library again.")
+            }
         } else if model.books.isEmpty {
             ContentUnavailableView("No Audiobooks", systemImage: "books.vertical", description: Text("Your library is empty."))
         } else if !filters.isEmpty {
@@ -331,15 +349,16 @@ struct LibraryView: View {
     }
 
     private var visibleRows: [LibraryRow] {
-        let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
-        let rows = model.books.compactMap { book -> LibraryRow? in
-            guard filters.matches(book) else { return nil }
-            let status = model.downloadStatus(for: book)
-            guard filters.status.map({ $0 == status }) ?? true else { return nil }
-            let row = LibraryRow(book: book, status: status, missingFiles: model.missingOutputFiles(for: book))
-            return query.isEmpty || row.matches(query) ? row : nil
-        }
+        let rows = filters.rows(
+            in: model.books, search: search, statusFor: model.downloadStatus, missingFiles: model.missingOutputFiles
+        )
         return sort.field.sorted(rows, direction: sort.direction)
+    }
+
+    private func suggestions(for field: LibraryFilters.Field) -> LibraryFilterSuggestions? {
+        guard showsFilterSuggestions else { return nil }
+        let rows = filters.rows(in: model.books, search: search, excluding: field, statusFor: model.downloadStatus)
+        return LibraryFilterSuggestions(field: field, books: rows.map(\.book))
     }
 
     private func refresh() {

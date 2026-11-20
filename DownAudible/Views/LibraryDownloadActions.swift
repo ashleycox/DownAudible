@@ -7,8 +7,8 @@ struct LibraryDownloadCommands: View {
 
     var body: some View {
         Menu("Download") {
-            LibraryDownloadActions(model: model, activateLibrary: activateLibrary)
-            if libraryContext != nil {
+            LibraryDownloadActions(model: model, visibleBooks: libraryContext?.visibleBooks, activateLibrary: activateLibrary)
+            if libraryContext != nil, !model.canAddToDownloadQueue {
                 Divider()
                 LibraryRestartAction(model: model, books: model.selectedAudiobooks, inMenuBar: true)
             }
@@ -19,18 +19,47 @@ struct LibraryDownloadCommands: View {
 
 struct LibraryDownloadActions: View {
     let model: WorkspaceModel
+    var visibleBooks: [AudibleBook]?
     var activateLibrary: (() -> Void)?
 
     var body: some View {
-        let selection = model.selectedAudiobooks
-        Button("Download Selected") { request(selection) }
+        let selection = visibleBooks?.filter { model.selectedBooks.contains($0.id) } ?? model.selectedAudiobooks
+        if model.canAddToDownloadQueue {
+            Button("Add Selected to Queue…") { reviewQueueAdditions(selection) }
+                .keyboardShortcut(shortcut("d"))
+                .appHelp("Add the selected audiobooks using the running batch’s destination and options.")
+                .disabled(model.downloadQueueAdditions(from: selection).isEmpty)
+            if let visibleBooks {
+                Button("Add Visible Results to Queue…") { reviewQueueAdditions(visibleBooks) }
+                    .appHelp("Add the visible audiobooks using the running batch’s destination and options.")
+                    .disabled(model.downloadQueueAdditions(from: visibleBooks).isEmpty)
+            }
+        } else {
+            downloadActions(selection: selection)
+        }
+    }
+
+    @ViewBuilder
+    private func downloadActions(selection: [AudibleBook]) -> some View {
+        Button("Download Selected") {
+            activateLibrary?()
+            model.requestSelectedDownloads(selection)
+        }
             .keyboardShortcut(shortcut("d"))
             .appHelp("Download the selected audiobooks with the saved download options.")
             .disabled(!model.canRequestDownloads || selection.isEmpty)
-        Button("Download Selected As…") { request(selection, customizing: true) }
+        Button("Download Selected As…") { reviewOptions(for: selection) }
             .keyboardShortcut(shortcut("d", modifiers: [.command, .option]))
             .appHelp("Choose what to save for the selected audiobooks before downloading.")
             .disabled(!model.canRequestDownloads || selection.isEmpty)
+        if let visibleBooks {
+            Button("Download Visible Results…") {
+                activateLibrary?()
+                model.reviewBulkDownload(visibleBooks, scope: .visibleResults)
+            }
+            .disabled(!model.canRequestDownloads || visibleBooks.isEmpty)
+            .appHelp("Review how many titles are visible and download only those titles using the saved options.")
+        }
         Divider()
         Button("Download Missing") { requestMissing() }
             .keyboardShortcut(shortcut("d", modifiers: [.command, .shift]))
@@ -41,11 +70,14 @@ struct LibraryDownloadActions: View {
             .appHelp("Review the destination and file options before downloading missing audio.")
             .disabled(!model.canDownloadMissing)
         Divider()
-        Button("Download Entire Library") { request(model.books) }
+        Button("Download Entire Library") {
+            activateLibrary?()
+            model.reviewBulkDownload(model.books, scope: .entireLibrary)
+        }
             .keyboardShortcut(shortcut("l", modifiers: [.command, .shift]))
             .appHelp("Queue all titles in the loaded library with the saved options.")
             .disabled(!model.canRequestDownloads || model.books.isEmpty)
-        Button("Download Entire Library As…") { request(model.books, customizing: true) }
+        Button("Download Entire Library As…") { reviewOptions(for: model.books) }
             .keyboardShortcut(shortcut("l", modifiers: [.command, .option, .shift]))
             .appHelp("Review the destination and file options for the whole loaded library.")
             .disabled(!model.canRequestDownloads || model.books.isEmpty)
@@ -55,9 +87,14 @@ struct LibraryDownloadActions: View {
         activateLibrary == nil ? nil : KeyboardShortcut(key, modifiers: modifiers)
     }
 
-    private func request(_ books: [AudibleBook], customizing: Bool = false) {
+    private func reviewOptions(for books: [AudibleBook]) {
         activateLibrary?()
-        model.requestDownloads(books, customizing: customizing)
+        model.requestDownloads(books, customizing: true)
+    }
+
+    private func reviewQueueAdditions(_ books: [AudibleBook]) {
+        activateLibrary?()
+        model.reviewAddingToDownloadQueue(books)
     }
 
     private func requestMissing(customizing: Bool = false) {

@@ -8,11 +8,13 @@ Choose **Filter Library** in the toolbar or **View > Filter Library** to narrow 
 
 Press Shift–Command–S to open the sort menu or Shift–Command–F to open the filter menu. Use the arrow keys and Return to choose an item. Use Option–Shift–Command–S to reverse the current sort or Option–Shift–Command–F to clear the filters.
 
-When you type a filter, DownAudible suggests matches from the current library. Click a suggestion or use the Up and Down Arrow keys and press Return. You can also enter your own value. To hide suggestions, turn off **Suggest filter values as you type** in **Settings > Library**.
+When you type a filter, DownAudible suggests values from books that match your search, download status, and other filters. Click a suggestion or use the Up and Down Arrow keys and press Return. You can also enter your own value. To hide suggestions, turn off **Suggest filter values as you type** in **Settings > Library**.
 
 Press Command–F to search by title, author, narrator, series, or ASIN. Search works within your active filters. Click one book, then Command-click to add individual books to the selection. Shift-click selects a range.
 
-Use **Audiobooks > Library > Refresh Library** to fetch changes. In **Settings > Library**, choose whether to show podcast series or individual episodes, set a purchase date range, and change the number of results per request. Refresh after changing these options. **Audiobooks > Library > Export Library** saves the loaded library as JSON, CSV, or TSV.
+Use **Audiobooks > Library > Refresh Library** to fetch changes. If the library can’t load, read the error in the library and choose **Retry**. In **Settings > Library**, choose whether to show podcast series or individual episodes, set a purchase date range, and change the number of results per request. Refresh after changing these options.
+
+**Audiobooks > Library > Export Library** saves the loaded library as JSON, CSV, or TSV. Choose **Export Visible Results** there or in the **Library Actions** toolbar menu to export the books shown by your search and filters in their current order.
 
 ## Check library status
 
@@ -36,7 +38,11 @@ The **Download Status** column shows six states. **Downloaded** means at least o
 
 After moving or deleting a file, choose **Audiobooks > Library > Recheck Saved Files** to refresh the status straight away. A warning beside a downloaded book can mean there is a missing companion file or another saved audio copy. Hover over the warning or read the row with VoiceOver to find out which file. Use **Download Selected As…** with the corresponding option to get that file back.
 
-**Download Missing** queues eligible books whose audio is missing, incomplete, or unsaved. **Download Entire Library** queues all titles in the loaded library. Both commands cover the whole loaded library while you search or filter the table. To download a subset, select the books you want and choose **Download Selected**. Use **Download Missing As…** or **Download Entire Library As…** to review what to save before starting. When a transfer repeatedly fails partway, Control-click its book and choose **Restart Incomplete Downloads…**.
+Choose **Verify and Repair Archive…** from **Audiobooks > Library** for a deeper check of saved books. See [Naming and Folders](help-06-files.md) for how to check and repair the archive.
+
+**Download Missing** queues eligible books whose audio is missing, incomplete, or unsaved. **Download Entire Library** queues all titles in the loaded library. Both commands cover the whole loaded library while you search or filter the table. **Download Visible Results…** queues just the visible books. Choose **Download Selected** to queue just the selected titles. Review the number of books and confirm before starting a bulk download. Use a **Download As…** command to review what to save as well as the number of titles.
+
+While a download batch is running for the active account, use **Add Selected to Queue…** or **Add Visible Results to Queue…** in the **Download** menu. DownAudible shows the number of books it can add and uses the running batch’s destination and options. When a transfer repeatedly fails partway, Control-click its book and choose **Restart Incomplete Downloads…**.
 
 Use **Show Audio in Finder** to locate a selected book’s files. **Add to Apple Books** lets you send original files, M4Bs, or other supported audio already on disk. **Copy Title** and **Copy ASIN** put book details on the clipboard.
 

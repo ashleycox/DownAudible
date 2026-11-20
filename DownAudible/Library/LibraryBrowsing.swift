@@ -195,6 +195,22 @@ struct LibraryFilters: Equatable {
     func matches(_ book: AudibleBook) -> Bool {
         text.allSatisfy { $0.key.matches(book, text: $0.value) }
     }
+
+    func rows(
+        in books: [AudibleBook], search: String, excluding field: Field? = nil,
+        statusFor: (AudibleBook) -> LibraryDownloadStatus, missingFiles: (AudibleBook) -> [URL] = { _ in [] }
+    ) -> [LibraryRow] {
+        var filters = self
+        if let field { filters[field] = nil }
+        let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
+        return books.compactMap { book in
+            guard filters.matches(book) else { return nil }
+            let status = statusFor(book)
+            guard filters.status.map({ $0 == status }) ?? true else { return nil }
+            let row = LibraryRow(book: book, status: status, missingFiles: missingFiles(book))
+            return query.isEmpty || row.matches(query) ? row : nil
+        }
+    }
 }
 
 struct LibraryRow: Identifiable {
