@@ -79,6 +79,10 @@ final class WorkspaceModel {
         didSet { save(transferPreferences, as: "TransferPreferences") }
     }
 
+    var transferFeedback: TransferFeedbackPreferences {
+        didSet { save(transferFeedback, as: "TransferFeedback") }
+    }
+
     private(set) var accounts: [SavedAudibleAccount] {
         didSet { save(accounts, as: "Accounts") }
     }
@@ -102,11 +106,13 @@ final class WorkspaceModel {
     private let archive: ArchiveWorker
     private let transferLog = TransferLog()
     private let queue = TransferQueueStore()
+    private let completionSoundPlayer = QueueCompletionSoundPlayer()
     @ObservationIgnored private var queueSaveTask: Task<Void, Never>?
     @ObservationIgnored private var queueRevision = 0
     @ObservationIgnored private var pendingQueueWrites = 0
     @ObservationIgnored private var activeJobs: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored private var batchEncounteredError = false
+    @ObservationIgnored private var feedbackProgress: [UUID: TransferFeedbackProgress] = [:]
     @ObservationIgnored private var outputWatcher: ArchiveWatcher?
     @ObservationIgnored private var matchWatcher: ArchiveWatcher?
     @ObservationIgnored private var fileCheckTask: Task<Void, Never>?
@@ -136,6 +142,7 @@ final class WorkspaceModel {
         downloadOptions = Self.load("DownloadOptions", from: defaults) ?? DownloadOptions()
         apiOptions = Self.load("AudibleAPIOptions", from: defaults) ?? AudibleAPIOptions()
         transferPreferences = Self.load("TransferPreferences", from: defaults) ?? TransferPreferences()
+        transferFeedback = Self.load("TransferFeedback", from: defaults) ?? TransferFeedbackPreferences()
         accounts = Self.load("Accounts", from: defaults) ?? []
         activeAccountID = defaults.string(forKey: "ActiveAccountID").flatMap(UUID.init(uuidString:))
         matchesByAccount = Self.load("AccountMatches", from: defaults) ?? [:]
@@ -702,6 +709,27 @@ final class WorkspaceModel {
 
     func cancelBatch() { activeTransfer?.cancel() }
 
+    func previewTransferSound(for event: TransferFeedbackEvent) throws {
+        try completionSoundPlayer.play(transferFeedback[event].sound)
+    }
+
+    func installTransferSound(from url: URL, for event: TransferFeedbackEvent) async throws {
+        let chosenFile = try await QueueCompletionSoundPlayer.importCustomSound(from: url)
+        var settings = transferFeedback[event]
+        let previousFile = settings.sound.customFile
+        settings.sound.source = .custom
+        settings.sound.customFile = chosenFile
+        transferFeedback[event] = settings
+        if let previousFile { QueueCompletionSoundPlayer.removeCustomSound(previousFile) }
+    }
+
+    func setTransferDelivery(_ delivery: TransferFeedbackPreferences.Delivery, for event: TransferFeedbackEvent) async throws {
+        if delivery.postsNotification && !transferFeedback[event].delivery.postsNotification {
+            try await TransferNotifications.shared.askPermission()
+        }
+        transferFeedback[event].setDelivery(delivery)
+    }
+
     func cancelTransfer(_ id: UUID) {
         guard let index = transfers.firstIndex(where: { $0.id == id }) else { return }
         activeJobs[id]?.cancel()
@@ -791,6 +819,7 @@ final class WorkspaceModel {
         }
         isTransferring = true
         batchEncounteredError = false
+        feedbackProgress.removeAll(keepingCapacity: true)
         lastBatch = batch
         if indices == nil {
             transfers = batch.work.map { work in
@@ -832,8 +861,52 @@ final class WorkspaceModel {
             }
             await recheckFiles()
             await persistQueue()
+            if !Task.isCancelled {
+                announceTransferResults(for: batch, indices: selected)
+            }
             isTransferring = false
             activeTransfer = nil
+        }
+    }
+
+    private func announceTransferResults(for batch: TransferBatch, indices: [Int]) {
+        var titlesByEvent: [TransferFeedbackEvent: [String]] = [:]
+        for index in indices {
+            let transfer = transfers[index]
+            let progress = feedbackProgress[transfer.id, default: TransferFeedbackProgress()]
+            let events = progress.outcomes(
+                isDownload: batch.work[index].isDownload, requestsConversion: batch.options.makesConversion,
+                status: transfer.status
+            )
+            for event in events { titlesByEvent[event, default: []].append(transfer.title) }
+        }
+        guard !titlesByEvent.isEmpty else { return }
+        let events = TransferFeedbackEvent.allCases.filter { $0 == .queueFinished || titlesByEvent[$0] != nil }
+        let sounds = events.compactMap { event -> QueueCompletionSound? in
+            let settings = transferFeedback[event]
+            return settings.delivery.playsSound ? settings.sound : nil
+        }
+        completionSoundPlayer.enqueue(sounds)
+        let notifications = events.compactMap { event -> (TransferFeedbackEvent, [String])? in
+            guard event != .queueFinished, transferFeedback[event].delivery.postsNotification,
+                  let titles = titlesByEvent[event] else { return nil }
+            return (event, titles)
+        }
+        if !notifications.isEmpty {
+            Task {
+                for (event, titles) in notifications {
+                    await TransferNotifications.shared.post(event, jobs: titles)
+                }
+            }
+        }
+    }
+
+    private func recordTransferFeedback(_ milestone: ArchiveWorker.FeedbackMilestone, id: UUID) {
+        switch milestone {
+        case .downloaded:
+            feedbackProgress[id, default: TransferFeedbackProgress()].downloaded = true
+        case .preparingConversion:
+            feedbackProgress[id, default: TransferFeedbackProgress()].converting = true
         }
     }
 
@@ -877,6 +950,8 @@ final class WorkspaceModel {
                     existingFiles: batch.preferences.existingFiles, conversion: batch.conversion,
                     requestID: id, restartIncomplete: restart, didRestart: { [weak self] in
                         await self?.acknowledgeRestart(at: index, id: id)
+                    }, feedback: { [weak self] milestone in
+                        await self?.recordTransferFeedback(milestone, id: id)
                     }, progress: progress
                 )
                 transfers[index].restartPending = false
@@ -891,6 +966,10 @@ final class WorkspaceModel {
                 )
             }
 
+            if !receipt.removedAAX.isEmpty {
+                localFiles.removeAll { receipt.removedAAX.contains($0.url) }
+                selectedFiles.subtract(receipt.removedAAX)
+            }
             transfers[index].files = receipt.audioFiles.isEmpty ? [receipt.url] : receipt.audioFiles
             let note = await sendToAppleBooks(receipt, destination: batch.appleBooks, at: index)
             transfers[index].status = .done(receipt.url, note: note)

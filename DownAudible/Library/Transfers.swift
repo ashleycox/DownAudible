@@ -113,6 +113,7 @@ struct ExportReceipt: Sendable {
     var converted: [URL] = []
     var addedOriginal: [URL] = []
     var addedConverted: [URL] = []
+    var removedAAX: Set<URL> = []
     var note: String?
 
     var audioFiles: [URL] { original + converted }

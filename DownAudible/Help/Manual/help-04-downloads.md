@@ -10,6 +10,8 @@ Choose **Download Selected As…**, **Download Missing As…**, or **Download En
 
 **Save chapters as JSON** keeps Audible’s chapter list in its own file. **Save annotations as JSON** saves the bookmarks, notes, and other annotations Audible makes available. Chapter JSON is separate from the chapters embedded in converted audio.
 
+To save only converted audio from a new download, turn off **Keep the original after conversion**. To move a previously saved AAX file to Trash after a new MP3 conversion, also turn on **Move converted AAX files to Trash** in **Settings > Conversion**.
+
 ## Choose an Audible format and quality
 
 **Settings > Downloads** controls the source format and quality. **AAX with fallback** asks for AAX first and accepts the format Audible supplies if AAX is unavailable. When conversion is on, it also requests AAXC if DownAudible can’t unlock the AAX after trying to refresh the activation bytes. **AAX only** requires an AAX download and needs the account’s activation bytes for conversion. **AAXC** requests AAXC directly and keeps the format Audible supplies. **Settings > Conversion** controls the exported file format.

@@ -18,6 +18,16 @@ Open **Settings > Jobs** to set simultaneous downloads and conversions. Lower th
 
 **Continue after a job fails** lets other books in the batch run. If you turn it off, DownAudible stops starting new items after a failure. **Show detailed transfer progress** controls the progress bars and detail in **Downloads**.
 
+## Set transfer sounds and notifications
+
+In **Settings > Jobs**, under **Transfer alerts**, use **Event** to choose **Download Completed**, **Conversion Completed**, **Download Failed**, **Conversion Failed**, or **Queue Finished**. Set **Delivery** to **Off**, **Notification Only**, **Sound Only**, or **Both**. **Queue Finished** offers **Off** or **Sound Only**.
+
+**Notification Only** puts a silent alert in macOS Notification Center. Allow notifications for DownAudible when macOS asks after you choose a mode that shows alerts.
+
+When delivery includes sound, choose **macOS Sound**, one of the ten **Built-in Chime** sounds, or **Custom Audio File**. Use **Choose Sound File…** to import your own sound. DownAudible keeps a copy in Application Support. DownAudible previews a sound as you select it. Use **Play Sound** to hear it again.
+
+At the end of a batch, DownAudible groups jobs by outcome and reports each outcome once. A title can finish downloading and then fail conversion. **Queue Finished** plays after the separate event sounds. Cancelling the whole batch or reopening the app with a saved queue stays silent.
+
 ## Keep a log
 
 In **Settings > Jobs**, choose **Errors only** to keep warnings and errors or **Transfer results** to include completed jobs. Click **Choose…** to write the log somewhere else. **Use Default Location** returns the log to DownAudible’s folder in Application Support.

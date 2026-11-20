@@ -20,6 +20,7 @@ struct ArchiveChecks {
         try checkLosslessChapters()
         try await checkActivationRefresh(in: workspace)
         try await checkDownloadAfterActivationFailure(in: workspace)
+        try await checkAAXCleanup(in: workspace)
         let literal = ArchiveTitle(title: "{author}/Book", author: "Name/Name", asin: nil)
         check(try layout.directory(for: literal, format: "m4b").path.hasSuffix("/m4b/Name-Name/{author}-Book"))
         try manager.createSymbolicLink(at: root.appending(path: "aax"), withDestinationURL: outside)
@@ -68,7 +69,143 @@ struct ArchiveChecks {
         check(contents.split(separator: "\n").count == 2 && contents.contains("Me Test\tFailed: Test"))
         try await checkArchiveWatcher(in: workspace, existsAtStart: true)
         try await checkArchiveWatcher(in: workspace, existsAtStart: false)
-        print("Archive naming, incomplete transfers, queue persistence, file watching, matching, library status, preference migration, CSV export, logs, and AAX activation recovery passed.")
+        print("Archive naming, incomplete transfers, queue persistence, file watching, matching, library status, preference migration, CSV export, logs, AAX activation recovery, and AAX cleanup passed.")
+    }
+
+    private static func checkAAXCleanup(in workspace: URL) async throws {
+        let defaults = UserDefaults.standard
+        let originalIndex = defaults.object(forKey: "ArchiveIndex")
+        defer { defaults.set(originalIndex, forKey: "ArchiveIndex") }
+        let tools = workspace.appending(path: "AAX Cleanup Tools", directoryHint: .isDirectory)
+        let trash = workspace.appending(path: "Test Trash", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: tools, withIntermediateDirectories: false)
+        try FileManager.default.createDirectory(at: trash, withIntermediateDirectories: false)
+        let probe = #"""
+            #!/bin/sh
+            for input do :; done
+            case "$input" in
+                *.aax)
+                    printf '%s\n' '{"streams":[{"index":0,"codec_type":"audio","codec_name":"aac","duration":"2","sample_rate":"44100","channels":1}],"chapters":[{"start_time":"0","end_time":"1","tags":{"title":"One"}},{"start_time":"1","end_time":"2","tags":{"title":"Two"}}],"format":{}}'
+                    ;;
+                *.mp3)
+                    [ "$(cat "$input")" = mp3 ] || exit 1
+                    printf '%s\n' '{"streams":[{"index":0,"codec_type":"audio","codec_name":"mp3","duration":"1","sample_rate":"44100","channels":1}],"chapters":[],"format":{}}'
+                    ;;
+                *) exit 1 ;;
+            esac
+            """#
+        let encoder = #"""
+            #!/bin/sh
+            set -eu
+            start=0
+            while [ "$#" -gt 0 ]; do
+                case "$1" in
+                    -ss) start=$2; shift ;;
+                    -i) [ -n "${input:-}" ] || input=$2; shift ;;
+                esac
+                output=$1
+                shift
+            done
+            case "$input" in
+                */Incomplete.aax) [ "$start" = 0 ] || exit 1 ;;
+                */Changed.aax) printf '%s' replacement > "$input" ;;
+            esac
+            printf '%s' mp3 > "$output"
+            """#
+        for (name, script) in [("ffprobe", probe), ("ffmpeg", encoder)] {
+            let url = tools.appending(path: name)
+            try script.write(to: url, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
+        }
+        let retryMarker = trash.appending(path: "Allow Retry")
+        let worker = ArchiveWorker(media: MediaTools(toolDirectory: tools)) { source in
+            if source.lastPathComponent == "Retry.aax", !FileManager.default.fileExists(atPath: retryMarker.path) {
+                throw CocoaError(.fileWriteNoPermission)
+            }
+            try FileManager.default.moveItem(at: source, to: trash.appending(path: source.lastPathComponent))
+        }
+        let layout = ArchiveLayout(root: workspace.appending(path: "Cleanup Outputs"), template: ArchiveLayout.defaultTemplate)
+        var defaultsOnly = ConversionPreferences()
+        defaultsOnly.format = .mp3
+        defaultsOnly.chapterMode = .separate
+        var cleanup = defaultsOnly
+        cleanup.moveAAXToTrash = true
+        check(!defaultsOnly.cleansUpAAX && cleanup.cleansUpAAX)
+        check(cleanup.outputRecipe == defaultsOnly.outputRecipe)
+        let preferences = try JSONEncoder().encode(cleanup)
+        check(try JSONDecoder().decode(ConversionPreferences.self, from: preferences).cleansUpAAX)
+
+        func source(_ title: String) throws -> LocalAudioFile {
+            let url = workspace.appending(path: title + ".aax")
+            try Data("source".utf8).write(to: url)
+            return LocalAudioFile(url: url, format: "aax", title: title, author: nil, asin: nil, durationSeconds: 2)
+        }
+
+        func convert(_ file: LocalAudioFile, preferences: ConversionPreferences, requestID: UUID = UUID()) async throws -> ExportReceipt {
+            try await worker.convert(
+                file, audible: AudibleClient(), layout: layout, activationBytes: "12345678", existingFiles: .reuse,
+                conversion: preferences, requestID: requestID, progress: { _, _ in }
+            )
+        }
+        let ready = try source("Complete")
+        let written = try await convert(ready, preferences: cleanup)
+        check(written.converted.count == 2 && written.converted.allSatisfy { FileManager.default.fileExists(atPath: $0.path) })
+        check(written.removedAAX == [ready.url] && written.note == nil)
+        check(!FileManager.default.fileExists(atPath: ready.url.path))
+        check(try Data(contentsOf: trash.appending(path: "Complete.aax")) == Data("source".utf8))
+
+        let disabled = try source("Keep")
+        let saved = try await convert(disabled, preferences: defaultsOnly)
+        let reused = try await convert(disabled, preferences: cleanup)
+        check(reused.converted == saved.converted && reused.removedAAX.isEmpty)
+        check(FileManager.default.fileExists(atPath: disabled.url.path))
+
+        let incomplete = try source("Incomplete")
+        do {
+            _ = try await convert(incomplete, preferences: cleanup)
+            fatalError("A failed chapter should fail the job")
+        } catch MediaError.conversionFailed {}
+        check(FileManager.default.fileExists(atPath: incomplete.url.path))
+
+        let changed = try source("Changed")
+        let changedResult = try await convert(changed, preferences: cleanup)
+        check(changedResult.removedAAX.isEmpty && changedResult.note?.contains("changed during conversion") == true)
+        check(try Data(contentsOf: changed.url) == Data("replacement".utf8))
+
+        let retry = try source("Retry")
+        let requestID = UUID()
+        let firstAttempt = try await convert(retry, preferences: cleanup, requestID: requestID)
+        check(firstAttempt.removedAAX.isEmpty && firstAttempt.note?.contains("MP3 export was saved") == true)
+        check(FileManager.default.fileExists(atPath: retry.url.path))
+        try Data().write(to: retryMarker)
+        let secondAttempt = try await convert(retry, preferences: cleanup, requestID: requestID)
+        check(secondAttempt.converted == firstAttempt.converted && secondAttempt.removedAAX == [retry.url])
+        check(!FileManager.default.fileExists(atPath: retry.url.path))
+
+        let cancelled = try source("Cancelled")
+        let (published, signal) = AsyncStream<Void>.makeStream()
+        let (waiting, release) = AsyncStream<Void>.makeStream()
+        defer { release.finish() }
+        let job = Task { [cleanup] in
+            defer { signal.finish() }
+            return try await worker.convert(
+                cancelled, audible: AudibleClient(), layout: layout, activationBytes: "12345678", existingFiles: .reuse,
+                conversion: cleanup, requestID: UUID(), progress: { _, fraction in
+                    guard fraction == 1 else { return }
+                    signal.yield(())
+                    for await _ in waiting { break }
+                }
+            )
+        }
+        for await _ in published {
+            job.cancel()
+            break
+        }
+        do {
+            _ = try await job.value
+            fatalError("Cancelling after publishing the MP3 files should stop cleanup.")
+        } catch is CancellationError {}
+        check(FileManager.default.fileExists(atPath: cancelled.url.path))
     }
 
     private static func checkLosslessChapters() throws {
@@ -357,7 +494,11 @@ struct ArchiveChecks {
                 activation)
                     [ "$(field session)" = fixture ]
                     printf 'activation %s\n' "$(field refreshActivation)" >> "$log"
-                    printf '%s\n' '{"error":"activation"}' ;;
+                    if [ -f "$(dirname "$0")/use-aax" ]; then
+                        printf '%s\n' '{"result":{"activationBytes":"12345678","session":"fixture"}}'
+                    else
+                        printf '%s\n' '{"error":"activation"}'
+                    fi ;;
                 download)
                     [ "$(field session)" = fixture ]
                     format=$(field options.format)
@@ -378,16 +519,22 @@ struct ArchiveChecks {
             if [ "${0##*/}" = ffprobe ]; then
                 for file do :; done
                 case "$(cat "$file")" in
+                    Book.aax) codec=aac ;;
                     Book.mp3) codec=mp3 ;;
                     converted) codec=aac ;;
+                    converted-mp3) codec=mp3 ;;
                     *) exit 1 ;;
                 esac
                 printf '{"streams":[{"index":0,"codec_type":"audio","codec_name":"%s","duration":"2","sample_rate":"44100","channels":1}],"chapters":[],"format":{}}\n' "$codec"
             else
                 while [ "$1" != -i ]; do shift; done
-                [ "$(cat "$2")" = Book.mp3 ]
+                input=$(cat "$2")
                 for output do :; done
-                printf '%s' converted > "$output"
+                case "$input:$output" in
+                    Book.aax:*.mp3) printf '%s' converted-mp3 > "$output" ;;
+                    Book.mp3:*) printf '%s' converted > "$output" ;;
+                    *) exit 1 ;;
+                esac
             fi
             """#
         for (url, script) in [(helper, helperScript), (tools.appending(path: "ffprobe"), mediaScript),
@@ -404,7 +551,11 @@ struct ArchiveChecks {
         let originalIndex = defaults.object(forKey: "ArchiveIndex")
         defer { defaults.set(originalIndex, forKey: "ArchiveIndex") }
 
-        let archive = ArchiveWorker(media: MediaTools(toolDirectory: tools))
+        let trash = workspace.appending(path: "Archive Test Trash", directoryHint: .isDirectory)
+        try manager.createDirectory(at: trash, withIntermediateDirectories: false)
+        let archive = ArchiveWorker(media: MediaTools(toolDirectory: tools)) { source in
+            try FileManager.default.moveItem(at: source, to: trash.appending(path: source.lastPathComponent))
+        }
         let book = try matchingBook("Fallback fixture", asin: "B000000001")
         let root = workspace.appending(path: "Fallback Archive", directoryHint: .isDirectory)
         let layout = ArchiveLayout(root: root, template: ArchiveLayout.defaultTemplate)
@@ -424,6 +575,29 @@ struct ArchiveChecks {
         check(receipt.converted == [receipt.url] && receipt.url.pathExtension == "m4b")
         check(try Data(contentsOf: receipt.url) == Data("converted".utf8))
         check(!IncompleteDownloads.containsAudio(for: book.id, account: profile.uuidString, root: root))
+
+        try Data().write(to: tools.appending(path: "use-aax"))
+        options.keepOriginal = false
+        conversion.format = .mp3
+        conversion.moveAAXToTrash = true
+        let cleaned = try await archive.download(
+            book, account: profile.uuidString, audible: client, matches: [], layout: layout, options: options,
+            existingFiles: .reuse, conversion: conversion, progress: { _, _ in }
+        )
+        check(cleaned.removedAAX == Set(receipt.original))
+        let following = await archive.inventory(for: [book.id], account: profile.uuidString, layout: layout)
+        check(following[book.id]?.originals.isEmpty == true)
+        check(following[book.id]?.missingFiles.isEmpty == true)
+        check(following[book.id]?.files.contains(cleaned.url) == true)
+
+        let other = try matchingBook("Matched fixture", asin: "B000000002")
+        let matched = workspace.appending(path: "Matched.aax")
+        try Data("Book.aax".utf8).write(to: matched)
+        let matchedReceipt = try await archive.download(
+            other, account: profile.uuidString, audible: client, matches: [matched], layout: layout, options: options,
+            existingFiles: .reuse, conversion: conversion, progress: { _, _ in }
+        )
+        check(matchedReceipt.removedAAX.isEmpty && manager.fileExists(atPath: matched.path))
     }
 
     private static func checkAudibleHelperExit(in workspace: URL) async throws {

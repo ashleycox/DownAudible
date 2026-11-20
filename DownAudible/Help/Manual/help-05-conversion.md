@@ -18,6 +18,14 @@ Encrypted AAX files need the eight hexadecimal characters from the account that 
 
 AAXC files need their saved licence or a compatible `.voucher` beside the book. Keep multipart audio and companion files together when moving them.
 
+## Move converted AAX files to Trash
+
+In **Settings > Conversion**, choose **MP3**, then turn on **Move converted AAX files to Trash**. DownAudible moves an AAX source queued in **Convert Files** to the Mac’s Trash after all MP3 output for that file has been saved. You can restore the original from Trash in Finder.
+
+For a Library job, turn off **Keep the original after conversion** to clean up an AAX original that DownAudible previously saved in your archive. A file matched from another location stays there. Queue it from **Convert Files** if you want to move it to Trash after conversion.
+
+Cleanup requires a new, successful conversion. A new job that reuses existing MP3 output keeps the source in place. If moving an AAX file to Trash fails, use **Retry** in **Downloads** to try the move again using the saved MP3 output.
+
 ## Format and chapters
 
 In **Settings > Conversion**, choose **M4B**, **M4A**, or **MP3**. An M4B is the usual choice for an audiobook with chapters in one file. You can keep a book in one file or write a separate file for each chapter.

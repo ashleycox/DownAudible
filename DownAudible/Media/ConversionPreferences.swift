@@ -13,6 +13,7 @@ struct ConversionPreferences: Codable, Hashable, Sendable {
     var preserveMetadata = true
     var embedChapters = true
     private var losslessChapterAudio: Bool?
+    private var trashConvertedAAX: Bool?
 
     var copyChapterAudio: Bool {
         get { losslessChapterAudio == true }
@@ -23,6 +24,13 @@ struct ConversionPreferences: Codable, Hashable, Sendable {
         chapterMode == .separate && format != .mp3
             && bitrate == .automatic && channels == .automatic && sampleRate == .automatic
     }
+
+    var moveAAXToTrash: Bool {
+        get { trashConvertedAAX == true }
+        set { trashConvertedAAX = newValue ? true : nil }
+    }
+
+    var cleansUpAAX: Bool { format == .mp3 && moveAAXToTrash }
 
     var summary: String { "\(format.displayName) · \(chapterMode.displayName)" }
 
@@ -45,6 +53,7 @@ struct ConversionPreferences: Codable, Hashable, Sendable {
             recipe.audioMode = .encode
         }
         if !canCopyChapterAudio { recipe.copyChapterAudio = false }
+        recipe.moveAAXToTrash = false
         return recipe
     }
 }
