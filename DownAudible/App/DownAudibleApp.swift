@@ -5,6 +5,7 @@ import SwiftUI
 struct DownAudibleApp: App {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var scenePhase
     @NSApplicationDelegateAdaptor(DownAudibleAppDelegate.self) private var appDelegate
     @AppStorage private var showsStatusBar: Bool
     @State private var model: WorkspaceModel
@@ -21,13 +22,21 @@ struct DownAudibleApp: App {
     }
 
     var body: some Scene {
+        scenes
+            .onChange(of: scenePhase, initial: true) { [openWindow] in
+                appDelegate.model = model
+                appDelegate.observeTransferNotifications { openWindow(id: "workspace") }
+            }
+    }
+
+    @SceneBuilder
+    private var scenes: some Scene {
         Window("DownAudible", id: "workspace") {
             WorkspaceView(model: model, softwareUpdater: appDelegate.softwareUpdater, showsStatusBar: showsStatusBar,
                           showingOnboarding: $showingOnboarding, showingConversionOptions: $showingConversionOptions,
                           requestingBatchRestart: $requestingBatchRestart,
                           sidebarVisibility: $sidebarVisibility, openManual: { openHelp() })
                 .frame(minWidth: 720, minHeight: 440)
-                .onAppear { appDelegate.model = model }
         }
         .defaultSize(width: 1_080, height: 640)
         .windowResizability(.contentMinSize)

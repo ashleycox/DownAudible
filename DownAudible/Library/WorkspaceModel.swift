@@ -11,6 +11,11 @@ final class WorkspaceModel {
         let message: String
     }
 
+    struct TransferNotificationSelection: Equatable {
+        let id = UUID()
+        let transferIDs: Set<UUID>
+    }
+
     private enum AccountError: LocalizedError {
         case busy
 
@@ -29,6 +34,7 @@ final class WorkspaceModel {
     private(set) var isCheckingFiles = false
     var books: [AudibleBook] = []
     var transfers: [Transfer] = []
+    private(set) var transferNotificationSelection: TransferNotificationSelection?
     var selectedBooks: Set<AudibleBook.ID> = []
     var selectedFiles: Set<LocalAudioFile.ID> = []
     var localFiles: [LocalAudioFile] = []
@@ -709,6 +715,16 @@ final class WorkspaceModel {
 
     func cancelBatch() { activeTransfer?.cancel() }
 
+    func showNotifiedTransfers(_ ids: [UUID]) {
+        transferNotificationSelection = TransferNotificationSelection(transferIDs: Set(ids))
+        page = .transfers
+    }
+
+    func didShowNotifiedTransfers(_ selectionID: UUID) {
+        guard transferNotificationSelection?.id == selectionID else { return }
+        transferNotificationSelection = nil
+    }
+
     func previewTransferSound(for event: TransferFeedbackEvent) throws {
         try completionSoundPlayer.play(transferFeedback[event].sound)
     }
@@ -723,10 +739,7 @@ final class WorkspaceModel {
         if let previousFile { QueueCompletionSoundPlayer.removeCustomSound(previousFile) }
     }
 
-    func setTransferDelivery(_ delivery: TransferFeedbackPreferences.Delivery, for event: TransferFeedbackEvent) async throws {
-        if delivery.postsNotification && !transferFeedback[event].delivery.postsNotification {
-            try await TransferNotifications.shared.askPermission()
-        }
+    func setTransferDelivery(_ delivery: TransferFeedbackPreferences.Delivery, for event: TransferFeedbackEvent) {
         transferFeedback[event].setDelivery(delivery)
     }
 
@@ -870,7 +883,7 @@ final class WorkspaceModel {
     }
 
     private func announceTransferResults(for batch: TransferBatch, indices: [Int]) {
-        var titlesByEvent: [TransferFeedbackEvent: [String]] = [:]
+        var jobsByEvent: [TransferFeedbackEvent: [TransferNotificationJob]] = [:]
         for index in indices {
             let transfer = transfers[index]
             let progress = feedbackProgress[transfer.id, default: TransferFeedbackProgress()]
@@ -878,24 +891,25 @@ final class WorkspaceModel {
                 isDownload: batch.work[index].isDownload, requestsConversion: batch.options.makesConversion,
                 status: transfer.status
             )
-            for event in events { titlesByEvent[event, default: []].append(transfer.title) }
+            let job = TransferNotificationJob(id: transfer.id, title: transfer.title)
+            for event in events { jobsByEvent[event, default: []].append(job) }
         }
-        guard !titlesByEvent.isEmpty else { return }
-        let events = TransferFeedbackEvent.allCases.filter { $0 == .queueFinished || titlesByEvent[$0] != nil }
+        guard !jobsByEvent.isEmpty else { return }
+        let events = TransferFeedbackEvent.allCases.filter { $0 == .queueFinished || jobsByEvent[$0] != nil }
         let sounds = events.compactMap { event -> QueueCompletionSound? in
             let settings = transferFeedback[event]
             return settings.delivery.playsSound ? settings.sound : nil
         }
         completionSoundPlayer.enqueue(sounds)
-        let notifications = events.compactMap { event -> (TransferFeedbackEvent, [String])? in
+        let notifications = events.compactMap { event -> (TransferFeedbackEvent, [TransferNotificationJob])? in
             guard event != .queueFinished, transferFeedback[event].delivery.postsNotification,
-                  let titles = titlesByEvent[event] else { return nil }
-            return (event, titles)
+                  let jobs = jobsByEvent[event] else { return nil }
+            return (event, jobs)
         }
         if !notifications.isEmpty {
             Task {
-                for (event, titles) in notifications {
-                    await TransferNotifications.shared.post(event, jobs: titles)
+                for (event, jobs) in notifications {
+                    await TransferNotifications.shared.post(event, jobs: jobs)
                 }
             }
         }

@@ -9,24 +9,34 @@ struct TransfersView: View {
     @State private var confirmingRestart = false
 
     var body: some View {
-        Group {
-            if model.transfers.isEmpty {
-                ContentUnavailableView(
-                    "No Downloads", systemImage: WorkspacePage.transfers.icon,
-                    description: Text("Downloads and conversions appear here when you start them.")
-                )
-            } else {
-                VStack(spacing: 0) {
-                    List(model.transfers, selection: $selection) { transfer in
-                        TransferRow(transfer: transfer, showProgress: model.transferPreferences.showProgress)
-                            .tag(transfer.id)
+        ScrollViewReader { proxy in
+            Group {
+                if model.transfers.isEmpty {
+                    ContentUnavailableView(
+                        "No Downloads", systemImage: WorkspacePage.transfers.icon,
+                        description: Text("Downloads and conversions appear here when you start them.")
+                    )
+                } else {
+                    VStack(spacing: 0) {
+                        List(model.transfers, selection: $selection) { transfer in
+                            TransferRow(transfer: transfer, showProgress: model.transferPreferences.showProgress)
+                                .tag(transfer.id)
+                                .id(transfer.id)
+                        }
+                        .contextMenu(forSelectionType: UUID.self) { ids in
+                            TransferSelectionActions(selection: selectedTransfers(ids))
+                        }
+                        Divider()
+                        footer
                     }
-                    .contextMenu(forSelectionType: UUID.self) { ids in
-                        TransferSelectionActions(selection: selectedTransfers(ids))
-                    }
-                    Divider()
-                    footer
                 }
+            }
+            .onChange(of: model.didRestoreTransfers ? model.transferNotificationSelection : nil, initial: true) { _, request in
+                guard let request else { return }
+                let matchingIDs = model.transfers.lazy.map(\.id).filter { request.transferIDs.contains($0) }
+                selection = Set(matchingIDs)
+                if let first = matchingIDs.first { proxy.scrollTo(first) }
+                model.didShowNotifiedTransfers(request.id)
             }
         }
         .focusedSceneValue(\.transferSelection, selectedTransfers(selection))

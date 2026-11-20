@@ -6,9 +6,26 @@ final class DownAudibleAppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterD
     weak var model: WorkspaceModel?
     private(set) lazy var softwareUpdater = SoftwareUpdater(delegate: self)
     private var awaitingTransfers = false
+    private var transferNotificationTask: Task<Void, Never>?
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        _ = TransferNotifications.shared
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         softwareUpdater.start()
+    }
+
+    func observeTransferNotifications(openWorkspace: @escaping @MainActor () -> Void) {
+        guard transferNotificationTask == nil else { return }
+        let requests = TransferNotifications.shared.openRequests
+        transferNotificationTask = Task { [weak self] in
+            for await ids in requests {
+                guard let self else { return }
+                model?.showNotifiedTransfers(ids)
+                openWorkspace()
+            }
+        }
     }
 
     func updaterShouldPromptForPermissionToCheck(forUpdates updater: SPUUpdater) -> Bool {

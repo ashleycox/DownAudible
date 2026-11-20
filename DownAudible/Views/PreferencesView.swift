@@ -2,7 +2,7 @@ import SwiftUI
 
 // The order and content here apply to both Settings and the setup assistant.
 enum SettingsPane: CaseIterable, Identifiable {
-    case general, accounts, library, downloads, conversion, files, jobs
+    case general, accounts, library, downloads, conversion, files, jobs, notifications
 
     var id: Self { self }
 
@@ -15,6 +15,7 @@ enum SettingsPane: CaseIterable, Identifiable {
         case .conversion: "Conversion"
         case .files: "Files"
         case .jobs: "Jobs"
+        case .notifications: "Notifications"
         }
     }
 
@@ -27,6 +28,7 @@ enum SettingsPane: CaseIterable, Identifiable {
         case .conversion: "waveform"
         case .files: "folder"
         case .jobs: "list.bullet.rectangle"
+        case .notifications: "bell"
         }
     }
 
@@ -38,7 +40,8 @@ enum SettingsPane: CaseIterable, Identifiable {
         case .downloads: "Choose audio quality, original files, and what to save with a download."
         case .conversion: "Choose the format, chapters, and audio settings for converted files."
         case .files: "Choose where and how DownAudible names saved files."
-        case .jobs: "Set transfer speed, completion sounds, progress, and logging."
+        case .jobs: "Set transfer speed, progress, and logging."
+        case .notifications: "Check macOS permissions and choose how DownAudible announces transfer results."
         }
     }
 
@@ -63,6 +66,8 @@ enum SettingsPane: CaseIterable, Identifiable {
             FilePreferencesView(model: model)
         case .jobs:
             JobPreferencesView(model: model)
+        case .notifications:
+            TransferFeedbackSettingsView(model: model)
         }
     }
 }
@@ -82,7 +87,7 @@ struct PreferencesView: View {
                 }
             }
         }
-        .frame(width: 640, height: 550)
+        .frame(width: 720, height: 600)
     }
 }
 
@@ -398,8 +403,6 @@ private struct JobPreferencesView: View {
                 Toggle("Show detailed transfer progress", isOn: $model.transferPreferences.showProgress)
                     .appHelp("Show progress bars for each running job and for the batch.")
             }
-
-            TransferFeedbackSettingsView(model: model)
 
             Section("Transfer log") {
                 Picker("Log", selection: $model.transferPreferences.logLevel) {

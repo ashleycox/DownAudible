@@ -1,45 +1,66 @@
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
 struct TransferFeedbackSettingsView: View {
     @Bindable var model: WorkspaceModel
-    @State private var event = TransferFeedbackEvent.queueFinished
+    @State private var event = TransferFeedbackEvent.downloadCompleted
     @State private var choosingFile = false
     @State private var importingFile = false
-    @State private var requestingPermission = false
+    @State private var notificationStatus: TransferNotificationStatus?
+    @State private var statusRefresh = 0
+    @State private var notificationActionRunning = false
+    @State private var sentTest = false
     @State private var showingProblem = false
     @State private var problem = ""
 
     var body: some View {
         let selection = settings
-        Section("Transfer alerts") {
-            Picker("Event", selection: $event) {
-                ForEach(TransferFeedbackEvent.allCases) { event in
-                    Text(event.displayName).tag(event)
-                }
-            }
-            .appHelp("Choose the transfer outcome you want to configure.")
+        Form {
+            notificationPermissions
 
-            Picker("Delivery", selection: Binding {
-                selection.wrappedValue.delivery
-            } set: { delivery in
-                setDelivery(delivery)
-            }) {
-                ForEach(TransferFeedbackPreferences.Delivery.allCases) { delivery in
-                    if event != .queueFinished || !delivery.postsNotification {
-                        Text(delivery.displayName).tag(delivery)
+            Section("Transfer Events") {
+                Picker("Event", selection: $event) {
+                    ForEach(TransferFeedbackEvent.allCases) { event in
+                        let delivery = model.transferFeedback[event].delivery.displayName
+                        Text("\(event.displayName), \(delivery)").tag(event)
                     }
                 }
+                .labelsHidden()
+                .pickerStyle(.radioGroup)
+                .appHelp("Select an event to change its delivery or sound.")
             }
-            .appHelp(event == .queueFinished
-                ? "Play a sound when the whole queue finishes, or keep it silent."
-                : "Choose a sound, a silent Notification Center alert, both, or neither for this event.")
 
-            if selection.wrappedValue.delivery.playsSound {
-                soundControls(selection.sound)
+            Section(event.displayName) {
+                Picker("Delivery", selection: Binding {
+                    selection.wrappedValue.delivery
+                } set: { delivery in
+                    model.setTransferDelivery(delivery, for: event)
+                }) {
+                    ForEach(TransferFeedbackPreferences.Delivery.allCases) { delivery in
+                        if event != .queueFinished || !delivery.postsNotification {
+                            Text(delivery.displayName).tag(delivery)
+                        }
+                    }
+                }
+                .appHelp(event == .queueFinished
+                    ? "Play a sound when the whole queue finishes, or keep it silent."
+                    : "Choose a sound, a silent macOS notification, both, or neither for this event.")
+
+                if selection.wrappedValue.delivery.playsSound {
+                    soundControls(selection.sound)
+                }
             }
+            .disabled(importingFile)
         }
-        .disabled(importingFile || requestingPermission)
+        .formStyle(.grouped)
+        .task(id: statusRefresh) {
+            let status = await TransferNotifications.shared.notificationStatus()
+            if !Task.isCancelled { notificationStatus = status }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            statusRefresh += 1
+        }
         .fileImporter(isPresented: $choosingFile, allowedContentTypes: [.audio], onCompletion: importSound)
         .alert("Transfer Alert", isPresented: $showingProblem) {
             Button("OK", role: .cancel) {}
@@ -47,6 +68,49 @@ struct TransferFeedbackSettingsView: View {
         } message: {
             Text(problem)
         }
+    }
+
+    private var notificationPermissions: some View {
+        Section("macOS Notifications") {
+            LabeledContent("Permission", value: permissionDescription)
+                .appHelp("Shows whether macOS lets DownAudible send notifications.")
+            LabeledContent("Notification Center", value: settingDescription(notificationStatus?.appearsInNotificationCenter))
+                .appHelp("Shows whether DownAudible notifications can appear in Notification Center.")
+            LabeledContent("Banners and Alerts", value: settingDescription(notificationStatus?.showsBanners))
+                .appHelp("Shows whether macOS can show DownAudible banners or alerts on screen.")
+
+            HStack {
+                if notificationStatus?.authorization == .notRequested {
+                    Button("Enable Notifications", action: enableNotifications)
+                        .appHelp("Ask macOS to allow notifications from DownAudible.")
+                }
+                Button("Open Notification Settings", action: openNotificationSettings)
+                    .appHelp("Manage DownAudible’s notification permission in System Settings.")
+                Button("Send Test Notification", action: sendTestNotification)
+                    .disabled(notificationStatus?.canSendTest != true)
+                    .appHelp("Send a silent test to confirm notifications appear in Notification Center.")
+            }
+            .disabled(notificationActionRunning)
+
+            if sentTest {
+                Text("Test notification sent. Check Notification Center.")
+                    .foregroundStyle(.secondary)
+                    .appHelp("Click the clock in the menu bar to open Notification Center and find the test.")
+            }
+        }
+    }
+
+    private var permissionDescription: String {
+        switch notificationStatus?.authorization {
+        case .notRequested: "Permission not requested"
+        case .blocked: "Blocked by macOS"
+        case .allowed: "Allowed"
+        case nil: "Checking…"
+        }
+    }
+
+    private func settingDescription(_ enabled: Bool?) -> String {
+        enabled.map { $0 ? "On" : "Off" } ?? "Checking…"
     }
 
     @ViewBuilder
@@ -137,13 +201,40 @@ struct TransferFeedbackSettingsView: View {
         }
     }
 
-    private func setDelivery(_ delivery: TransferFeedbackPreferences.Delivery) {
-        let event = event
-        requestingPermission = delivery.postsNotification && !model.transferFeedback[event].delivery.postsNotification
+    private func enableNotifications() {
+        notificationActionRunning = true
         Task {
-            defer { requestingPermission = false }
+            defer {
+                notificationActionRunning = false
+                statusRefresh += 1
+            }
             do {
-                try await model.setTransferDelivery(delivery, for: event)
+                try await TransferNotifications.shared.askPermission()
+            } catch {
+                show(error)
+            }
+        }
+    }
+
+    private func openNotificationSettings() {
+        guard let url = TransferNotifications.systemSettingsURL,
+              NSWorkspace.shared.open(url) else {
+            show("Open System Settings and choose Notifications to manage DownAudible’s permissions.")
+            return
+        }
+    }
+
+    private func sendTestNotification() {
+        notificationActionRunning = true
+        sentTest = false
+        Task {
+            defer {
+                notificationActionRunning = false
+                statusRefresh += 1
+            }
+            do {
+                try await TransferNotifications.shared.sendTestNotification()
+                sentTest = true
             } catch {
                 show(error)
             }
@@ -151,7 +242,11 @@ struct TransferFeedbackSettingsView: View {
     }
 
     private func show(_ error: any Error) {
-        problem = error.localizedDescription
+        show(error.localizedDescription)
+    }
+
+    private func show(_ message: String) {
+        problem = message
         showingProblem = true
     }
 }

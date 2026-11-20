@@ -101,31 +101,124 @@ nonisolated struct TransferFeedbackProgress {
     }
 }
 
+nonisolated struct TransferNotificationStatus: Equatable, Sendable {
+    enum Authorization: Equatable, Sendable {
+        case notRequested, blocked, allowed
+    }
+
+    let authorization: Authorization
+    let appearsInNotificationCenter: Bool
+    let showsBanners: Bool
+
+    var canSendTest: Bool { authorization == .allowed && appearsInNotificationCenter }
+
+    init(authorization: UNAuthorizationStatus, notificationCenter: UNNotificationSetting, alerts: UNNotificationSetting, style: UNAlertStyle) {
+        self.authorization = switch authorization {
+        case .notDetermined: .notRequested
+        case .denied: .blocked
+        case .authorized, .provisional: .allowed
+        @unknown default: .blocked
+        }
+        appearsInNotificationCenter = self.authorization == .allowed && notificationCenter == .enabled
+        showsBanners = self.authorization == .allowed && alerts == .enabled && style != .none
+    }
+}
+
+nonisolated struct TransferNotificationJob: Sendable {
+    let id: UUID
+    let title: String
+}
+
+nonisolated enum TransferNotificationContent {
+    private static let transferIDsKey = "transferIDs"
+
+    static func batch(_ event: TransferFeedbackEvent, jobs: [TransferNotificationJob]) -> UNMutableNotificationContent? {
+        guard let firstJob = jobs.first, event != .queueFinished else { return nil }
+        return make(
+            title: event.displayName,
+            body: jobs.count == 1 ? firstJob.title : "\(jobs.count.formatted()) jobs. Open Downloads for details.",
+            transferIDs: jobs.map(\.id)
+        )
+    }
+
+    static func test() -> UNMutableNotificationContent {
+        make(
+            title: "DownAudible Test Notification",
+            body: "DownAudible can deliver alerts to Notification Center.",
+            transferIDs: []
+        )
+    }
+
+    static func transferIDs(in userInfo: [AnyHashable: Any]) -> [UUID] {
+        let ids = userInfo[transferIDsKey] as? [String] ?? []
+        return ids.compactMap(UUID.init(uuidString:))
+    }
+
+    private static func make(title: String, body: String, transferIDs: [UUID]) -> UNMutableNotificationContent {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = nil
+        content.userInfo = [transferIDsKey: transferIDs.map(\.uuidString)]
+        return content
+    }
+}
+
 @MainActor
 final class TransferNotifications: NSObject, UNUserNotificationCenterDelegate {
     static let shared = TransferNotifications()
+    static let systemSettingsURL = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension")
 
+    let openRequests: AsyncStream<[UUID]>
+    private nonisolated let openRequestContinuation: AsyncStream<[UUID]>.Continuation
     private let center = UNUserNotificationCenter.current()
 
     private override init() {
+        (openRequests, openRequestContinuation) = AsyncStream.makeStream()
         super.init()
         center.delegate = self
     }
 
+    func notificationStatus() async -> TransferNotificationStatus {
+        let settings = await center.notificationSettings()
+        return TransferNotificationStatus(
+            authorization: settings.authorizationStatus,
+            notificationCenter: settings.notificationCenterSetting,
+            alerts: settings.alertSetting,
+            style: settings.alertStyle
+        )
+    }
+
     func askPermission() async throws {
         guard try await center.requestAuthorization(options: [.alert]) else {
-            throw NotificationPermissionError.denied
+            throw TransferNotificationError.blocked
         }
     }
 
-    func post(_ event: TransferFeedbackEvent, jobs: [String]) async {
-        guard !jobs.isEmpty, event != .queueFinished else { return }
-        let content = UNMutableNotificationContent()
-        content.title = event.displayName
-        content.body = jobs.count == 1 ? jobs[0] : "\(jobs.count.formatted()) jobs. Open Downloads for details."
-        content.sound = nil
+    func sendTestNotification() async throws {
+        let status = await notificationStatus()
+        switch status.authorization {
+        case .notRequested: throw TransferNotificationError.notRequested
+        case .blocked: throw TransferNotificationError.blocked
+        case .allowed: break
+        }
+        guard status.canSendTest else { throw TransferNotificationError.hiddenFromNotificationCenter }
+        do {
+            try await deliver(TransferNotificationContent.test())
+        } catch {
+            throw TransferNotificationError.testDeliveryFailed
+        }
+    }
+
+    func post(_ event: TransferFeedbackEvent, jobs: [TransferNotificationJob]) async {
+        guard let content = TransferNotificationContent.batch(event, jobs: jobs),
+              await notificationStatus().authorization == .allowed else { return }
+        try? await deliver(content)
+    }
+
+    private func deliver(_ content: UNNotificationContent) async throws {
         let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
-        try? await center.add(request)
+        try await center.add(request)
     }
 
     nonisolated func userNotificationCenter(
@@ -133,12 +226,28 @@ final class TransferNotifications: NSObject, UNUserNotificationCenterDelegate {
     ) async -> UNNotificationPresentationOptions {
         [.banner, .list]
     }
+
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse
+    ) async {
+        guard response.actionIdentifier == UNNotificationDefaultActionIdentifier else { return }
+        openRequestContinuation.yield(TransferNotificationContent.transferIDs(in: response.notification.request.content.userInfo))
+    }
 }
 
-private enum NotificationPermissionError: LocalizedError {
-    case denied
+nonisolated private enum TransferNotificationError: LocalizedError {
+    case notRequested, blocked, hiddenFromNotificationCenter, testDeliveryFailed
 
     var errorDescription: String? {
-        "Allow notifications for DownAudible in System Settings > Notifications, then try again."
+        switch self {
+        case .notRequested:
+            "Choose Enable Notifications in DownAudible Settings before sending a test."
+        case .blocked:
+            "Allow notifications for DownAudible in System Settings > Notifications, then try again."
+        case .hiddenFromNotificationCenter:
+            "Turn on Show in Notification Center for DownAudible in System Settings > Notifications, then try again."
+        case .testDeliveryFailed:
+            "macOS could not schedule the test notification. Check that notifications are allowed for DownAudible in System Settings > Notifications and try again."
+        }
     }
 }

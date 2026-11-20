@@ -1,4 +1,5 @@
 import Foundation
+import UserNotifications
 
 @main
 struct ArchiveChecks {
@@ -40,6 +41,7 @@ struct ArchiveChecks {
         check(options.savesOriginal && options.downloadAudio && options.downloadCover && !options.downloadChapters)
         checkBundleIdentifierMigration()
         try checkLibraryBrowsing()
+        checkTransferNotifications()
 
         let file = LocalAudioFile(url: root.appending(path: "Book.aax"), format: "aax", title: "Écho", author: "Me", asin: nil, durationSeconds: 10)
         let echo = try matchingBook("Echo", asin: "B000000001", authors: ["me"])
@@ -69,7 +71,44 @@ struct ArchiveChecks {
         check(contents.split(separator: "\n").count == 2 && contents.contains("Me Test\tFailed: Test"))
         try await checkArchiveWatcher(in: workspace, existsAtStart: true)
         try await checkArchiveWatcher(in: workspace, existsAtStart: false)
-        print("Archive naming, incomplete transfers, queue persistence, file watching, matching, library status, preference migration, CSV export, logs, AAX activation recovery, and AAX cleanup passed.")
+        print("Archive naming, incomplete transfers, queue persistence, file watching, matching, library status, preference migration, CSV export, logs, AAX activation recovery, AAX cleanup, and notification settings and payloads passed.")
+    }
+
+    private static func checkTransferNotifications() {
+        let notRequested = TransferNotificationStatus(
+            authorization: .notDetermined, notificationCenter: .disabled, alerts: .disabled, style: .none
+        )
+        check(notRequested.authorization == .notRequested && !notRequested.canSendTest && !notRequested.showsBanners)
+        let blocked = TransferNotificationStatus(
+            authorization: .denied, notificationCenter: .enabled, alerts: .enabled, style: .banner
+        )
+        check(blocked.authorization == .blocked && !blocked.canSendTest && !blocked.showsBanners)
+        let centerOnly = TransferNotificationStatus(
+            authorization: .authorized, notificationCenter: .enabled, alerts: .enabled, style: .none
+        )
+        check(centerOnly.authorization == .allowed && centerOnly.canSendTest && !centerOnly.showsBanners)
+        let bannersOnly = TransferNotificationStatus(
+            authorization: .authorized, notificationCenter: .disabled, alerts: .enabled, style: .banner
+        )
+        check(bannersOnly.authorization == .allowed && !bannersOnly.canSendTest && bannersOnly.showsBanners)
+        let provisional = TransferNotificationStatus(
+            authorization: .provisional, notificationCenter: .enabled, alerts: .disabled, style: .none
+        )
+        check(provisional.authorization == .allowed && provisional.canSendTest)
+
+        let first = TransferNotificationJob(id: UUID(), title: "First book")
+        let second = TransferNotificationJob(id: UUID(), title: "Second book")
+        let single = TransferNotificationContent.batch(.downloadCompleted, jobs: [first])
+        check(single?.body == first.title && single?.sound == nil)
+        check(TransferNotificationContent.transferIDs(in: single?.userInfo ?? [:]) == [first.id])
+        let batch = TransferNotificationContent.batch(.conversionFailed, jobs: [first, second])
+        check(batch?.title == TransferFeedbackEvent.conversionFailed.displayName && batch?.sound == nil)
+        check(TransferNotificationContent.transferIDs(in: batch?.userInfo ?? [:]) == [first.id, second.id])
+        check(TransferNotificationContent.batch(.conversionFailed, jobs: []) == nil)
+        check(TransferNotificationContent.batch(.queueFinished, jobs: [first]) == nil)
+        let test = TransferNotificationContent.test()
+        check(test.sound == nil && TransferNotificationContent.transferIDs(in: test.userInfo).isEmpty)
+        check(TransferNotificationContent.transferIDs(in: [:]).isEmpty)
     }
 
     private static func checkAAXCleanup(in workspace: URL) async throws {

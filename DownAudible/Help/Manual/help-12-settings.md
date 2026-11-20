@@ -107,16 +107,27 @@ See [Naming and Folders](help-06-files.md) for the full list of tokens and file 
 | Bandwidth per download (kbps) | Caps each running download’s bandwidth. **Unlimited** is the default. Choose a preset or **Custom** and enter **Custom bandwidth (kbps)**. |
 | Continue after a job fails | Lets other jobs run after a failure. On by default. Turn it off to stop waiting jobs after an error. |
 | Show detailed transfer progress | Shows progress for active transfers and the queue. On by default. |
-| Event | Choose **Download Completed**, **Conversion Completed**, **Download Failed**, **Conversion Failed** or **Queue Finished** in **Transfer alerts**. Settings apply to the selected event. |
-| Delivery | **Off** is the default. Choose **Notification Only** for a silent Notification Center alert, **Sound Only** for an audible alert, or **Both**. **Queue Finished** offers **Off** and **Sound Only**. |
+| Log | **Off** is the default. Choose **Errors only** to record failures or **Transfer results** to record outcomes. |
+| Log file | Shows the log location when logging is on. Use **Choose…** to set a location or **Use Default Location** to return to `~/Library/Application Support/DownAudible/Transfers.log`. |
+
+See [Downloads and Recovery](help-07-transfers.md) for queue controls.
+
+## Notifications
+
+| Setting | What it does |
+| --- | --- |
+| Permission | Shows whether DownAudible can post macOS notifications. Opening the pane checks the current permission without prompting. |
+| Notification Center | Shows whether macOS displays DownAudible notifications in Notification Center. |
+| Banners and Alerts | Shows whether macOS lets DownAudible display banners or alerts. |
+| Enable Notifications | Asks macOS to allow notifications for DownAudible. |
+| Open Notification Settings | Opens Notifications in macOS System Settings. The status updates when you return to DownAudible. |
+| Send Test Notification | Posts a silent test when Notification Center delivery is available. |
+| Transfer Events | Shows the saved delivery for **Download Completed**, **Conversion Completed**, **Download Failed**, **Conversion Failed** and **Queue Finished**. Select an event to change its delivery or sound. |
+| Delivery | **Off** is the default. Choose **Notification Only** for a silent macOS notification, **Sound Only** for a sound, or **Both**. macOS controls whether alerts appear in Notification Center or as banners. **Queue Finished** offers **Off** and **Sound Only**. |
 | Sound | Choose **macOS Sound**, **Built-in Chime** or **Custom Audio File** when delivery includes sound. The initial sound is the **Soft Bell** built-in chime. |
 | macOS sound | Chooses a sound installed by macOS. **Glass** is the initial selection in **macOS Sound** mode. |
 | Chime | Choose **Soft Bell**, **Rising Notes**, **Warm Chord**, **Wood Tap**, **Falling Notes**, **Bright Ping**, **Gentle Pulse**, **Two Tone**, **Airy Sweep** or **Marimba** in **Built-in Chime** mode. **Soft Bell** is the initial selection. |
 | Sound file | Shows the selected custom file. Use **Choose Sound File…** to choose an audio file for the app to copy into Application Support. |
 | Play Sound | Previews the sound for the selected event. DownAudible also previews a sound when you change it or choose a custom file. |
-| Log | **Off** is the default. Choose **Errors only** to record failures or **Transfer results** to record outcomes. |
-| Log file | Shows the log location when logging is on. Use **Choose…** to set a location or **Use Default Location** to return to `~/Library/Application Support/DownAudible/Transfers.log`. |
 
-The first time you choose **Notification Only** or **Both**, allow DownAudible notifications when macOS asks. DownAudible groups each outcome into one alert when an active queue or retry finishes. The **Queue Finished** sound plays after the outcome sounds. Cancelled queues and restored history are quiet.
-
-See [Downloads and Recovery](help-07-transfers.md) for queue controls.
+DownAudible groups each outcome into one alert when an active queue or retry finishes. Click a transfer notification to go to its jobs in **Downloads**. The **Queue Finished** sound plays after the outcome sounds. Cancelled queues and restored history are quiet.

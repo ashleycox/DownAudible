@@ -27,7 +27,7 @@ The setup wizard opens the first time you run DownAudible. Use it to connect an 
 3. In **Audiobooks → Download**, choose **Download Missing** to fetch eligible titles without a complete audio copy, or select books and choose **Download Selected**. Use the corresponding **As…** command to review the destination, audio, conversion, and optional PDFs, cover images, chapters, and notes.
 4. If a batch is interrupted, open **Downloads** and choose **Retry Incomplete**. DownAudible resumes partial audio when Audible can confirm it is the same file. Choose **Restart Download…** from a job’s contextual menu to discard its temporary bytes and download it from the start.
 
-In **Settings → Jobs**, choose a sound for the end of a batch or for each download and conversion outcome. You can also turn on Notification Center alerts for those outcomes.
+In **Settings → Notifications**, choose sounds and alerts, check macOS permissions, or send a silent test. Click a transfer alert to open its jobs in **Downloads**.
 
 **Audiobooks → Audible Tools** opens the wish list, catalogue search, activation bytes, and encrypted Audible CLI account export for the current account. Use **Audiobooks → Library → Export Library** to save the loaded library as JSON, CSV, or TSV.
 
