@@ -3,6 +3,23 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct TransferFeedbackSettingsView: View {
+    private enum SoundChoice: Hashable {
+        case chime(QueueCompletionSound.Chime)
+        case system(String)
+        case custom
+
+        init?(sound: QueueCompletionSound) {
+            switch sound.source {
+            case .off: return nil
+            case .builtIn: self = .chime(sound.chime)
+            case .system: self = .system(sound.systemName)
+            case .custom:
+                guard sound.customFile != nil else { return nil }
+                self = .custom
+            }
+        }
+    }
+
     @Bindable var model: WorkspaceModel
     @State private var event = TransferFeedbackEvent.downloadCompleted
     @State private var choosingFile = false
@@ -21,15 +38,7 @@ struct TransferFeedbackSettingsView: View {
             notificationPermissions
 
             Section("Transfer Events") {
-                Picker("Event", selection: $event) {
-                    ForEach(TransferFeedbackEvent.allCases) { event in
-                        let delivery = model.transferFeedback[event].delivery.displayName
-                        Text("\(event.displayName), \(delivery)").tag(event)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.radioGroup)
-                .appHelp("Select an event to change its delivery or sound.")
+                eventList
             }
 
             Section(event.displayName) {
@@ -47,12 +56,15 @@ struct TransferFeedbackSettingsView: View {
                 .appHelp(event == .queueFinished
                     ? "Play a sound when the whole queue finishes, or keep it silent."
                     : "Choose a sound, a silent macOS notification, both, or neither for this event.")
-
-                if selection.wrappedValue.delivery.playsSound {
-                    soundControls(selection.sound)
-                }
             }
             .disabled(importingFile)
+
+            if selection.wrappedValue.delivery.playsSound {
+                Section("Sound") {
+                    soundControls(selection.sound)
+                }
+                .disabled(importingFile)
+            }
         }
         .formStyle(.grouped)
         .task(id: statusRefresh) {
@@ -73,6 +85,31 @@ struct TransferFeedbackSettingsView: View {
         } message: {
             Text(problem)
         }
+    }
+
+    private var eventList: some View {
+        List(selection: Binding<TransferFeedbackEvent?> {
+            event
+        } set: { selection in
+            if let selection { event = selection }
+        }) {
+            ForEach(TransferFeedbackEvent.allCases) { event in
+                let delivery = model.transferFeedback[event].delivery.displayName
+                HStack {
+                    Text(event.displayName)
+                    Spacer()
+                    Text(delivery)
+                        .foregroundStyle(.secondary)
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(event.displayName), \(delivery)")
+                .tag(event)
+            }
+        }
+        .listStyle(.inset)
+        .frame(height: 140)
+        .accessibilityLabel("Transfer Events")
+        .appHelp("Select a transfer event to change its delivery or sound.")
     }
 
     private var notificationPermissions: some View {
@@ -130,53 +167,81 @@ struct TransferFeedbackSettingsView: View {
     private func soundControls(_ sound: Binding<QueueCompletionSound>) -> some View {
         let selected = sound.wrappedValue
         let event = event
-        Picker("Sound", selection: Binding {
-            sound.wrappedValue.source
-        } set: { source in
-            guard source != sound.wrappedValue.source else { return }
-            if source == .custom, sound.wrappedValue.customFile == nil {
-                chooseSoundFile(for: event)
-            } else {
-                sound.wrappedValue.source = source
-                preview(event)
+        let selectedChoice = SoundChoice(sound: selected)
+        let systemSounds = Set(QueueCompletionSoundPlayer.systemSounds.map(QueueCompletionSoundPlayer.systemName(for:)))
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        ScrollViewReader { proxy in
+            List(selection: soundSelection(sound, for: event)) {
+                Section("Built-in Chimes") {
+                    ForEach(QueueCompletionSound.Chime.allCases) { chime in
+                        soundRow(chime.displayName, choice: .chime(chime))
+                    }
+                }
+                if !systemSounds.isEmpty {
+                    Section("macOS Sounds") {
+                        ForEach(systemSounds, id: \.self) { name in
+                            soundRow(name, choice: .system(name))
+                        }
+                    }
+                }
+                if let file = selected.customFile {
+                    Section("Custom Sound") {
+                        soundRow(file.name, choice: .custom)
+                    }
+                }
             }
-        }) {
-            ForEach(QueueCompletionSound.Source.allCases.filter { $0 != .off }) { source in
-                Text(source.displayName).tag(source)
+            .listStyle(.inset)
+            .frame(height: 184)
+            .accessibilityLabel("Sound")
+            .appHelp("Use the Up and Down Arrow keys to select and preview sounds.")
+            .onChange(of: selectedChoice, initial: true) { _, choice in
+                if let choice { proxy.scrollTo(choice) }
             }
         }
-        .appHelp("Choose a macOS sound, a built-in chime, or an audio file. Each new sound plays as you select it.")
 
-        switch selected.source {
-        case .off:
-            EmptyView()
-        case .system:
-            Picker("macOS sound", selection: previewing(sound.systemName)) {
-                let sounds = QueueCompletionSoundPlayer.systemSounds.map(QueueCompletionSoundPlayer.systemName(for:))
-                if !sounds.contains(selected.systemName) {
-                    Text("Selected sound unavailable").tag(selected.systemName)
-                }
-                ForEach(sounds, id: \.self) { sound in Text(sound).tag(sound) }
-            }
-            .appHelp("Choose and hear one of the sounds installed with macOS.")
-        case .builtIn:
-            Picker("Chime", selection: previewing(sound.chime)) {
-                ForEach(QueueCompletionSound.Chime.allCases) { chime in
-                    Text(chime.displayName).tag(chime)
-                }
-            }
-            .appHelp("Choose and hear one of the chimes included with DownAudible.")
-        case .custom:
-            LabeledContent("Sound file") {
-                let name = selected.customFile?.name ?? "No file chosen"
-                Text(name).lineLimit(1).truncationMode(.middle).appHelp(name)
-            }
+        if selected.source == .system && !systemSounds.contains(selected.systemName) {
+            Text("Saved sound unavailable: \(selected.systemName)")
+                .foregroundStyle(.secondary)
+                .appHelp("Select another sound from the list.")
+        }
+        HStack {
             Button("Choose Sound File…") { chooseSoundFile(for: event) }
                 .appHelp("Open and preview an audio file. DownAudible keeps a copy so it stays available if the original moves.")
+            Button("Play Sound", systemImage: "play") { preview(event) }
+                .disabled(selectedChoice == nil || (selected.source == .system && !systemSounds.contains(selected.systemName)))
+                .appHelp("Listen again to the sound for this event.")
         }
-        Button("Play Sound", systemImage: "play") { preview(event) }
-            .disabled(selected.source == .custom && selected.customFile == nil)
-            .appHelp("Listen again to the sound for this event.")
+    }
+
+    private func soundRow(_ title: String, choice: SoundChoice) -> some View {
+        Text(title)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .tag(choice)
+            .id(choice)
+    }
+
+    private func soundSelection(_ sound: Binding<QueueCompletionSound>,
+                                for event: TransferFeedbackEvent) -> Binding<SoundChoice?> {
+        Binding {
+            SoundChoice(sound: sound.wrappedValue)
+        } set: { choice in
+            var updated = sound.wrappedValue
+            guard let choice, choice != SoundChoice(sound: updated) else { return }
+            switch choice {
+            case .chime(let chime):
+                updated.source = .builtIn
+                updated.chime = chime
+            case .system(let name):
+                updated.source = .system
+                updated.systemName = name
+            case .custom:
+                guard updated.customFile != nil else { return }
+                updated.source = .custom
+            }
+            sound.wrappedValue = updated
+            preview(event)
+        }
     }
 
     private var settings: Binding<TransferFeedbackPreferences.Settings> {
@@ -185,17 +250,6 @@ struct TransferFeedbackSettingsView: View {
             model.transferFeedback[event]
         } set: { settings in
             model.transferFeedback[event] = settings
-        }
-    }
-
-    private func previewing<Value: Equatable>(_ value: Binding<Value>) -> Binding<Value> {
-        let event = event
-        return Binding {
-            value.wrappedValue
-        } set: { replacement in
-            guard replacement != value.wrappedValue else { return }
-            value.wrappedValue = replacement
-            preview(event)
         }
     }
 

@@ -34,7 +34,7 @@ Open **Settings > Notifications**. Under **Transfer Events**, select **Download 
 
 Check **macOS Notifications** at the top of the pane. Choose **Enable Notifications** to ask macOS for permission. If macOS blocks alerts or has turned off Notification Center entries, choose **Open Notification Settings** and review DownAudible’s settings there. The status updates when you return to the app. Use **Send Test Notification** to check Notification Center delivery silently. **Sound Only** works independently of macOS notification permission.
 
-When delivery includes sound, choose **macOS Sound**, one of the ten **Built-in Chime** sounds, or **Custom Audio File**. Use **Choose Sound File…** to import your own sound. DownAudible keeps a copy in Application Support. DownAudible previews a sound as you select it. Use **Play Sound** to hear it again.
+When delivery includes sound, focus the **Sound** list and use Up or Down Arrow to move between built-in chimes and macOS sounds. Each sound plays as you select it. Use **Choose Sound File…** to add or replace your own sound, then find it in the list under **Custom Sound**. Use **Play Sound** to hear the selected sound again.
 
 At the end of a batch, DownAudible groups jobs by outcome and reports each outcome once. A title can finish downloading and then fail conversion. Click a transfer notification to open **Downloads** and select its jobs in the current or an earlier batch. **Queue Finished** plays after the separate event sounds. Cancelling the whole batch or reopening the app with a saved queue stays silent.
 
