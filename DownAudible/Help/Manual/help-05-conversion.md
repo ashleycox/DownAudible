@@ -22,7 +22,9 @@ AAXC files need their saved licence or a compatible `.voucher` beside the book. 
 
 In **Settings > Conversion**, choose **M4B**, **M4A**, or **MP3**. An M4B is the usual choice for an audiobook with chapters in one file. You can keep a book in one file or write a separate file for each chapter.
 
-**Copy audio when possible** preserves a compatible audio stream. **Always encode** writes a new stream. Choosing a bitrate, channel count, or sample rate can also require encoding. DownAudible encodes separate chapter files so that each one starts at the chapter marker.
+For a single file, **Copy audio when possible** preserves a compatible audio stream. **Always encode** writes a new stream. Choosing a bitrate, channel count, or sample rate can also require encoding.
+
+For separate M4B or M4A files, turn on **Copy chapter audio when possible** to keep compatible AAC audio without encoding. Leave bitrate, channels, and sample rate at their defaults. DownAudible encodes MP3, incompatible sources, and chapters spanning two source files. Some players may play extra audio at the edge of a copied chapter. Turn off the option if your player has trouble with the chapter cuts.
 
 For MP3, **Constant (CBR)** keeps one bitrate throughout the file. **Variable (VBR)** adjusts the bitrate as the audio changes, using the selected quality level. For a single file, turn on **Keep chapter markers** to retain navigation. **Keep book metadata** and **Embed cover image** control the book tags and cover in the output.
 

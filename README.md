@@ -35,6 +35,8 @@ Use **Sort Library** and **Filter Library** in the library toolbar or the **View
 
 To convert existing files, drag them into **Convert Files** or choose **Add Files** or **Add Folder**. **Audiobooks → Conversion Options…** controls the format, chapters, audio encoding, artwork, and metadata. In **Settings → Downloads**, you can send new original downloads or M4Bs to Apple Books.
 
+When creating separate M4B or M4A files, turn on **Copy chapter audio when possible** to keep the original audio for compatible AAC chapters.
+
 When DownAudible can’t unlock an AAX download for conversion, it tries to refresh the account’s activation code. With **AAX with fallback**, it requests AAXC for conversion if it still can’t unlock the AAX. Any originals already saved are kept. AAX files opened in **Convert Files** need the activation code for the account that downloaded them.
 
 Folder and filename templates are independent. The default folder template, `{format}/{author}/{title}`, groups original and converted formats separately. For chapter filenames you might use `{title} - {chapterNumber} - {chapter}`. Settings shows a preview as you edit.

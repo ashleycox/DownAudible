@@ -17,6 +17,7 @@ struct ArchiveChecks {
         check(!ArchiveLayout(root: root, template: "../{title}").isValid)
         check(!ArchiveLayout(root: root, template: "{typo}").isValid)
         try checkMediaChapterBounds()
+        try checkLosslessChapters()
         try await checkActivationRefresh(in: workspace)
         try await checkDownloadAfterActivationFailure(in: workspace)
         let literal = ArchiveTitle(title: "{author}/Book", author: "Name/Name", asin: nil)
@@ -66,6 +67,36 @@ struct ArchiveChecks {
         try await checkArchiveWatcher(in: workspace, existsAtStart: true)
         try await checkArchiveWatcher(in: workspace, existsAtStart: false)
         print("Archive naming, incomplete transfers, queue persistence, file watching, matching, library status, preference migration, CSV export, logs, and AAX activation recovery passed.")
+    }
+
+    private static func checkLosslessChapters() throws {
+        let data = Data(#"""
+            {"streams":[{"index":0,"codec_type":"audio","codec_name":"aac","profile":"LC",
+            "sample_rate":"44100","channels":1,"time_base":"1/44100","start_pts":0,"duration_ts":132300}],
+            "chapters":[],"format":{}}
+            """#.utf8)
+        let probe = try JSONDecoder().decode(AudioProbe.self, from: data)
+        let ranges: [Range<Int64>?] = [0..<1_305, 1_305..<2_719, 2_719..<3_599, 3_599..<5_999, 5_999..<6_000]
+        let chapters = LosslessChapter.plan(ranges, sources: [probe.audio, probe.audio], enabled: true)
+        check(chapters.map { $0?.sourceIndex } == [0, 0, nil, 1, 1])
+        check(chapters[0]?.sampleCount == 57_551)
+        check(chapters[1]?.sampleCount == 62_357)
+        check(chapters[4]?.sampleCount == 44)
+        check(LosslessChapter.plan(ranges, sources: [probe.audio], enabled: false).allSatisfy { $0 == nil })
+
+        var preferences = ConversionPreferences()
+        preferences.chapterMode = .separate
+        let saved = try JSONEncoder().encode(preferences.outputRecipe)
+        check(!String(decoding: saved, as: UTF8.self).contains("losslessChapterAudio"))
+        check(try !JSONDecoder().decode(ConversionPreferences.self, from: saved).copyChapterAudio)
+        preferences.copyChapterAudio = true
+        let updated = try JSONEncoder().encode(preferences.outputRecipe)
+        check(try JSONDecoder().decode(ConversionPreferences.self, from: updated).copyChapterAudio)
+        preferences.sampleRate = .hz44100
+        check(!preferences.outputRecipe.copyChapterAudio)
+        preferences.sampleRate = .automatic
+        preferences.format = .mp3
+        check(!preferences.outputRecipe.copyChapterAudio)
     }
 
     private static func checkFolderMatching(in workspace: URL) async throws {

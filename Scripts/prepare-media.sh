@@ -90,7 +90,7 @@ prepare_architecture() (
         --enable-encoder=aac,mjpeg,png,pcm_s16le,flac,libmp3lame \
         --enable-parser=aac,mpegaudio,ac3,mjpeg,png,flac \
         --enable-filter=aresample,aformat,asetpts,trim,atrim,format,null,anull,concat \
-        --enable-bsf=aac_adtstoasc \
+        --enable-bsf=aac_adtstoasc,setts \
         > "$build_dir/configure.log" 2>&1 || { cat "$build_dir/configure.log"; tail -n 60 ffbuild/config.log; exit 1; }
     make -j "$jobs" ffmpeg ffprobe > "$build_dir/build.log" 2>&1 || {
         tail -n 80 "$build_dir/build.log"

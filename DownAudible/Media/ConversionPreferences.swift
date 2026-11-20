@@ -12,6 +12,17 @@ struct ConversionPreferences: Codable, Hashable, Sendable {
     var embedArtwork = true
     var preserveMetadata = true
     var embedChapters = true
+    private var losslessChapterAudio: Bool?
+
+    var copyChapterAudio: Bool {
+        get { losslessChapterAudio == true }
+        set { losslessChapterAudio = newValue ? true : nil }
+    }
+
+    var canCopyChapterAudio: Bool {
+        chapterMode == .separate && format != .mp3
+            && bitrate == .automatic && channels == .automatic && sampleRate == .automatic
+    }
 
     var summary: String { "\(format.displayName) · \(chapterMode.displayName)" }
 
@@ -33,6 +44,7 @@ struct ConversionPreferences: Codable, Hashable, Sendable {
             recipe.embedChapters = false
             recipe.audioMode = .encode
         }
+        if !canCopyChapterAudio { recipe.copyChapterAudio = false }
         return recipe
     }
 }

@@ -29,6 +29,9 @@ struct ConversionPreferencesView: View {
                         Text(mode.displayName).tag(mode)
                     }
                 }
+            } else if preferences.format != .mp3 {
+                Toggle("Copy chapter audio when possible", isOn: $preferences.copyChapterAudio)
+                    .disabled(!preferences.canCopyChapterAudio)
             }
             if preferences.format == .mp3 {
                 Picker("Bitrate mode", selection: $preferences.mp3BitrateMode) {
@@ -65,6 +68,10 @@ struct ConversionPreferencesView: View {
         } footer: {
             if preferences.hasIncompatibleBitrate {
                 Text("Choose a lower bitrate or a higher sample rate.")
+            } else if preferences.canCopyChapterAudio && preferences.copyChapterAudio {
+                Text("Compatible chapters keep their original audio. Some players may play extra audio at a chapter boundary.")
+            } else if preferences.chapterMode == .separate && preferences.format != .mp3 && !preferences.canCopyChapterAudio {
+                Text("Set bitrate to Automatic and match the source channels and sample rate to copy chapter audio.")
             } else if preferences.chapterMode == .separate {
                 Text("DownAudible encodes separate files so each one starts at its chapter marker.")
             } else if preferences.audioMode == .automatic {

@@ -17,6 +17,9 @@ struct AudioProbe: Decodable, Sendable {
         let width: Int?
         let height: Int?
         let duration: String?
+        let durationTicks: Int64?
+        let startTicks: Int64?
+        let timeBase: String?
         let sampleRate: String?
         let channels: Int?
         let extradataHash: String?
@@ -27,6 +30,9 @@ struct AudioProbe: Decodable, Sendable {
             case index, profile, width, height, duration, channels, disposition, tags
             case codecName = "codec_name"
             case codecType = "codec_type"
+            case durationTicks = "duration_ts"
+            case startTicks = "start_pts"
+            case timeBase = "time_base"
             case sampleRate = "sample_rate"
             case extradataHash = "extradata_hash"
         }

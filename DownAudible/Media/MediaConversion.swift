@@ -32,22 +32,30 @@ extension MediaTools {
         let chapters = MediaTags.markers(probes: probes, supplied: metadata.chapters, title: tags["title"])
         let duration = Self.duration(of: probes)
         let clips = Self.clips(for: preferences.chapterMode, chapters: chapters, duration: duration)
+        let slicing = clips[0].range != nil
+        let copiedChapters = LosslessChapter.plan(
+            clips.map(\.range), sources: probes.map(\.audio), enabled: preferences.copyChapterAudio
+        )
         let encoding = try AudioEncoding(
-            preferences: preferences, probes: probes, slicing: clips[0].range != nil,
+            preferences: preferences, probes: probes, slicing: slicing,
             containsLegacyAudio: sources.contains(where: \.legacyClock)
         )
         let output = try await destinations(clips.map(\.output))
         let staged = try Self.stagedOutput(output, count: clips.count, format: preferences.format)
         defer { staged.forEach { try? manager.removeItem(at: $0.temporary) } }
 
-        let audio = try await Self.prepareAudio(
-            sources, encoding: encoding, format: preferences.format, slicing: clips[0].range != nil,
-            ffmpeg: ffmpeg, duration: duration, workspace: workspace, progress: progress
-        )
-        let coverChoices = Self.coverInputs(
-            artwork: artwork, sources: sources, audio: audio,
-            requested: preferences.embedArtwork, workspace: workspace
-        )
+        func prepareAudio(progress: @escaping MediaProcess.Progress) async throws -> AudioSource {
+            try await Self.prepareAudio(
+                sources, encoding: encoding, format: preferences.format, slicing: slicing,
+                ffmpeg: ffmpeg, duration: duration, workspace: workspace, progress: progress
+            )
+        }
+        var encodedAudio: AudioSource?
+        if copiedChapters.contains(where: { $0 == nil }) {
+            encodedAudio = try await prepareAudio(progress: progress)
+        }
+        let preparationShare = encodedAudio?.preparationShare ?? 0
+        let cover = preferences.embedArtwork ? (try? Self.validatedArtwork(artwork, in: workspace)) : nil
         var elapsed = 0.0
         for (index, pair) in zip(clips, staged).enumerated() {
             try Task.checkCancellation()
@@ -60,22 +68,52 @@ extension MediaTools {
             )
             let seconds = clip.range.map { Double($0.count) / 1_000 } ?? duration.map { Double($0) / 1_000 }
             let start = elapsed
+            let step = seconds ?? 1
+            defer { elapsed += step }
+            let report: MediaProcess.Progress = { fraction in
+                guard let fraction else { return }
+                let total = duration.map { Double($0) / 1_000 } ?? Double(clips.count)
+                let scale = 1 - preparationShare
+                await progress(preparationShare + scale * min(0.99, (start + step * fraction) / total))
+            }
+            if let chapter = copiedChapters[index] {
+                let audio = AudioSource(
+                    arguments: sources[chapter.sourceIndex].arguments, inputCount: 1, filter: nil,
+                    direct: chapter.sourceIndex == 0, legacyClock: false, preparationShare: 0
+                )
+                let coverChoices = Self.coverInputs(
+                    artwork: cover, sources: sources, audio: audio, requested: preferences.embedArtwork
+                )
+                do {
+                    try await Self.write(
+                        file.temporary, clip: clip, audio: audio, encoding: encoding, format: preferences.format,
+                        coverChoices: coverChoices, metadata: metadataFile, ffmpeg: ffmpeg, workspace: workspace,
+                        duration: seconds, copiedChapter: chapter, progress: report
+                    )
+                    let result = try await Self.probe(file.temporary, options: [], ffprobe: ffprobe, directory: workspace)
+                    if chapter.matches(result) { continue }
+                } catch MediaError.conversionFailed, MediaError.unreadableAudio {
+                    // Retry using the normal encoder when the source cannot be copied at the requested timestamps.
+                }
+                try Task.checkCancellation()
+                if manager.fileExists(atPath: file.temporary.path) {
+                    try manager.removeItem(at: file.temporary)
+                }
+            }
+            let audio = if let encodedAudio { encodedAudio } else { try await prepareAudio { _ in } }
+            encodedAudio = audio
             try await Self.write(
                 file.temporary, clip: clip, audio: audio, encoding: encoding, format: preferences.format,
-                coverChoices: coverChoices, metadata: metadataFile, ffmpeg: ffmpeg, workspace: workspace,
-                duration: seconds, progress: { fraction in
-                    guard let fraction else { return }
-                    let step = seconds ?? 1
-                    let total = duration.map { Double($0) / 1_000 } ?? Double(clips.count)
-                    let scale = 1 - audio.preparationShare
-                    await progress(audio.preparationShare + scale * min(0.99, (start + step * fraction) / total))
-                }
+                coverChoices: Self.coverInputs(
+                    artwork: cover, sources: sources, audio: audio, requested: preferences.embedArtwork
+                ),
+                metadata: metadataFile, ffmpeg: ffmpeg, workspace: workspace,
+                duration: seconds, progress: report
             )
             let result = try await Self.probe(file.temporary, options: [], ffprobe: ffprobe, directory: workspace)
             guard result.audio?.codecName == preferences.format.codecName, result.durationSeconds != nil else {
                 throw MediaError.conversionFailed
             }
-            elapsed += seconds ?? 1
         }
 
         try Self.publish(staged)
@@ -381,11 +419,11 @@ extension MediaTools {
     }
 
     private static func coverInputs(
-        artwork: URL?, sources: [PreparedSource], audio: AudioSource, requested: Bool, workspace: URL
+        artwork: URL?, sources: [PreparedSource], audio: AudioSource, requested: Bool
     ) -> [CoverInput] {
         guard requested else { return [CoverInput()] }
         var choices: [CoverInput] = []
-        if let artwork = try? validatedArtwork(artwork, in: workspace) {
+        if let artwork {
             choices.append(CoverInput(arguments: ["-i", artwork.path], stream: "\(audio.inputCount):v:0"))
         }
         for source in sources {
@@ -404,21 +442,27 @@ extension MediaTools {
     private static func write(
         _ destination: URL, clip: Clip, audio: AudioSource, encoding: AudioEncoding,
         format: ConversionFormat, coverChoices: [CoverInput], metadata: URL, ffmpeg: URL, workspace: URL,
-        duration: Double?, progress: @escaping MediaProcess.Progress
+        duration: Double?, copiedChapter: LosslessChapter? = nil, progress: @escaping MediaProcess.Progress
     ) async throws {
         for (index, cover) in coverChoices.enumerated() {
             let metadataIndex = audio.inputCount + (cover.arguments.isEmpty ? 0 : 1)
             var args: [String] = []
-            if let clip = clip.range, clip.lowerBound > 0 {
+            if let copiedChapter {
+                args += copiedChapter.seekArguments
+            } else if let clip = clip.range, clip.lowerBound > 0 {
                 args += ["-ss", String(Double(clip.lowerBound) / 1_000)]
             }
             args += audio.arguments + cover.arguments + ["-f", "ffmetadata", "-i", metadata.path]
-            args += audioFilter(for: audio, encoding: encoding) + [
+            args += [
                 "-map", audio.map, "-map_metadata", String(metadataIndex), "-map_chapters", String(metadataIndex)
             ]
-            args += encoding.arguments
-            if let clip = clip.range {
-                args += ["-t", String(Double(clip.count) / 1_000)]
+            if let copiedChapter {
+                args += copiedChapter.outputArguments
+            } else {
+                args += audioFilter(for: audio, encoding: encoding) + encoding.arguments
+                if let clip = clip.range {
+                    args += ["-t", String(Double(clip.count) / 1_000)]
+                }
             }
             if let stream = cover.stream {
                 args += ["-map", stream, "-c:v", "copy", "-disposition:v", "attached_pic"]
