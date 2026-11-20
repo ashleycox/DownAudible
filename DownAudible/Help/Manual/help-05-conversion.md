@@ -4,7 +4,7 @@
 
 Turn on conversion in the download sheet. **Keep the original after conversion** keeps the Audible files alongside the converted output. Turn it off if you only want the converted copy. If a chapter or tag is missing from the source, DownAudible uses the information Audible supplies when available.
 
-If DownAudible cannot unlock an AAX download for conversion, it refreshes the activation bytes for the account used for the download and tries the file again.
+If DownAudible can’t unlock an AAX download, it tries to refresh the activation bytes for the account used for the download. With **AAX with fallback**, it requests AAXC for conversion if it still can’t unlock the AAX. Any AAX originals already saved are kept.
 
 ## Convert files already on your Mac
 

@@ -356,13 +356,17 @@ nonisolated struct AudibleClient: Sendable {
     @concurrent func download(
         _ book: AudibleBook,
         to stagingDirectory: URL,
+        format: AudibleDownloadFormat? = nil,
         progress: @escaping @Sendable (Double) async -> Void
     ) async throws -> AudibleDownload {
+        var downloadOptions = options
+        downloadOptions.format = format ?? options.format
         let result: DownloadResponse = try await run(.init(
             command: .download,
             session: session(),
             asin: book.asin,
-            directory: stagingDirectory.path
+            directory: stagingDirectory.path,
+            options: downloadOptions
         ), progress: progress)
         let parts = try result.parts.map { part in
             try Task.checkCancellation()
@@ -506,7 +510,7 @@ nonisolated struct AudibleClient: Sendable {
             throw AudibleError.helperMissing
         }
         var request = request
-        request.options = options
+        request.options = request.options ?? options
         return try await AudibleProcess().run(executable, request: request, progress: progress)
     }
 }

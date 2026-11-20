@@ -8,6 +8,8 @@ Open **Audiobooks > Audible Tools…** and choose **Wish List**. Use **Filter Wi
 
 Choose **Account** in Audible Tools to look up the eight-character activation code for the active account. Click **Show**, then **Copy** to use it in another player or converter. If the code fails for files from this account, click **Reload from Audible**.
 
+Audible provides activation bytes separately from your library. If Audible can’t supply the code, choose **AAX with fallback** or **AAXC** in **Settings > Downloads** to convert library downloads using a per-title licence.
+
 ## Export a saved account
 
 In the same tab, choose **Export Encrypted Account File…** to move a session to Audible CLI or another copy of DownAudible. Enter and confirm a password, then click **Save Encrypted File…**. Keep the file and its password somewhere private.

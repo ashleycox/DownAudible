@@ -35,7 +35,7 @@ The setup wizard opens the first time you run DownAudible. Use it to connect an 
 
 To convert existing files, drag them into **Convert Files** or choose **Add Files** or **Add Folder**. **Audiobooks → Conversion Options…** controls the format, chapters, audio encoding, artwork, and metadata. In **Settings → Downloads**, you can send new original downloads or M4Bs to Apple Books.
 
-If the Audible account’s activation code is missing or rejected during AAX conversion, DownAudible tries refreshing it once. For an AAX file downloaded with a different account, enter that account’s code in **Convert Files**.
+When DownAudible can’t unlock an AAX download for conversion, it tries to refresh the account’s activation code. With **AAX with fallback**, it requests AAXC for conversion if it still can’t unlock the AAX. Any originals already saved are kept. AAX files opened in **Convert Files** need the activation code for the account that downloaded them.
 
 Folder and filename templates are independent. The default folder template, `{format}/{author}/{title}`, groups original and converted formats separately. For chapter filenames you might use `{title} - {chapterNumber} - {chapter}`. Settings shows a preview as you edit.
 

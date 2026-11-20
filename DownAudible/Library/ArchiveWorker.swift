@@ -149,17 +149,7 @@ actor ArchiveWorker {
                 )
                 usesAudioStaging = true
                 if restartIncomplete { await didRestart() }
-                await progress("Downloading audio", nil)
-                let download = try await audible.download(book, to: audioDirectory) { fraction in
-                    await progress("Downloading audio", fraction)
-                }
-                sources = download.parts.map {
-                    Source(
-                        audio: StoredAudio(url: $0.audio, asin: $0.asin), credentials: $0.credentials,
-                        originalFilename: $0.originalFilename
-                    )
-                }
-                guard !sources.isEmpty else { throw ArchiveError.noAudio }
+                sources = try await downloadSources(book, audible: audible, to: audioDirectory, progress: progress)
                 if options.savesOriginal {
                     sources = try saveOriginals(sources, title: title, layout: layout)
                     record.originals = sources.map(\.audio)
@@ -200,25 +190,45 @@ actor ArchiveWorker {
             await progress("Preparing conversion", nil)
             let needsChapters = conversion.embedChapters || conversion.chapterMode == .separate
             let chapters = needsChapters ? try await chapterMetadata(for: book, audible: audible) : []
-            var inputs: [MediaInput] = []
-            for source in sources {
-                let credentials = try await mediaCredentials(
-                    for: book, audio: StoredAudio(url: source.originalURL ?? source.audio.url, asin: source.audio.asin),
-                    audible: audible, provided: source.credentials
-                )
-                inputs.append(MediaInput(url: source.audio.url, credentials: credentials))
-            }
-
             let metadata = MediaMetadata(
                 title: book.title, subtitle: book.subtitle, authors: book.authors, narrators: book.narrators,
                 description: book.description, publisher: book.publisher, releaseDate: book.releaseDate,
                 asin: book.asin, series: book.series, seriesSequence: book.seriesSequence,
                 language: book.language, genres: book.genres ?? [], chapters: chapters
             )
-            converted = try await convertAudio(
-                inputs, audible: audible, title: title, layout: layout, preferences: conversion,
-                metadata: metadata, artwork: artwork, progress: progress
-            )
+            func convertSources(_ sources: [Source]) async throws -> [URL] {
+                var inputs: [MediaInput] = []
+                for source in sources {
+                    let audio = StoredAudio(url: source.originalURL ?? source.audio.url, asin: source.audio.asin)
+                    let credentials = try await mediaCredentials(
+                        for: book, audio: audio, audible: audible, provided: source.credentials
+                    )
+                    inputs.append(MediaInput(url: source.audio.url, credentials: credentials))
+                }
+                return try await convertAudio(
+                    inputs, audible: audible, title: title, layout: layout, preferences: conversion,
+                    metadata: metadata, artwork: artwork, progress: progress
+                )
+            }
+
+            do {
+                converted = try await convertSources(sources)
+            } catch {
+                try Task.checkCancellation()
+                guard audible.options.format == .preferAAX, book.isDownloadable,
+                      sources.contains(where: { $0.audio.url.pathExtension.lowercased() == "aax" }),
+                      (error as? AudibleError) == .activation || (error as? MediaError) == .activationRequired else {
+                    throw error
+                }
+                let audioDirectory = try IncompleteDownloads.audioFolder(
+                    for: book.id, account: account, root: layout.root, restart: false
+                )
+                usesAudioStaging = true
+                let fallback = try await downloadSources(
+                    book, audible: audible, to: audioDirectory, format: .aaxcOnly, progress: progress
+                )
+                converted = try await convertSources(fallback)
+            }
             addedConverted = converted
             record.addConversion(converted, key: recipe)
             save(&record, for: key, written: converted)
@@ -262,6 +272,23 @@ actor ArchiveWorker {
             url: output, original: originals, converted: converted,
             addedOriginal: addedOriginal, addedConverted: addedConverted, note: note
         )
+    }
+
+    private func downloadSources(
+        _ book: AudibleBook, audible: AudibleClient, to directory: URL,
+        format: AudibleDownloadFormat? = nil, progress: @escaping Progress
+    ) async throws -> [Source] {
+        let status = format == .aaxcOnly ? "Downloading AAXC audio for conversion" : "Downloading audio"
+        await progress(status, nil)
+        let download = try await audible.download(book, to: directory, format: format) { fraction in
+            await progress(status, fraction)
+        }
+        return download.parts.map {
+            Source(
+                audio: StoredAudio(url: $0.audio, asin: $0.asin), credentials: $0.credentials,
+                originalFilename: $0.originalFilename
+            )
+        }
     }
 
     func convert(

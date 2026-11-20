@@ -12,7 +12,7 @@ Choose **Download Selected As…**, **Download Missing As…**, or **Download En
 
 ## Choose an Audible format and quality
 
-**Settings > Downloads** controls the source format and quality. **AAX with fallback** asks for AAX first and accepts the format Audible supplies if AAX is unavailable. **AAX only** requires an AAX download. **AAXC** requests AAXC directly and keeps the format Audible supplies. **Settings > Conversion** controls the exported file format.
+**Settings > Downloads** controls the source format and quality. **AAX with fallback** asks for AAX first and accepts the format Audible supplies if AAX is unavailable. When conversion is on, it also requests AAXC if DownAudible can’t unlock the AAX after trying to refresh the activation bytes. **AAX only** requires an AAX download and needs the account’s activation bytes for conversion. **AAXC** requests AAXC directly and keeps the format Audible supplies. **Settings > Conversion** controls the exported file format.
 
 Some titles come as several files. DownAudible can keep those parts and combine them for conversion. Where available, cover and annotation files can still be downloaded separately.
 

@@ -18,6 +18,7 @@ struct ArchiveChecks {
         check(!ArchiveLayout(root: root, template: "{typo}").isValid)
         try checkMediaChapterBounds()
         try await checkActivationRefresh(in: workspace)
+        try await checkDownloadAfterActivationFailure(in: workspace)
         let literal = ArchiveTitle(title: "{author}/Book", author: "Name/Name", asin: nil)
         check(try layout.directory(for: literal, format: "m4b").path.hasSuffix("/m4b/Name-Name/{author}-Book"))
         try manager.createSymbolicLink(at: root.appending(path: "aax"), withDestinationURL: outside)
@@ -64,7 +65,7 @@ struct ArchiveChecks {
         check(contents.split(separator: "\n").count == 2 && contents.contains("Me Test\tFailed: Test"))
         try await checkArchiveWatcher(in: workspace, existsAtStart: true)
         try await checkArchiveWatcher(in: workspace, existsAtStart: false)
-        print("Archive naming, incomplete transfers, queue persistence, file watching, matching, library status, preference migration, CSV export, logs, and AAX activation refresh passed.")
+        print("Archive naming, incomplete transfers, queue persistence, file watching, matching, library status, preference migration, CSV export, logs, and AAX activation recovery passed.")
     }
 
     private static func checkFolderMatching(in workspace: URL) async throws {
@@ -278,6 +279,92 @@ struct ArchiveChecks {
             requests += 1
             return try result.get()
         }
+    }
+
+    private static func checkDownloadAfterActivationFailure(in workspace: URL) async throws {
+        let manager = FileManager.default
+        let tools = workspace.appending(path: "FallbackTools", directoryHint: .isDirectory)
+        try manager.createDirectory(at: tools, withIntermediateDirectories: false)
+        let helper = tools.appending(path: "audible-helper")
+        let helperScript = #"""
+            #!/bin/sh
+            set -eu
+            request=$(cat)
+            field() { printf '%s' "$request" | /usr/bin/plutil -extract "$1" raw -o - -; }
+            log="$(dirname "$0")/requests"
+            case "$(field command)" in
+                importAuthFile)
+                    printf '%s\n' '{"result":{"session":"fixture","marketplace":"uk"}}' ;;
+                activation)
+                    [ "$(field session)" = fixture ]
+                    printf 'activation %s\n' "$(field refreshActivation)" >> "$log"
+                    printf '%s\n' '{"error":"activation"}' ;;
+                download)
+                    [ "$(field session)" = fixture ]
+                    format=$(field options.format)
+                    printf 'download %s\n' "$format" >> "$log"
+                    case "$format" in
+                        preferAAX) file=Book.aax ;;
+                        aaxcOnly) file=Book.mp3 ;;
+                        *) exit 1 ;;
+                    esac
+                    printf '%s' "$file" > "$(field directory)/$file"
+                    printf '{"result":{"parts":[{"file":"%s","asin":"B000000001","credentials":{}}]}}\n' "$file" ;;
+                *) exit 1 ;;
+            esac
+            """#
+        let mediaScript = #"""
+            #!/bin/sh
+            set -eu
+            if [ "${0##*/}" = ffprobe ]; then
+                for file do :; done
+                case "$(cat "$file")" in
+                    Book.mp3) codec=mp3 ;;
+                    converted) codec=aac ;;
+                    *) exit 1 ;;
+                esac
+                printf '{"streams":[{"index":0,"codec_type":"audio","codec_name":"%s","duration":"2","sample_rate":"44100","channels":1}],"chapters":[],"format":{}}\n' "$codec"
+            else
+                while [ "$1" != -i ]; do shift; done
+                [ "$(cat "$2")" = Book.mp3 ]
+                for output do :; done
+                printf '%s' converted > "$output"
+            fi
+            """#
+        for (url, script) in [(helper, helperScript), (tools.appending(path: "ffprobe"), mediaScript),
+                              (tools.appending(path: "ffmpeg"), mediaScript)] {
+            try script.write(to: url, atomically: true, encoding: .utf8)
+            try manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
+        }
+
+        let profile = UUID()
+        let client = AudibleClient(profileID: profile, helperURL: helper)
+        _ = try await client.importAuthFile(tools.appending(path: "fixture.json"), password: nil)
+        defer { try? client.signOut() }
+        let defaults = UserDefaults.standard
+        let originalIndex = defaults.object(forKey: "ArchiveIndex")
+        defer { defaults.set(originalIndex, forKey: "ArchiveIndex") }
+
+        let archive = ArchiveWorker(media: MediaTools(toolDirectory: tools))
+        let book = try matchingBook("Fallback fixture", asin: "B000000001")
+        let root = workspace.appending(path: "Fallback Archive", directoryHint: .isDirectory)
+        let layout = ArchiveLayout(root: root, template: ArchiveLayout.defaultTemplate)
+        var options = DownloadOptions()
+        options.convert = true
+        var conversion = ConversionPreferences()
+        conversion.embedArtwork = false
+        conversion.embedChapters = false
+        let receipt = try await archive.download(
+            book, account: profile.uuidString, audible: client, matches: [], layout: layout, options: options,
+            existingFiles: .reuse, conversion: conversion, progress: { _, _ in }
+        )
+        let requests = try String(contentsOf: tools.appending(path: "requests"), encoding: .utf8)
+        check(requests.split(separator: "\n") == ["download preferAAX", "activation false", "activation true", "download aaxcOnly"])
+        check(receipt.original.count == 1 && receipt.original[0].pathExtension == "aax")
+        check(try Data(contentsOf: receipt.original[0]) == Data("Book.aax".utf8))
+        check(receipt.converted == [receipt.url] && receipt.url.pathExtension == "m4b")
+        check(try Data(contentsOf: receipt.url) == Data("converted".utf8))
+        check(!IncompleteDownloads.containsAudio(for: book.id, account: profile.uuidString, root: root))
     }
 
     private static func checkAudibleHelperExit(in workspace: URL) async throws {
