@@ -143,7 +143,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
-			shellScript = "set -eu\nresources=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH\"\n\"$SRCROOT/Scripts/prepare-audible.sh\" \"$resources/AudibleSupport\" $ARCHS\n\"$SRCROOT/Scripts/prepare-media.sh\" \"$resources/MediaSupport\" $ARCHS\n/bin/bash \"$SRCROOT/Scripts/sign-release-tools.sh\" \"$resources\"\n/usr/bin/swift \"$SRCROOT/Scripts/prepare-help.swift\" \"$SRCROOT/DownAudible/Help/Manual\" \"$resources/DownAudible.help\" \"$PRODUCT_BUNDLE_IDENTIFIER.help\"\n";
+			shellScript = "set -eu\nresources=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH\"\n\"$SRCROOT/Scripts/prepare-audible.sh\" \"$resources/AudibleSupport\" $ARCHS\n\"$SRCROOT/Scripts/prepare-media.sh\" \"$resources/MediaSupport\" $ARCHS\n/bin/bash \"$SRCROOT/Scripts/check-bundle-architectures.sh\" \"$TARGET_BUILD_DIR/$WRAPPER_NAME\" $ARCHS\n/bin/bash \"$SRCROOT/Scripts/sign-release-tools.sh\" \"$resources\"\n/usr/bin/swift \"$SRCROOT/Scripts/prepare-help.swift\" \"$SRCROOT/DownAudible/Help/Manual\" \"$resources/DownAudible.help\" \"$PRODUCT_BUNDLE_IDENTIFIER.help\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
