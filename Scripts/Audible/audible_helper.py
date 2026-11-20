@@ -9,11 +9,15 @@ import os
 import re
 import sys
 from datetime import UTC, datetime
+from http.client import HTTPException
 from pathlib import Path
+from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlsplit
+from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_opener
 
 import audible
 import httpx
+from audible.activation_bytes import extract_activation_bytes
 from audible.aescipher import AESCipher, detect_file_encryption
 from audible.exceptions import NotFoundError, RequestError, Unauthorized
 from audible.localization import Locale
@@ -42,6 +46,7 @@ from download_transfer import (
 
 WIRE = sys.stdout
 AUTHORIZATION_CODE = "openid.oa2.authorization_code"
+ACTIVATION_CODE = re.compile(r"[0-9a-fA-F]{8}")
 PAGE_SIZE = 100
 DOWNLOAD_USER_AGENT = "Audible/671 CFNetwork/1240.0.4 Darwin/20.6.0"
 CATALOG_FIELDS = (
@@ -104,6 +109,54 @@ def complete_sign_in(request):
 
 def session_json(auth):
     return json.dumps(auth.to_dict(), separators=(",", ":"))
+
+
+class NoActivationRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def get_activation_bytes(auth, refresh, timeout):
+    activation = auth.activation_bytes
+    if (
+        not refresh
+        and isinstance(activation, str)
+        and ACTIVATION_CODE.fullmatch(activation)
+    ):
+        return activation
+    if "signing" not in auth.available_auth_modes:
+        raise OperationError("activation")
+
+    url = httpx.URL(
+        "https://www.audible.com/license/token",
+        params={
+            "player_manuf": "Audible,iPhone",
+            "action": "register",
+            "player_model": "iPhone",
+        },
+    )
+    try:
+        # The legacy activation route can reject HTTPX with a CloudFront 403.
+        # Keep the same signing and TLS trust when sending it through urllib.
+        with contextlib.closing(auth.sync_auth_flow(httpx.Request("GET", url))) as flow:
+            signed = next(flow)
+            request = Request(str(signed.url), headers=dict(signed.headers))
+        opener = build_opener(
+            NoActivationRedirect(), HTTPSHandler(context=httpx.create_ssl_context())
+        )
+        with opener.open(request, timeout=timeout) as response:
+            activation = extract_activation_bytes(response.read())
+    except HTTPError as error:
+        error.close()
+        raise OperationError("activation") from error
+    except (HTTPException, OSError) as error:
+        raise OperationError("network") from error
+    except Exception as error:
+        raise OperationError("activation") from error
+    if not ACTIVATION_CODE.fullmatch(activation):
+        raise OperationError("activation")
+    auth.activation_bytes = activation
+    return activation
 
 
 def auth_encoding(path):
@@ -729,16 +782,9 @@ async def execute(request):
         )
         return json.dumps(encrypted, indent=2) + "\n"
     if command == "activation":
-        try:
-            activation = auth.get_activation_bytes(
-                force_refresh=request.get("refreshActivation", False)
-            )
-        except httpx.RequestError:
-            raise
-        except Exception as error:
-            raise OperationError("activation") from error
-        if not re.fullmatch(r"[0-9a-fA-F]{8}", activation):
-            raise OperationError("activation")
+        activation = get_activation_bytes(
+            auth, request.get("refreshActivation", False), timeout
+        )
         return {
             "activationBytes": activation,
             "session": session_json(auth),

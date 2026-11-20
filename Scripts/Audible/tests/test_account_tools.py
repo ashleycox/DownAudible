@@ -3,7 +3,11 @@ import tempfile
 import unittest
 import warnings
 from datetime import UTC, datetime
+from io import BytesIO
 from pathlib import Path
+from unittest.mock import patch
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
 
 import httpx
 from audible.aescipher import AESCipher
@@ -28,6 +32,90 @@ ASIN = "B000000001"
 
 
 class AccountToolsTests(unittest.IsolatedAsyncioTestCase):
+    async def test_activation_keeps_valid_cached_bytes(self):
+        with patch("audible_helper.build_opener") as build_opener:
+            result = await execute(
+                {"command": "activation", "session": json.dumps(ACCOUNT)}
+            )
+        build_opener.assert_not_called()
+        self.assertEqual(result["activationBytes"], ACCOUNT["activation_bytes"])
+
+    async def test_activation_refresh_sends_signed_request_and_updates_session(self):
+        signed_urls = []
+
+        def sign(auth, request):
+            signed_urls.append(str(request.url))
+            request.headers["x-adp-token"] = auth.adp_token
+            request.headers["x-adp-signature"] = "fixture-signature"
+            yield request
+
+        activation = "aabbccdd"
+        key = int(activation, 16).to_bytes(4, "little")
+        blob = b"group_id" + key + bytes(0x238 - len(key))
+        with (
+            patch(
+                "audible.Authenticator.sync_auth_flow", side_effect=sign, autospec=True
+            ),
+            patch("audible_helper.build_opener") as build_opener,
+        ):
+            opener = build_opener.return_value
+            opener.open.return_value = BytesIO(blob)
+            result = await execute(
+                {
+                    "command": "activation",
+                    "session": json.dumps(ACCOUNT),
+                    "refreshActivation": True,
+                    "options": {"timeout": 12},
+                }
+            )
+        opener.open.assert_called_once()
+        request = opener.open.call_args.args[0]
+        self.assertEqual(opener.open.call_args.kwargs["timeout"], 12)
+        self.assertEqual(request.get_method(), "GET")
+        self.assertEqual(signed_urls, [request.full_url])
+        self.assertEqual(urlsplit(request.full_url).hostname, "www.audible.com")
+        self.assertEqual(urlsplit(request.full_url).path, "/license/token")
+        headers = {key.lower(): value for key, value in request.header_items()}
+        self.assertEqual(headers["x-adp-token"], ACCOUNT["adp_token"])
+        self.assertEqual(headers["x-adp-signature"], "fixture-signature")
+        self.assertEqual(result["activationBytes"], activation)
+        self.assertEqual(json.loads(result["session"])["activation_bytes"], activation)
+
+    async def test_activation_reports_forbidden_responses_and_network_errors(self):
+        def sign(_auth, request):
+            yield request
+
+        request = {
+            "command": "activation",
+            "session": json.dumps({**ACCOUNT, "activation_bytes": None}),
+        }
+        for error, expected in (
+            (
+                HTTPError(
+                    "https://www.audible.com/license/token",
+                    403,
+                    "Forbidden",
+                    None,
+                    BytesIO(b"<html>Request blocked</html>"),
+                ),
+                "activation",
+            ),
+            (URLError(TimeoutError()), "network"),
+        ):
+            with (
+                self.subTest(expected=expected),
+                patch(
+                    "audible.Authenticator.sync_auth_flow",
+                    side_effect=sign,
+                    autospec=True,
+                ),
+                patch("audible_helper.build_opener") as build_opener,
+            ):
+                build_opener.return_value.open.side_effect = error
+                with self.assertRaises(OperationError) as caught:
+                    await execute(request)
+                self.assertEqual(caught.exception.code, expected)
+
     def test_cli_profiles_skip_invalid_auth_files(self):
         with tempfile.TemporaryDirectory() as directory:
             folder = Path(directory)
