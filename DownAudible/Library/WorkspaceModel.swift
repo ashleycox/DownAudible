@@ -193,8 +193,9 @@ final class WorkspaceModel {
     }
     var canRetry: Bool { canRetryBatch(transferHistorySelection) && displayedTransfers.contains(where: \.canRetry) }
     var canRestart: Bool { canRetryBatch(transferHistorySelection) && displayedTransfers.contains(where: \.canRestart) }
+    var canRemoveTransfers: Bool { !isTransferring && !isFinishingForQuit }
     var canClearCompleted: Bool {
-        !isTransferring && !isFinishingForQuit && displayedTransfers.contains {
+        canRemoveTransfers && displayedTransfers.contains {
             if case .done(_, nil) = $0.status { true } else { false }
         }
     }
@@ -670,9 +671,9 @@ final class WorkspaceModel {
         }
     }
 
-    func removeSelectedFiles() {
-        localFiles.removeAll { selectedFiles.contains($0.id) }
-        selectedFiles.removeAll()
+    func removeFiles(_ ids: Set<LocalAudioFile.ID>) {
+        localFiles.removeAll { ids.contains($0.id) }
+        selectedFiles.subtract(ids)
     }
 
     func requestMissingDownloads(customizing: Bool = false) {
@@ -975,7 +976,7 @@ final class WorkspaceModel {
     }
 
     func removeTransfers(_ ids: [UUID], historyID: UUID? = nil) {
-        guard !isTransferring, !isFinishingForQuit, !ids.isEmpty else { return }
+        guard canRemoveTransfers, !ids.isEmpty else { return }
         let ids = Set(ids)
         if let historyID {
             guard let index = transferHistory.firstIndex(where: { $0.id == historyID }) else { return }

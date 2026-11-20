@@ -12,7 +12,9 @@ Open **Convert Files**, then click **Add Files…** or **Add Folder…**. DownAu
 
 Choose **Audiobooks > Conversion Options…** to open Convert Files and change chapter and audio settings. From Convert Files, you can also click **Conversion Options…** or press Control–Shift–O.
 
-Select rows and click **Convert Selected**. With nothing selected, **Convert All** starts the whole list. With Convert Files open, the **Audiobooks** menu includes actions for the file list. Control-click a row for **Convert**, **Show in Finder**, **Add to Apple Books**, or **Copy Path**. **Remove from List** and **Clear List** only change the list.
+Select rows and click **Convert Selected**. With nothing selected, **Convert All** starts the whole list. With Convert Files open, the **Audiobooks** menu includes actions for the file list. Control-click a row for **Convert**, **Show in Finder**, **Add to Apple Books**, or **Copy Path**.
+
+Click a row’s **Remove from List** button to remove that file. To remove one or more selected files, press Backspace or Forward Delete while the list has keyboard focus. Choose **Clear List** to empty the list. The source files stay on disk.
 
 Encrypted AAX files need the eight hexadecimal characters from the account that downloaded them. Leave **Activation bytes (optional)** blank to use the active account and let DownAudible refresh its code if needed. For a file from another account, enter the original account’s code in that field. To fix an activation error, correct the code and retry the transfer.
 
@@ -62,6 +64,8 @@ If a player requires mono or a particular sample rate, set **Channels** and **Sa
 | Convert All / Convert Selected | Control–Shift–V |
 | Show in Finder | Control–Shift–S |
 | Add to Apple Books | Control–Shift–B |
+| Remove from List | Control–Shift–Delete |
+| Remove selected files when the list has focus | Backspace or Forward Delete |
 
 [See all keyboard shortcuts](help-10-keyboard-shortcuts.md)
 

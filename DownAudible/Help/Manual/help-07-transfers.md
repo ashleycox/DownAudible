@@ -4,9 +4,15 @@
 
 Open **Downloads** to follow downloads and conversions. Each row shows whether the job is waiting, running, finished, or failed. A finished item can show a warning if a companion file or the Apple Books step failed. Click its folder button or choose **Show Output in Finder** from its contextual menu to see saved files. An error row explains what the app could not finish.
 
-**Cancel Batch** stops the current work. **Retry Incomplete** queues the unfinished items again. **Restart Incomplete Downloads…** discards saved partial audio and downloads those titles from the start. A row’s contextual menu can cancel, retry, or restart that transfer, show its partial files, copy its error, or remove the entry from the list. **Clear Completed** clears successful rows from the list. To open the saved audio in Books, choose **Add to Apple Books** from the row’s menu.
+**Cancel Batch** stops the current work. **Retry Incomplete** queues the unfinished items again. In the toolbar’s **Download Actions** menu, **Restart Incomplete Downloads…** discards saved partial audio and downloads those titles from the start. **Clear Completed** removes jobs that finished without warnings. The menu stays available when the list is empty, with unavailable actions dimmed.
+
+Control-click a row to see its available actions and shortcuts. From the menu, you can cancel, retry, or restart that transfer, show its partial files, copy its error, or open its saved audio with **Add to Apple Books**.
 
 If a finished item warns that Books couldn’t open its files, use **Retry Incomplete** to try the Books step again with the saved audio.
+
+## Remove jobs from the list
+
+When no batch is running, click a row’s **Remove from List** button to remove that job. To remove one or more selected jobs, choose **Download Actions > Remove from List** or press Backspace or Forward Delete while the list has keyboard focus. Files already saved stay on disk.
 
 ## Add books to the current batch
 
@@ -64,6 +70,8 @@ In **Settings > Jobs**, choose **Errors only** to keep warnings and errors or **
 | Show Partial Files | Control–Shift–P |
 | Copy Error / Copy Errors | Control–Shift–E |
 | Clear Completed | Control–Command–K |
+| Remove from List | Control–Shift–Delete |
+| Remove selected jobs when the list has focus | Backspace or Forward Delete |
 
 [See all keyboard shortcuts](help-10-keyboard-shortcuts.md)
 

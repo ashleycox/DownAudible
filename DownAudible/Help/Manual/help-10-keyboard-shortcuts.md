@@ -87,6 +87,7 @@ The **Audiobooks** menu groups download commands under **Download** and library 
 | Show Partial Files | Control–Shift–P |
 | Copy Error / Copy Errors | Control–Shift–E |
 | Remove from List | Control–Shift–Delete |
+| Remove selected jobs when the list has focus | Backspace or Forward Delete |
 
 ## Convert Files
 
@@ -102,6 +103,7 @@ The **Audiobooks** menu groups download commands under **Download** and library 
 | Add to Apple Books | Control–Shift–B |
 | Copy Path | Control–Shift–C |
 | Remove from List | Control–Shift–Delete |
+| Remove selected files when the list has focus | Backspace or Forward Delete |
 | Clear List | Control–Shift–K |
 
 ## Audible Tools
@@ -204,6 +206,8 @@ Your keyboard may label Fn with a globe. Dictation and emoji shortcuts can depen
 ## Keyboard navigation
 
 Turn on **Keyboard navigation** in **System Settings > Keyboard** to move through buttons and other controls with Tab. Use focus to reach items such as account names, help chapters, category filters, settings tabs, and confirmation buttons.
+
+On most Mac keyboards, the key labelled Delete works as Backspace. Press Fn–Delete for Forward Delete.
 
 | Action | Shortcut |
 | --- | --- |

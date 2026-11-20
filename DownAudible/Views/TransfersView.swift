@@ -15,6 +15,8 @@ struct TransfersView: View {
     @State private var missingNotificationJobs = false
 
     var body: some View {
+        let selected = selectedTransfers(selection)
+
         ScrollViewReader { proxy in
             VStack(spacing: 0) {
                 if !model.transferHistory.isEmpty {
@@ -34,20 +36,9 @@ struct TransfersView: View {
                         "No Downloads", systemImage: WorkspacePage.transfers.icon,
                         description: Text("Downloads and conversions appear here when you start them.")
                     )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    List(model.displayedTransfers, selection: $selection) { transfer in
-                        TransferRow(transfer: transfer, showProgress: model.transferPreferences.showProgress)
-                            .tag(transfer.id)
-                            .id(transfer.id)
-                    }
-                    .contextMenu(forSelectionType: UUID.self) { ids in
-                        TransferSelectionActions(selection: selectedTransfers(ids))
-                    }
-                    .task(id: notificationScrollTarget) {
-                        guard let target = notificationScrollTarget else { return }
-                        proxy.scrollTo(target)
-                        notificationScrollTarget = nil
-                    }
+                    transferList(selected: selected, scrollProxy: proxy)
                     Divider()
                     footer
                 }
@@ -63,22 +54,22 @@ struct TransfersView: View {
             }
             .onChange(of: model.displayedTransfers.map(\.id)) { _, ids in selection.formIntersection(ids) }
         }
-        .focusedSceneValue(\.transferSelection, selectedTransfers(selection))
+        .focusedSceneValue(\.transferSelection, selected)
         .toolbar {
-            if !model.displayedTransfers.isEmpty {
-                ToolbarItem {
-                    Menu("Download Actions", systemImage: "ellipsis.circle") {
-                        Button("Restart Incomplete Downloads…", systemImage: "arrow.counterclockwise",
-                               action: askToRestartBatch)
-                            .disabled(!model.canRestart)
-                            .appHelp("Review restarting unfinished downloads from the beginning.")
-                        Button("Clear Completed", systemImage: "checkmark.circle", action: model.clearCompletedTransfers)
-                            .disabled(!model.canClearCompleted)
-                            .appHelp("Remove successful jobs from the list and keep their saved files.")
-                    }
-                    .labelStyle(.iconOnly)
-                    .appHelp("Download Actions")
+            ToolbarItem {
+                Menu("Download Actions", systemImage: "ellipsis.circle") {
+                    Button("Restart Incomplete Downloads…", systemImage: "arrow.counterclockwise",
+                           action: askToRestartBatch)
+                        .disabled(!model.canRestart)
+                        .appHelp("Review restarting unfinished downloads from the beginning.")
+                    Button("Clear Completed", systemImage: "checkmark.circle", action: model.clearCompletedTransfers)
+                        .disabled(!model.canClearCompleted)
+                        .appHelp("Remove successful jobs from the list and keep their saved files.")
+                    Divider()
+                    TransferRemoveButton(selection: selected)
                 }
+                .labelStyle(.iconOnly)
+                .appHelp("Download Actions")
             }
         }
         .confirmationDialog(
@@ -99,6 +90,26 @@ struct TransfersView: View {
             guard requestingBatchRestart else { return }
             requestingBatchRestart = false
             askToRestartBatch()
+        }
+    }
+
+    private func transferList(selected: TransferSelection, scrollProxy: ScrollViewProxy) -> some View {
+        List(model.displayedTransfers, selection: $selection) { transfer in
+            TransferRow(transfer: transfer, showProgress: model.transferPreferences.showProgress,
+                        canRemove: model.canRemoveTransfers) {
+                model.removeTransfers([transfer.id], historyID: selected.historyID)
+            }
+            .tag(transfer.id)
+            .id(transfer.id)
+        }
+        .contextMenu(forSelectionType: UUID.self) { ids in
+            TransferSelectionActions(selection: selectedTransfers(ids))
+        }
+        .onDeleteCommand(perform: selected.canRemove ? { selected.remove() } : nil)
+        .task(id: notificationScrollTarget) {
+            guard let target = notificationScrollTarget else { return }
+            scrollProxy.scrollTo(target)
+            notificationScrollTarget = nil
         }
     }
 
@@ -196,11 +207,26 @@ struct TransferSelectionCommands: View {
     }
 }
 
+@MainActor
 private struct TransferSelection {
     let model: WorkspaceModel
     let items: [Transfer]
     let historyID: UUID?
     let askToRestart: ([Transfer]) -> Void
+
+    var canRemove: Bool { model.canRemoveTransfers && !items.isEmpty }
+
+    func remove() { model.removeTransfers(items.map(\.id), historyID: historyID) }
+}
+
+private struct TransferRemoveButton: View {
+    let selection: TransferSelection
+
+    var body: some View {
+        Button("Remove from List", systemImage: "minus.circle", action: selection.remove)
+            .disabled(!selection.canRemove)
+            .appHelp("Remove the selected entries from Downloads and keep files already saved.")
+    }
 }
 
 private struct TransferSelectionActions: View {
@@ -275,21 +301,21 @@ private struct TransferSelectionActions: View {
         }
         if inMenuBar || !items.isEmpty {
             Divider()
-            Button("Remove from List") { model.removeTransfers(ids, historyID: selection.historyID) }
+            TransferRemoveButton(selection: selection)
                 .keyboardShortcut(shortcut(.delete))
-                .disabled(items.isEmpty || model.isTransferring)
-                .appHelp("Remove the selected entries from Downloads and keep files already saved.")
         }
     }
 
-    private func shortcut(_ key: KeyEquivalent) -> KeyboardShortcut? {
-        inMenuBar ? KeyboardShortcut(key, modifiers: [.control, .shift]) : nil
+    private func shortcut(_ key: KeyEquivalent) -> KeyboardShortcut {
+        KeyboardShortcut(key, modifiers: [.control, .shift])
     }
 }
 
 private struct TransferRow: View {
     let transfer: Transfer
     let showProgress: Bool
+    let canRemove: Bool
+    let remove: () -> Void
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -341,6 +367,13 @@ private struct TransferRow: View {
                 .labelStyle(.iconOnly)
                 .buttonStyle(.borderless)
                 .appHelp("Show in Finder")
+            }
+            if canRemove {
+                Button("Remove from List", systemImage: "minus.circle", action: remove)
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("Remove \(transfer.title) from list")
+                    .appHelp("Remove from List")
             }
         }
         .padding(.vertical, 8)

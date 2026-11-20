@@ -27,6 +27,8 @@ The setup wizard opens the first time you run DownAudible. Use it to connect an 
 3. In **Audiobooks → Download**, choose **Download Missing** to fetch eligible titles without a complete audio copy, or select books and choose **Download Selected**. Use the corresponding **As…** command to review the destination, audio, conversion, and optional PDFs, cover images, chapters, and notes.
 4. If a batch is interrupted, open **Downloads** and choose **Retry Incomplete**. DownAudible resumes partial audio when Audible can confirm it is the same file. Choose **Restart Download…** from a job’s contextual menu to discard its temporary bytes and download it from the start.
 
+In **Downloads**, use **Download Actions → Remove from List** or press Backspace or Forward Delete with the list focused to remove selected jobs. You can also click a row’s **Remove from List** button. These actions are available when no batch is running and keep the saved files.
+
 In **Settings → Notifications**, choose sounds and alerts, check macOS permissions, or send a silent test. Click a transfer alert to open its jobs in **Downloads**.
 
 **Audiobooks → Audible Tools** opens the wish list, catalogue search, activation bytes, and encrypted Audible CLI account export for the current account. Use **Audiobooks → Library → Export Library** to save the loaded library as JSON, CSV, or TSV.
@@ -35,7 +37,7 @@ Use **Sort Library** and **Filter Library** in the library toolbar or the **View
 
 ## Conversion and file names
 
-To convert existing files, drag them into **Convert Files** or choose **Add Files** or **Add Folder**. **Audiobooks → Conversion Options…** controls the format, chapters, audio encoding, artwork, and metadata. In **Settings → Downloads**, you can send new original downloads or M4Bs to Apple Books.
+To convert existing files, drag them into **Convert Files** or choose **Add Files…** or **Add Folder…**. Click a row’s **Remove from List** button to take that file out of the list. With the list focused, Backspace or Forward Delete removes selected entries. The source files stay on disk. **Audiobooks → Conversion Options…** controls the format, chapters, audio encoding, artwork, and metadata. In **Settings → Downloads**, you can send new original downloads or M4Bs to Apple Books.
 
 When creating separate M4B or M4A files, turn on **Copy chapter audio when possible** to keep the original audio for compatible AAC chapters.
 

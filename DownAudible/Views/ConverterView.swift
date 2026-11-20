@@ -147,10 +147,22 @@ struct ConverterView: View {
                     .appHelp("The source file uses the \(file.format.uppercased()) format.")
             }
             .width(min: 64, ideal: 72, max: 90)
+            TableColumn("Actions") { file in
+                Button("Remove from List", systemImage: "minus.circle") { model.removeFiles([file.id]) }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("Remove \(file.title) from the conversion list")
+                    .appHelp("Remove from List")
+                    .frame(maxWidth: .infinity)
+            }
+            .width(64)
         }
         .contextMenu(forSelectionType: LocalAudioFile.ID.self) { ids in
             ConversionActions(context: ConversionCommandContext(model: model, ids: ids))
         }
+        .onDeleteCommand(perform: model.selectedFiles.isEmpty ? nil : {
+            model.removeFiles(model.selectedFiles)
+        })
     }
 
     private var commandContext: ConversionCommandContext {
@@ -205,11 +217,6 @@ private struct ConversionCommandContext {
     }
 
     func convert() { model.startConversion(conversionFiles) }
-
-    func removeFiles(_ ids: Set<LocalAudioFile.ID>) {
-        model.selectedFiles = ids
-        model.removeSelectedFiles()
-    }
 }
 
 private struct ConversionActions: View {
@@ -245,11 +252,11 @@ private struct ConversionActions: View {
                 .disabled(urls.isEmpty)
         }
         Divider()
-        Button("Remove from List", systemImage: "minus.circle") { context.removeFiles(Set(files.map(\.id))) }
+        Button("Remove from List", systemImage: "minus.circle") { context.model.removeFiles(context.ids) }
             .keyboardShortcut(shortcut(.delete))
             .appHelp("Take the selected files out of the conversion list.")
             .disabled(files.isEmpty)
-        Button("Clear List") { context.removeFiles(Set(allFiles.map(\.id))) }
+        Button("Clear List") { context.model.removeFiles(Set(allFiles.map(\.id))) }
             .keyboardShortcut(shortcut("k"))
             .appHelp("Empty the conversion list.")
             .disabled(allFiles.isEmpty)
