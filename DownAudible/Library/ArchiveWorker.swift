@@ -216,7 +216,7 @@ actor ArchiveWorker {
                 language: book.language, genres: book.genres ?? [], chapters: chapters
             )
             converted = try await convertAudio(
-                inputs, title: title, layout: layout, preferences: conversion,
+                inputs, audible: audible, title: title, layout: layout, preferences: conversion,
                 metadata: metadata, artwork: artwork, progress: progress
             )
             addedConverted = converted
@@ -301,7 +301,7 @@ actor ArchiveWorker {
             for: nil, audio: StoredAudio(url: file.url, asin: file.asin), audible: audible, activationBytes: activationBytes
         )
         let converted = try await convertAudio(
-            [MediaInput(url: file.url, credentials: credentials)],
+            [MediaInput(url: file.url, credentials: credentials)], audible: activationBytes == nil ? audible : nil,
             title: ArchiveTitle(file), layout: layout, preferences: conversion, progress: progress
         )
         guard let first = converted.first else { throw ArchiveError.noAudio }
@@ -311,7 +311,7 @@ actor ArchiveWorker {
     }
 
     private func convertAudio(
-        _ inputs: [MediaInput], title: ArchiveTitle, layout: ArchiveLayout,
+        _ inputs: [MediaInput], audible: AudibleClient?, title: ArchiveTitle, layout: ArchiveLayout,
         preferences: ConversionPreferences, metadata: MediaMetadata = .init(), artwork: URL? = nil,
         progress: @escaping Progress
     ) async throws -> [URL] {
@@ -321,10 +321,30 @@ actor ArchiveWorker {
             reservedFilenames.subtract(reservations)
         }
         let format = preferences.format.fileExtension
-        return try await media.convert(inputs, preferences: preferences, metadata: metadata, artwork: artwork) { outputs in
+        let converting = "Converting to \(format.uppercased())"
+        let refreshActivation: (@Sendable () async throws -> String)?
+        if let audible {
+            refreshActivation = {
+                await progress("Refreshing Audible activation bytes", nil)
+                let activation: String
+                do {
+                    activation = try await audible.activationBytes(refresh: true)
+                } catch AudibleError.notSignedIn {
+                    throw MediaError.activationRequired
+                }
+                try Task.checkCancellation()
+                await progress(converting, nil)
+                return activation
+            }
+        } else {
+            refreshActivation = nil
+        }
+        return try await media.convert(
+            inputs, preferences: preferences, metadata: metadata, artwork: artwork, refreshActivation: refreshActivation
+        ) { outputs in
             try await self.reserve(outputs, for: title, layout: layout, format: format, id: conversionID)
         } progress: { fraction in
-            await progress("Converting to \(format.uppercased())", fraction)
+            await progress(converting, fraction)
         }
     }
 

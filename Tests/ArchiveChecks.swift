@@ -17,6 +17,7 @@ struct ArchiveChecks {
         check(!ArchiveLayout(root: root, template: "../{title}").isValid)
         check(!ArchiveLayout(root: root, template: "{typo}").isValid)
         try checkMediaChapterBounds()
+        try await checkActivationRefresh(in: workspace)
         let literal = ArchiveTitle(title: "{author}/Book", author: "Name/Name", asin: nil)
         check(try layout.directory(for: literal, format: "m4b").path.hasSuffix("/m4b/Name-Name/{author}-Book"))
         try manager.createSymbolicLink(at: root.appending(path: "aax"), withDestinationURL: outside)
@@ -63,7 +64,7 @@ struct ArchiveChecks {
         check(contents.split(separator: "\n").count == 2 && contents.contains("Me Test\tFailed: Test"))
         try await checkArchiveWatcher(in: workspace, existsAtStart: true)
         try await checkArchiveWatcher(in: workspace, existsAtStart: false)
-        print("Archive naming, incomplete transfers, queue persistence, file watching, matching, library status, preference migration, CSV export, and logs passed.")
+        print("Archive naming, incomplete transfers, queue persistence, file watching, matching, library status, preference migration, CSV export, logs, and AAX activation refresh passed.")
     }
 
     private static func checkFolderMatching(in workspace: URL) async throws {
@@ -186,6 +187,97 @@ struct ArchiveChecks {
         check(catalogChapters == [
             supplied[0], MediaChapter(startMilliseconds: 1_000, durationMilliseconds: 1_000, title: "Closing")
         ])
+    }
+
+    private static func checkActivationRefresh(in workspace: URL) async throws {
+        let manager = FileManager.default
+        let tools = workspace.appending(path: "ActivationTools", directoryHint: .isDirectory)
+        try manager.createDirectory(at: tools, withIntermediateDirectories: false)
+        try manager.createSymbolicLink(at: tools.appending(path: "ffmpeg"), withDestinationURL: URL(filePath: "/usr/bin/true"))
+        let probe = tools.appending(path: "ffprobe")
+        let validCode = "11223344"
+        let script = #"""
+            #!/bin/sh
+            while [ "$#" -gt 0 ]; do
+                case "$1" in
+                    -/activation_bytes) bytes=$(cat "$2"); shift ;;
+                    -i) source=$2; shift ;;
+                esac
+                shift
+            done
+            if [ "${source##*/}" = Damaged.aax ]; then exit 1; fi
+            if [ "$bytes" != \#(validCode) ]; then
+                echo '[aax] mismatch in checksums' >&2
+                exit 1
+            fi
+            printf '%s\n' '{"streams":[{"index":0,"codec_type":"audio","codec_name":"aac","duration":"2"}],"chapters":[],"format":{}}'
+            """#
+        try script.write(to: probe, atomically: true, encoding: .utf8)
+        try manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: probe.path)
+
+        let media = MediaTools(toolDirectory: tools)
+        let wrongCode = "55667788"
+        let aax = workspace.appending(path: "Book.aax")
+        let stale = MediaInput(url: aax, credentials: MediaCredentials(activationBytes: wrongCode))
+        let second = MediaInput(url: workspace.appending(path: "Part Two.aax"), credentials: stale.credentials)
+        let missing = MediaInput(url: aax)
+        let valid = MediaInput(url: aax, credentials: MediaCredentials(activationBytes: validCode))
+        let damaged = MediaInput(url: workspace.appending(path: "Damaged.aax"), credentials: valid.credentials)
+        let mp3 = MediaInput(url: workspace.appending(path: "Book.mp3"))
+
+        func expect(
+            _ outcome: ActivationCheckOutcome, from inputs: [MediaInput],
+            refresh: Result<String, ActivationCheckOutcome>?, requests: Int, line: UInt = #line
+        ) async {
+            let fixture = refresh.map(ActivationRefreshFixture.init)
+            let callback: (@Sendable () async throws -> String)?
+            if let fixture {
+                callback = { try await fixture.refresh() }
+            } else {
+                callback = nil
+            }
+            do {
+                _ = try await media.convert(inputs, preferences: .init(), refreshActivation: callback) { _ in
+                    // Stop after all source files are ready, before rendering audio.
+                    throw ActivationCheckOutcome.sourcesPrepared
+                }
+                fatalError("Conversion should stop before rendering audio")
+            } catch let error as MediaError {
+                check(.mediaError(error) == outcome, line: line)
+            } catch {
+                check(error as? ActivationCheckOutcome == outcome, line: line)
+            }
+            check(await fixture?.requests ?? 0 == requests, line: line)
+        }
+
+        await expect(.sourcesPrepared, from: [stale, second], refresh: .success(validCode), requests: 1)
+        await expect(.sourcesPrepared, from: [missing], refresh: .success(validCode), requests: 1)
+        await expect(.sourcesPrepared, from: [valid], refresh: .success(validCode), requests: 0)
+        await expect(.mediaError(.activationRequired), from: [stale], refresh: .success(wrongCode), requests: 1)
+        await expect(.mediaError(.activationRequired), from: [stale], refresh: nil, requests: 0)
+        await expect(.mediaError(.activationRequired), from: [mp3], refresh: .success(validCode), requests: 0)
+        await expect(.mediaError(.unreadableAudio), from: [damaged], refresh: .success(validCode), requests: 0)
+        await expect(.refreshFailed, from: [stale], refresh: .failure(.refreshFailed), requests: 1)
+    }
+
+    private enum ActivationCheckOutcome: Error, Equatable {
+        case sourcesPrepared
+        case mediaError(MediaError)
+        case refreshFailed
+    }
+
+    private actor ActivationRefreshFixture {
+        let result: Result<String, ActivationCheckOutcome>
+        private(set) var requests = 0
+
+        init(_ result: Result<String, ActivationCheckOutcome>) {
+            self.result = result
+        }
+
+        func refresh() throws -> String {
+            requests += 1
+            return try result.get()
+        }
     }
 
     private static func checkAudibleHelperExit(in workspace: URL) async throws {

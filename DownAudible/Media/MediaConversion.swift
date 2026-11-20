@@ -9,6 +9,7 @@ extension MediaTools {
         preferences: ConversionPreferences,
         metadata: MediaMetadata = .init(),
         artwork: URL? = nil,
+        refreshActivation: (@Sendable () async throws -> String)? = nil,
         destinations: @escaping @Sendable ([ConversionOutput]) async throws -> [URL],
         progress: @escaping MediaProcess.Progress = { _ in }
     ) async throws -> [URL] {
@@ -21,7 +22,9 @@ extension MediaTools {
         defer { try? manager.removeItem(at: workspace) }
 
         await progress(nil)
-        let sources = try await Self.prepare(inputs, ffmpeg: ffmpeg, ffprobe: ffprobe, workspace: workspace)
+        let sources = try await Self.prepare(
+            inputs, ffmpeg: ffmpeg, ffprobe: ffprobe, workspace: workspace, refreshActivation: refreshActivation
+        )
         let probes = sources.map(\.probe)
         let tags = MediaTags.values(
             probes: probes, source: firstInput.url, metadata: metadata, format: preferences.format
@@ -116,19 +119,44 @@ extension MediaTools {
     }
 
     private static func prepare(
-        _ inputs: [MediaInput], ffmpeg: URL, ffprobe: URL, workspace: URL
+        _ inputs: [MediaInput], ffmpeg: URL, ffprobe: URL, workspace: URL,
+        refreshActivation: (@Sendable () async throws -> String)?
     ) async throws -> [PreparedSource] {
         var sources: [PreparedSource] = []
-        for (index, input) in inputs.enumerated() {
+        var refreshedActivation: String?
+        for (index, original) in inputs.enumerated() {
             try Task.checkCancellation()
-            let options = try decryptionOptions(for: input, at: index, in: workspace)
-            let probe = try await probe(input.url, options: options, ffprobe: ffprobe, directory: workspace)
-            if input.url.pathExtension.lowercased() == "aaxc" {
-                try await validateVoucher(ffmpeg, for: input.url, options: options, directory: workspace)
+            var input = original
+            let format = input.url.pathExtension.lowercased()
+            if format == "aax", let refreshedActivation {
+                input.credentials.activationBytes = refreshedActivation
             }
-            sources.append(PreparedSource(url: input.url, options: options, probe: probe))
+            let source: PreparedSource
+            do {
+                source = try await prepareSource(input, at: index, ffprobe: ffprobe, workspace: workspace)
+            } catch MediaError.activationRequired where format == "aax" && refreshedActivation == nil {
+                guard let refreshActivation else { throw MediaError.activationRequired }
+                try Task.checkCancellation()
+                let activation = try await refreshActivation()
+                try Task.checkCancellation()
+                refreshedActivation = activation
+                input.credentials.activationBytes = activation
+                source = try await prepareSource(input, at: index, ffprobe: ffprobe, workspace: workspace)
+            }
+            if format == "aaxc" {
+                try await validateVoucher(ffmpeg, for: input.url, options: source.options, directory: workspace)
+            }
+            sources.append(source)
         }
         return sources
+    }
+
+    private static func prepareSource(
+        _ input: MediaInput, at index: Int, ffprobe: URL, workspace: URL
+    ) async throws -> PreparedSource {
+        let options = try decryptionOptions(for: input, at: index, in: workspace)
+        let inspection = try await probe(input.url, options: options, ffprobe: ffprobe, directory: workspace)
+        return PreparedSource(url: input.url, options: options, probe: inspection)
     }
 
     private static func duration(of probes: [AudioProbe]) -> Int64? {
