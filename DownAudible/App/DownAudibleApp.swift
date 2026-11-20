@@ -53,6 +53,8 @@ struct DownAudibleApp: App {
                     showsStatusBar.toggle()
                 }
                 .keyboardShortcut("s", modifiers: [.command, .option])
+                LibraryBrowseCommands()
+                    .disabled(showingOnboarding || model.downloadRequest != nil)
                 Divider()
                 Button("Library") { show(.library) }
                     .keyboardShortcut("1")
@@ -241,6 +243,7 @@ private struct WorkspaceView: View {
     @Binding var requestingBatchRestart: Bool
     @Binding var sidebarVisibility: NavigationSplitViewVisibility
     let openManual: () -> Void
+    @State private var libraryFilters = LibraryFilters()
     @State private var openManualAfterSetup = false
 
     var body: some View {
@@ -255,7 +258,7 @@ private struct WorkspaceView: View {
             Group {
                 switch model.page ?? .library {
                 case .library:
-                    LibraryView(model: model, showsStatusBar: showsStatusBar)
+                    LibraryView(model: model, showsStatusBar: showsStatusBar, filters: $libraryFilters)
                 case .transfers:
                     TransfersView(model: model, requestingBatchRestart: $requestingBatchRestart)
                 case .convert:
@@ -267,6 +270,10 @@ private struct WorkspaceView: View {
         .task {
             if !hasFinishedOnboarding { showingOnboarding = true }
             await model.load()
+        }
+        .onChange(of: model.activeAccountID) { libraryFilters = LibraryFilters() }
+        .onChange(of: model.signedIn) {
+            if !model.signedIn { libraryFilters = LibraryFilters() }
         }
         .onChange(of: model.layout) {
             Task { await model.refreshExportStatus() }

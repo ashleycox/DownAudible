@@ -2,13 +2,17 @@
 
 ## Browse your books
 
-Click a column header to sort the table. Search by title, author, narrator, or ASIN. Click one book, then Command-click to add individual books to the selection. Shift-click selects a range.
+Choose **Sort Library** in the toolbar or **View > Sort Library**. Pick a field and an order. Sort by title, author, narrator, series, purchase date, release year, length, or download status. Books with no value for the chosen field appear last. You can also click a column header to sort by that column.
+
+Choose **Filter Library** in the toolbar or **View > Filter Library** to narrow the table by title, author, series, narrator, genre, language, release year, or download status. You can apply several filters together. Choose the same field again to edit it or choose **Remove Filter**. Under **Download Status**, choose **Any Status** to remove that filter. Choose **Clear Filters** to start over.
+
+Press Command–F to search by title, author, narrator, series, or ASIN. Search works within your active filters. Click one book, then Command-click to add individual books to the selection. Shift-click selects a range.
 
 Use **Audiobooks > Library > Refresh Library** to fetch changes. In **Settings > Library**, choose whether to show podcast series or individual episodes, set a purchase date range, and change the number of results per request. Refresh after changing these options. **Audiobooks > Library > Export Library** saves the loaded library as JSON, CSV, or TSV.
 
 ## Check library status
 
-The status bar at the bottom of the Library shows the number of books, how many are selected, and how many are eligible for **Download Missing**. When you search, the first count shows the number of visible books out of the library total. Use **View > Hide Status Bar** or **Show Status Bar** to control it.
+The status bar at the bottom of the Library shows the number of books, how many are selected, and how many are eligible for **Download Missing**. When you search or filter, the first count shows the number of visible books out of the library total. Use **View > Hide Status Bar** or **Show Status Bar** to control it.
 
 Choose **View > Library Status**, or click the info button in the status bar, to see a breakdown for the active account. Select **To Download**, **Downloaded**, **Matched**, or **Unavailable** to see the titles in that group. The table shows each book’s local audio status and whether Audible offers it for download. Queued and running audio transfers are shown while a batch is active.
 
@@ -28,7 +32,7 @@ The **Download Status** column shows six states. **Downloaded** means at least o
 
 After moving or deleting a file, choose **Audiobooks > Library > Recheck Saved Files** to refresh the status straight away. A warning beside a downloaded book can mean there is a missing companion file or another saved audio copy. Hover over the warning or read the row with VoiceOver to find out which file. Use **Download Selected As…** with the corresponding option to get that file back.
 
-**Download Missing** queues eligible books whose audio is missing, incomplete, or unsaved. **Download Entire Library** queues all titles in the loaded library, even when search is filtering the table. Use **Download Missing As…** or **Download Entire Library As…** to review what to save before starting. When a transfer repeatedly fails partway, Control-click its book and choose **Restart Incomplete Downloads…**.
+**Download Missing** queues eligible books whose audio is missing, incomplete, or unsaved. **Download Entire Library** queues all titles in the loaded library. Both commands cover the whole loaded library while you search or filter the table. To download a subset, select the books you want and choose **Download Selected**. Use **Download Missing As…** or **Download Entire Library As…** to review what to save before starting. When a transfer repeatedly fails partway, Control-click its book and choose **Restart Incomplete Downloads…**.
 
 Use **Show Audio in Finder** to locate a selected book’s files. **Add to Apple Books** lets you send original files, M4Bs, or other supported audio already on disk. **Copy Title** and **Copy ASIN** put book details on the clipboard.
 

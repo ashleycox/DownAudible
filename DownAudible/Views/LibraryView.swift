@@ -5,10 +5,13 @@ struct LibraryView: View {
     @Environment(\.openWindow) private var openWindow
     @Bindable var model: WorkspaceModel
     let showsStatusBar: Bool
+    @Binding var filters: LibraryFilters
+    @AppStorage("LibrarySortField") private var sortField = LibrarySortField.title
+    @AppStorage("LibrarySortDirection") private var sortDirection = LibrarySortDirection.ascending
     @FocusState private var searchFocused: Bool
     @State private var search = ""
     @State private var showingSearch = false
-    @State private var sortOrder = [KeyPathComparator(\LibraryRow.title, comparator: .localizedStandard)]
+    @State private var editingFilter: LibraryFilters.Field?
     @State private var showingSignIn = false
     @State private var addingAccount = false
     @State private var showingImport = false
@@ -17,7 +20,7 @@ struct LibraryView: View {
         Group {
             if model.signedIn {
                 library
-                    .searchable(text: $search, isPresented: $showingSearch, prompt: "Title, author, narrator or ASIN")
+                    .searchable(text: $search, isPresented: $showingSearch, prompt: "Search Library")
                     .searchFocused($searchFocused)
             } else {
                 ContentUnavailableView {
@@ -39,12 +42,32 @@ struct LibraryView: View {
         .sheet(isPresented: $showingImport) {
             AudibleCLIImportView(model: model)
         }
+        .sheet(item: $editingFilter) { field in
+            LibraryTextFilterView(field: field, value: filters[field]) { filters[field] = $0 }
+        }
         .toolbar {
             if model.signedIn {
                 ToolbarItemGroup {
                     Button("Refresh Library", systemImage: "arrow.clockwise", action: refresh)
                         .disabled(model.isRefreshing || model.isScanning)
                         .help("Refresh Library")
+
+                    Menu("Sort Library", systemImage: "arrow.up.arrow.down") {
+                        LibrarySortItems(actions: browseActions)
+                    }
+                    .labelStyle(.iconOnly)
+                    .accessibilityValue("\(sortField.displayName), \(sortField.orderName(sortDirection))")
+                    .help("Sort Library")
+
+                    Menu {
+                        LibraryFilterItems(actions: browseActions)
+                    } label: {
+                        Label("Filter Library", systemImage: filters.isEmpty
+                              ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
+                    }
+                    .labelStyle(.iconOnly)
+                    .accessibilityValue(filters.summary.formatted(.list(type: .and)))
+                    .help("Filter Library")
 
                     Menu("Download", systemImage: "arrow.down.to.line") {
                         LibraryDownloadActions(model: model)
@@ -91,8 +114,25 @@ struct LibraryView: View {
             signIn: { openSignIn(adding: model.signedIn) },
             importAccount: { showingImport = true }
         ))
+        .focusedSceneValue(\.libraryBrowseActions, model.signedIn ? browseActions : nil)
         .onChange(of: model.activeAccount?.id) {
             search = ""
+        }
+    }
+
+    private var browseActions: LibraryBrowseActions {
+        LibraryBrowseActions(field: $sortField, direction: $sortDirection, filters: $filters) { editingFilter = $0 }
+    }
+
+    private var tableSortOrder: Binding<[KeyPathComparator<LibraryRow>]> {
+        Binding {
+            guard let column = sortField.column else { return [] }
+            return [KeyPathComparator(column, comparator: .localizedStandard, order: sortDirection.tableOrder)]
+        } set: { order in
+            guard let primary = order.first,
+                  let field = LibrarySortField.allCases.first(where: { $0.column == primary.keyPath }) else { return }
+            sortField = field
+            sortDirection = primary.order == .forward ? .ascending : .descending
         }
     }
 
@@ -132,7 +172,11 @@ struct LibraryView: View {
     private var library: some View {
         let rows = visibleRows
         return VStack(spacing: 0) {
-            Table(rows, selection: $model.selectedBooks, sortOrder: $sortOrder) {
+            if !filters.isEmpty {
+                activeFilters
+                Divider()
+            }
+            Table(rows, selection: $model.selectedBooks, sortOrder: tableSortOrder) {
                 TableColumn("Title", value: \.title) { row in
                     Text(row.title)
                         .help(row.title)
@@ -178,6 +222,21 @@ struct LibraryView: View {
         }
     }
 
+    private var activeFilters: some View {
+        let summary = filters.summary.formatted(.list(type: .and))
+        return HStack(spacing: 8) {
+            Label(summary, systemImage: "line.3.horizontal.decrease.circle.fill")
+                .lineLimit(1)
+                .help(summary)
+                .accessibilityLabel("Active filters. \(summary)")
+            Spacer(minLength: 8)
+            Button("Clear Filters") { filters = LibraryFilters() }
+        }
+        .font(.callout)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+    }
+
     @ViewBuilder
     private var emptyLibrary: some View {
         if model.isRefreshing && model.books.isEmpty {
@@ -185,6 +244,8 @@ struct LibraryView: View {
                 .controlSize(.regular)
         } else if model.books.isEmpty {
             ContentUnavailableView("No Audiobooks", systemImage: "books.vertical", description: Text("Your library is empty."))
+        } else if !filters.isEmpty {
+            ContentUnavailableView("No Matching Audiobooks", systemImage: "line.3.horizontal.decrease.circle", description: Text("Change the filters or search to show more books."))
         } else {
             ContentUnavailableView.search(text: search)
         }
@@ -255,10 +316,14 @@ struct LibraryView: View {
 
     private var visibleRows: [LibraryRow] {
         let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
-        return model.books
-            .map { LibraryRow(book: $0, status: model.downloadStatus(for: $0), missingFiles: model.missingOutputFiles(for: $0)) }
-            .filter { query.isEmpty || $0.matches(query) }
-            .sorted(using: sortOrder)
+        let rows = model.books.compactMap { book -> LibraryRow? in
+            guard filters.matches(book) else { return nil }
+            let status = model.downloadStatus(for: book)
+            guard filters.status.map({ $0 == status }) ?? true else { return nil }
+            let row = LibraryRow(book: book, status: status, missingFiles: model.missingOutputFiles(for: book))
+            return query.isEmpty || row.matches(query) ? row : nil
+        }
+        return sortField.sorted(rows, direction: sortDirection)
     }
 
     private func refresh() {
@@ -268,34 +333,6 @@ struct LibraryView: View {
     private func openSignIn(adding: Bool) {
         addingAccount = adding
         showingSignIn = true
-    }
-}
-
-private struct LibraryRow: Identifiable {
-    let book: AudibleBook
-    let status: LibraryDownloadStatus
-    let missingFiles: [URL]
-
-    var id: String { book.id }
-    var title: String { book.title }
-    var authors: String { book.authors.isEmpty ? "—" : book.authors.formatted(.list(type: .and)) }
-    var narrators: String { book.narrators.isEmpty ? "—" : book.narrators.formatted(.list(type: .and)) }
-    var statusLabel: String { status.displayName }
-    var statusSymbol: String { missingFiles.isEmpty ? status.systemImage : "exclamationmark.triangle" }
-    var missingFilesDescription: String {
-        switch missingFiles.count {
-        case 0: ""
-        case 1: "1 saved file missing"
-        default: "\(missingFiles.count.formatted()) saved files missing"
-        }
-    }
-    var statusDetails: String {
-        guard !missingFiles.isEmpty else { return statusLabel }
-        return "\(missingFilesDescription). \(missingFiles.map(\.lastPathComponent).formatted(.list(type: .and)))"
-    }
-
-    func matches(_ query: String) -> Bool {
-        [title, authors, narrators, book.asin].contains { $0.localizedStandardContains(query) }
     }
 }
 
