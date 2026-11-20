@@ -94,7 +94,7 @@ final class WorkspaceModel {
     private(set) var isTransferring = false
     private(set) var didRestoreTransfers = false
 
-    private static let booksImportError = "The files were saved. Books couldn’t open them."
+    private static let legacyBooksImportError = "The files were saved. Books couldn’t open them."
 
     private let defaults = UserDefaults.standard
     private let audible = AudibleClient()
@@ -913,7 +913,8 @@ final class WorkspaceModel {
             transfers[index].booksImportPending = nil
             return receipt.note
         } catch {
-            let message = Task.isCancelled ? "The files were saved. Books import was cancelled." : Self.booksImportError
+            let detail = Task.isCancelled ? "Books import was cancelled." : error.localizedDescription
+            let message = "The files were saved. \(detail)"
             return [receipt.note, message].compactMap { $0 }.joined(separator: " ")
         }
     }
@@ -928,7 +929,7 @@ final class WorkspaceModel {
                 var transfer = saved
                 if !saved.isFinished { transfer.status = .interrupted }
                 transfer.partialFolder = work.bookID.flatMap { partialFolders[$0] }
-                if case .done(_, let note) = saved.status, note?.hasSuffix(Self.booksImportError) == true {
+                if case .done(_, let note) = saved.status, note?.hasSuffix(Self.legacyBooksImportError) == true {
                     transfer.booksImportPending = true
                 }
                 return transfer

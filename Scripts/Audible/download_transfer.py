@@ -34,8 +34,9 @@ class PartsRequired(Exception):
     pass
 
 
-class FormatUnavailable(Exception):
-    pass
+class FormatUnavailable(OperationError):
+    def __init__(self, code="downloadResponse"):
+        super().__init__(code)
 
 
 class RestartDownload(Exception):
@@ -86,7 +87,7 @@ class TransferState:
 
 def check_staging_path(path):
     if path.is_symlink() or (path.exists() and not path.is_file()):
-        raise OperationError("fileAccess")
+        raise OperationError("stagingFileAccess")
 
 
 def artifact_matches(prefix, content_type, kind):
@@ -144,7 +145,7 @@ async def artifact_response(web, url, api, headers):
             else:
                 yield response
                 return
-    raise OperationError("network")
+    raise FormatUnavailable()
 
 
 def resource_hash(response):
@@ -265,10 +266,10 @@ async def write_body(output, iterator, first, offset, expected, progress, bandwi
     data = first
     while data:
         if expected is not None and written + len(data) > expected:
-            raise OperationError("network")
+            raise OperationError("incompleteResponse")
         # Unbuffered writes make the actual file length available after a cancelled process exits.
         if output.write(data) != len(data):
-            raise OperationError("fileAccess")
+            raise OperationError("stagingFileAccess")
         written += len(data)
         if bandwidth:
             delay = started + (written - offset) / bandwidth - now()
@@ -281,19 +282,19 @@ async def write_body(output, iterator, first, offset, expected, progress, bandwi
                 last_update = percent
         data = await anext(iterator, b"")
     if expected is not None and written != expected:
-        raise OperationError("network")
+        raise OperationError("incompleteResponse")
     return written
 
 
 async def receive(
     response, target, kind, progress, bandwidth, representation, state_path, resume
 ):
-    if response.status_code in (400, 403, 404, 410):
-        raise FormatUnavailable()
+    if response.status_code in (400, 401, 403, 404, 410):
+        raise FormatUnavailable("sourceRejected")
     filename = None
     if response.status_code in (206, 416):
         if resume is None:
-            raise OperationError("network")
+            raise OperationError("incompleteResponse")
         state, offset = resume
         expected = append_range(response, state, offset)
         if kind == "aax":
@@ -307,7 +308,7 @@ async def receive(
     else:
         response.raise_for_status()
         if response.status_code != 200 or response.headers.get("content-range"):
-            raise OperationError("network")
+            raise OperationError("incompleteResponse")
         offset = 0
         expected = identity_length(response)
         if kind == "aax":
@@ -352,7 +353,7 @@ async def receive(
     try:
         with partial.open("ab" if offset else "wb", buffering=0) as output:
             if offset and output.tell() != offset:
-                raise OperationError("network")
+                raise OperationError("stagingFileAccess")
             if state is not None and offset == 0:
                 state.save(state_path)
             written = await write_body(

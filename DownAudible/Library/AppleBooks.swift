@@ -21,8 +21,10 @@ enum AppleBooks {
     }
 
     static func open(_ urls: [URL], activate: Bool) async throws {
-        let files = urls.filter { supports($0) && FileManager.default.fileExists(atPath: $0.path) }
-        guard !files.isEmpty else { throw Issue.noPlayableFiles }
+        let supported = urls.filter(supports)
+        guard !supported.isEmpty else { throw Issue.unsupportedFiles }
+        let files = supported.filter { FileManager.default.fileExists(atPath: $0.path) }
+        guard !files.isEmpty else { throw Issue.missingFiles }
         let workspace = NSWorkspace.shared
         guard let app = workspace.urlForApplication(withBundleIdentifier: "com.apple.iBooksX") else {
             throw Issue.unavailable
@@ -30,16 +32,23 @@ enum AppleBooks {
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = activate
         configuration.addsToRecentItems = true
-        _ = try await workspace.open(files, withApplicationAt: app, configuration: configuration)
+        do {
+            _ = try await workspace.open(files, withApplicationAt: app, configuration: configuration)
+        } catch {
+            try Task.checkCancellation()
+            throw Issue.openFailed
+        }
     }
 
     private enum Issue: LocalizedError {
-        case noPlayableFiles, unavailable
+        case unsupportedFiles, missingFiles, unavailable, openFailed
 
         var errorDescription: String? {
             switch self {
-            case .noPlayableFiles: "Choose an audio file that still exists."
+            case .unsupportedFiles: "Choose a supported audio file or convert it to M4B before sending it to Books."
+            case .missingFiles: "The audio files are missing. Reconnect their drive or locate the files in Finder."
             case .unavailable: "DownAudible couldn’t find the Books app on this Mac."
+            case .openFailed: "DownAudible couldn’t open the files in Books. Open Books and try importing the audio from Finder."
             }
         }
     }

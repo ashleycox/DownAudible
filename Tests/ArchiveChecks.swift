@@ -32,6 +32,7 @@ struct ArchiveChecks {
         try checkOutputNaming(root: root)
         try checkIncompleteStaging(in: workspace)
         try await checkAudibleHelperExit(in: workspace)
+        try await checkMediaErrors(in: workspace)
 
         let previous = Data(#"{"convert":false,"keepOriginal":true,"downloadPDF":false,"downloadCover":true}"#.utf8)
         let options = try JSONDecoder().decode(DownloadOptions.self, from: previous)
@@ -180,6 +181,29 @@ struct ArchiveChecks {
         check(try outsideArchive.matches(for: [sameDuration, differentDuration]) == [sameDuration.id: [album]])
     }
 
+    private static func checkMediaErrors(in workspace: URL) async throws {
+        let probe = workspace.appending(path: "probe-without-audio")
+        let script = """
+            #!/bin/sh
+            printf '%s\\n' '{"streams":[],"chapters":[],"format":{}}'
+            """
+        try script.write(to: probe, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: probe.path)
+        let source = workspace.appending(path: "Empty.m4a")
+        do {
+            _ = try await MediaTools.probe(source, options: [], ffprobe: probe, directory: workspace)
+            fatalError("A missing source should be reported before probing")
+        } catch MediaError.sourceMissing {}
+        try Data().write(to: source)
+        do {
+            _ = try await MediaTools.probe(source, options: [], ffprobe: probe, directory: workspace)
+            fatalError("A readable container with no audio should have its own error")
+        } catch MediaError.noAudioTrack {}
+        check(MediaError.conversionFailure(from: Data("Error closing file: No space left on device".utf8)) == .destinationFull)
+        check(MediaError.conversionFailure(from: Data("Error opening output files: Permission denied".utf8)) == .destinationPermissionDenied)
+        check(MediaError.conversionFailure(from: Data("Unhandled detail in /private/book.m4a".utf8)) == .conversionFailed)
+    }
+
     private static func matchingBook(
         _ title: String, asin: String, subtitle: String? = nil, authors: [String] = [], duration: Int? = nil
     ) throws -> AudibleBook {
@@ -256,6 +280,9 @@ struct ArchiveChecks {
         let valid = MediaInput(url: aax, credentials: MediaCredentials(activationBytes: validCode))
         let damaged = MediaInput(url: workspace.appending(path: "Damaged.aax"), credentials: valid.credentials)
         let mp3 = MediaInput(url: workspace.appending(path: "Book.mp3"))
+        for source in [stale, second, damaged, mp3] {
+            try Data().write(to: source.url)
+        }
 
         func expect(
             _ outcome: ActivationCheckOutcome, from inputs: [MediaInput],

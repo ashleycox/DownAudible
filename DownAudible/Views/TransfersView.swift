@@ -231,6 +231,7 @@ private struct TransferRow: View {
                 case .failed(let reason):
                     status(reason)
                         .textSelection(.enabled)
+                        .accessibilityElement(children: .ignore)
                         .accessibilityLabel("Failed. \(reason)")
                 case .cancelled:
                     status("Cancelled")

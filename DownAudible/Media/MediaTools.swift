@@ -152,18 +152,31 @@ struct MediaTools: Sendable {
     static func probe(
         _ url: URL, options: [String], ffprobe: URL, directory: URL, metadataOnly: Bool = false
     ) async throws -> AudioProbe {
+        do {
+            guard try url.checkResourceIsReachable() else { throw MediaError.sourceMissing }
+        } catch let error as CocoaError {
+            switch error.code {
+            case .fileNoSuchFile, .fileReadNoSuchFile: throw MediaError.sourceMissing
+            case .fileReadNoPermission: throw MediaError.sourcePermissionDenied
+            default: throw MediaError.unreadableAudio
+            }
+        }
         let mode = metadataOnly ? ["-nofind_stream_info"] : ["-analyzeduration", "1000000", "-probesize", "65536"]
         let args = ["-v", "error"] + mode + [
             "-show_format", "-show_streams", "-show_chapters", "-show_data_hash", "sha256", "-of", "json"
         ] + audioInput(url, options: options)
         let (status, data, diagnostics) = try await MediaProcess.run(ffprobe, arguments: args, workingDirectory: directory)
-        let error = String(decoding: diagnostics, as: UTF8.self)
+        let error = String(decoding: diagnostics, as: UTF8.self).lowercased()
         if error.contains("[aax] mismatch in checksums") || error.contains("[aax] error in drm blob decryption") {
             throw MediaError.activationRequired
         }
-        guard status == 0, let result = try? JSONDecoder().decode(AudioProbe.self, from: data), result.audio != nil else {
+        if status != 0, error.split(separator: "\n").contains(where: { $0.hasSuffix("permission denied") }) {
+            throw MediaError.sourcePermissionDenied
+        }
+        guard status == 0, let result = try? JSONDecoder().decode(AudioProbe.self, from: data) else {
             throw MediaError.unreadableAudio
         }
+        guard result.audio != nil else { throw MediaError.noAudioTrack }
         return result
     }
 

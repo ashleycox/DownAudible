@@ -239,7 +239,7 @@ class DownloadTransferTests(unittest.IsolatedAsyncioTestCase):
     async def test_truncated_range_remains_partial(self):
         await self.disconnect()
         short_size = len(ORIGINAL) - 128
-        with self.assertRaisesRegex(OperationError, "network"):
+        with self.assertRaisesRegex(OperationError, "incompleteResponse"):
             await self.transfer(
                 lambda request: httpx.Response(
                     206,

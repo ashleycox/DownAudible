@@ -8,9 +8,13 @@ If the address is rejected, open the sign-in page again, finish in your browser,
 
 Audible may withhold a download for a preorder, expired loan, or catalogue title that has left your subscription. Refresh the library to check again. If you have a local file, match it to the book or open it in **Convert Files**.
 
+If Audible does not provide an AAX download, try **AAX with fallback** or **AAXC** in **Settings > Downloads**. If Audible refuses the download licence, check that the title is still available to your account in the Audible app. If the request says Audible is limiting downloads, wait before retrying. For a batch, lower **Simultaneous downloads** in **Settings > Jobs**. If Audible keeps limiting individual titles, sign out of the account in **Settings > Accounts**, then sign in again.
+
 ## A local file cannot be converted
 
-Check that the source is still in the folder you added or matched. If it is AAX, check which account downloaded it and use that account’s activation bytes. If it is AAXC, look for the corresponding voucher. If the destination is on an external disk, reconnect the disk and check that Finder can write to the folder.
+If the source is missing, reconnect its disk or add the file again from its current location. If the file has no audio track or cannot be read, check that it is complete and plays in an audio player. For AAX, use the activation bytes from the account that downloaded it. For AAXC, use the voucher saved with that file or download a fresh copy.
+
+If conversion runs out of space, free up storage or choose another destination. If DownAudible cannot write to the folder, check its permissions in Finder or choose another folder.
 
 ## The archive is on a disk that has been disconnected
 
@@ -18,7 +22,7 @@ Reconnect the disk, make sure the destination still points to the archive, and c
 
 ## A download keeps failing or restarts at zero
 
-Check the error in **Downloads**. Try lowering simultaneous downloads or setting a longer request timeout. **Retry** uses any valid partial file. Audible can supply a different file or a server that does not support byte ranges, in which case DownAudible starts from zero. Use **Restart Download…** from the transfer’s contextual menu to discard the partial audio and start again.
+Check the error in **Downloads**. If a request times out, check your connection or increase **Request timeout** in **Settings > Jobs**. **Retry** uses any valid partial file. Audible can supply a different file or a server that does not support byte ranges, in which case DownAudible starts from zero. Use **Restart Download…** from the transfer’s contextual menu to discard the partial audio and start again.
 
 ## Books opens without the audiobook
 

@@ -92,7 +92,7 @@ extension MediaTools {
                     )
                     let result = try await Self.probe(file.temporary, options: [], ffprobe: ffprobe, directory: workspace)
                     if chapter.matches(result) { continue }
-                } catch MediaError.conversionFailed, MediaError.unreadableAudio {
+                } catch MediaError.conversionFailed, MediaError.unreadableAudio, MediaError.noAudioTrack {
                     // Retry using the normal encoder when the source cannot be copied at the requested timestamps.
                 }
                 try Task.checkCancellation()
@@ -310,7 +310,7 @@ extension MediaTools {
             "-map", "0:a:0", "-frames:a", "3", "-f", "null", "-"
         ]
         let (status, _, _) = try await MediaProcess.run(ffmpeg, arguments: args, workingDirectory: directory)
-        guard status == 0 else { throw MediaError.voucherRequired }
+        guard status == 0 else { throw MediaError.voucherRejected }
     }
 
     private static func validatedArtwork(_ url: URL?, in directory: URL) throws -> URL? {
@@ -515,10 +515,10 @@ extension MediaTools {
         _ ffmpeg: URL, arguments: [String], directory: URL, duration: Double?, progress: @escaping MediaProcess.Progress
     ) async throws {
         let prefix = ["-hide_banner", "-loglevel", "error", "-nostdin", "-n", "-xerror", "-progress", "pipe:1"]
-        let (status, _, _) = try await MediaProcess.run(
+        let (status, _, diagnostics) = try await MediaProcess.run(
             ffmpeg, arguments: prefix + arguments, workingDirectory: directory,
             progress: progress, durationSeconds: duration
         )
-        guard status == 0 else { throw MediaError.conversionFailed }
+        guard status == 0 else { throw MediaError.conversionFailure(from: diagnostics) }
     }
 }

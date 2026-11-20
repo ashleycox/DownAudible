@@ -44,6 +44,19 @@ struct TransferQueueSnapshot: Codable, Sendable {
 }
 
 actor TransferQueueStore {
+    private enum QueueError: LocalizedError {
+        case readFailed, incomplete, writeFailed, noSpace
+
+        var errorDescription: String? {
+            switch self {
+            case .readFailed: "DownAudible couldn’t read its saved download queue. Check that you can access the Library/Application Support/DownAudible folder in your home folder."
+            case .incomplete: "The saved download queue is incomplete or damaged. Start a new download from Library or add your local audio again in Convert Files."
+            case .writeFailed: "DownAudible couldn’t save its download queue. Check that you can write to the Library/Application Support/DownAudible folder in your home folder."
+            case .noSpace: "Your Mac ran out of space while saving the download queue. Free up space so DownAudible can resume transfers after it closes."
+            }
+        }
+    }
+
     private let path: URL
     private var lastRevision = 0
 
@@ -55,13 +68,27 @@ actor TransferQueueStore {
 
     func load() throws -> TransferQueueSnapshot? {
         guard FileManager.default.fileExists(atPath: path.path) else { return nil }
-        return try JSONDecoder().decode(TransferQueueSnapshot.self, from: Data(contentsOf: path))
+        let data: Data
+        do {
+            data = try Data(contentsOf: path)
+        } catch {
+            throw QueueError.readFailed
+        }
+        guard let snapshot = try? JSONDecoder().decode(TransferQueueSnapshot.self, from: data),
+              (snapshot.batch?.work.count ?? 0) == snapshot.transfers.count else { throw QueueError.incomplete }
+        return snapshot
     }
 
     func save(_ snapshot: TransferQueueSnapshot, revision: Int) throws {
         guard revision > lastRevision else { return }
-        try FileManager.default.createDirectory(at: path.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try JSONEncoder().encode(snapshot).write(to: path, options: .atomic)
+        do {
+            try FileManager.default.createDirectory(at: path.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try JSONEncoder().encode(snapshot).write(to: path, options: .atomic)
+        } catch CocoaError.fileWriteOutOfSpace {
+            throw QueueError.noSpace
+        } catch {
+            throw QueueError.writeFailed
+        }
         lastRevision = revision
     }
 }

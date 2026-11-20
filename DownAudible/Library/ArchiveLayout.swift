@@ -235,6 +235,12 @@ enum ArchiveError: LocalizedError {
     case invalidActivation
     case filenameExhausted
     case unsafeStaging
+    case stagingUnavailable
+    case cannotRestart
+    case cannotClearStaging
+    case cannotSaveOutput
+    case matchedFileUnreadable
+    case diskFull
 
     var errorDescription: String? {
         switch self {
@@ -251,9 +257,27 @@ enum ArchiveError: LocalizedError {
         case .invalidActivation:
             "Enter the eight hexadecimal characters from your Audible activation bytes."
         case .filenameExhausted:
-            "DownAudible couldn’t find a free filename in the destination folder."
+            "DownAudible couldn’t find a free filename. Change the filename template or choose another destination folder."
         case .unsafeStaging:
             "The folder for incomplete downloads is a link. Choose another destination or restore that folder."
+        case .stagingUnavailable:
+            "DownAudible couldn’t prepare its temporary files. Reconnect the destination disk or choose a folder you can write to."
+        case .cannotRestart:
+            "DownAudible couldn’t remove the incomplete download to start again. Check that you can write to the destination folder."
+        case .cannotClearStaging:
+            "The audio was saved, but DownAudible couldn’t remove its temporary download files. Check that you can write to the destination folder."
+        case .cannotSaveOutput:
+            "DownAudible couldn’t save the output in the archive. Reconnect the destination disk or choose a folder you can write to."
+        case .matchedFileUnreadable:
+            "DownAudible couldn’t read the matched audio file. Check that it still exists and opens from Finder, or update the match."
+        case .diskFull:
+            "The destination ran out of space. Free up space or choose another destination."
         }
+    }
+
+    static func storageFailure(_ error: any Error, otherwise fallback: Self) -> any Error {
+        if error is Self || error is CancellationError { return error }
+        if (error as? CocoaError)?.code == .fileWriteOutOfSpace { return Self.diskFull }
+        return fallback
     }
 }

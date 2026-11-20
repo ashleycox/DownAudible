@@ -1,3 +1,4 @@
+import errno
 import json
 import tempfile
 import unittest
@@ -10,6 +11,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 
 import httpx
+from audible import AsyncClient
 from audible.aescipher import AESCipher
 from audible.exceptions import NotFoundError
 from audible_helper import (
@@ -18,6 +20,7 @@ from audible_helper import (
     cli_profiles,
     edit_wishlist,
     execute,
+    failure_code,
     list_books,
 )
 from download_transfer import OperationError
@@ -32,6 +35,65 @@ ASIN = "B000000001"
 
 
 class AccountToolsTests(unittest.IsolatedAsyncioTestCase):
+    async def test_download_distinguishes_aaxc_license_and_service_failures(self):
+        def denied(*reasons):
+            return {"content_license": {
+                "status_code": "Denied", "message": "Private fixture text",
+                "license_denial_reasons": [
+                    {"validationType": kind, "rejectionReason": reason}
+                    for kind, reason in reasons
+                ],
+            }}
+
+        cases = (
+            (200, denied(("Client", "RequesterEligibility")), "licenseDenied"),
+            (200, denied(("Ownership", "RequesterEligibility")), "licenseEntitlement"),
+            (200, denied(("Ownership", "RequesterEligibility"), ("AYCL", "CustomerThrottled")), "licenseThrottled"),
+            (200, {"content_license": {"status_code": "Granted"}}, "aaxcUnavailable"),
+            (404, {"error_code": "000307"}, "aaxcUnavailable"),
+            (200, {}, "licenseResponse"),
+            (401, {}, "authorization"),
+            (403, {}, "requestRejected"),
+            (404, {}, "notFound"),
+            (429, {}, "rateLimited"),
+            (503, {}, "serverUnavailable"),
+        )
+
+        async def sign(_auth, request):
+            yield request
+
+        for status, payload, expected in cases:
+            def respond(request):
+                if request.url.path.endswith(f"/library/{ASIN}"):
+                    return httpx.Response(200, json={"item": {
+                        "asin": ASIN, "title": "Download fixture",
+                        "customer_rights": {"is_consumable_offline": True},
+                    }})
+                self.assertTrue(request.url.path.endswith(f"/{ASIN}/licenserequest"))
+                return httpx.Response(status, json=payload)
+
+            def client(*args, **kwargs):
+                return AsyncClient(*args, transport=httpx.MockTransport(respond), **kwargs)
+
+            with (
+                self.subTest(expected=expected),
+                tempfile.TemporaryDirectory() as directory,
+                patch("audible_helper.audible.AsyncClient", new=client),
+                patch("audible.Authenticator.async_auth_flow", new=sign),
+            ):
+                with self.assertRaises(Exception) as caught:
+                    await execute({
+                        "command": "download", "session": json.dumps(ACCOUNT),
+                        "asin": ASIN, "directory": directory, "options": {"format": "aaxcOnly"},
+                    })
+                self.assertEqual(failure_code(caught.exception, "download"), expected)
+
+    def test_download_errors_use_safe_codes_for_disk_and_timeout(self):
+        path = "/private/fixture/secret"
+        self.assertEqual(failure_code(OSError(errno.ENOSPC, "", path), "download"), "diskFull")
+        self.assertEqual(failure_code(OSError(errno.EACCES, "", path), "download"), "stagingFileAccess")
+        self.assertEqual(failure_code(httpx.ReadTimeout(path), "download"), "timeout")
+
     async def test_activation_keeps_valid_cached_bytes(self):
         with patch("audible_helper.build_opener") as build_opener:
             result = await execute(
@@ -329,9 +391,9 @@ class AccountToolsTests(unittest.IsolatedAsyncioTestCase):
         client = Service()
         invalid = "../not-an-asin"
         rejected = await edit_wishlist(client, "wishlistAdd", [ASIN, ASIN, invalid])
-        self.assertEqual(rejected, [invalid])
+        self.assertEqual(rejected, {invalid: "invalidTitle"})
         absent = await edit_wishlist(client, "wishlistRemove", [ASIN])
-        self.assertEqual(absent, [])
+        self.assertEqual(absent, {})
         self.assertEqual(
             calls, [("wishlist", {"asin": ASIN}), (f"wishlist/{ASIN}", None)]
         )

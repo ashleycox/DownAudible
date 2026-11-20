@@ -74,7 +74,7 @@ actor ArchiveWorker {
         var errorDescription: String? {
             switch self {
             case .alreadyRunning: "This audiobook already has a transfer in progress."
-            case .noExtras(let message): message ?? "None of the selected extras are available for this title."
+            case .noExtras(let message): message ?? "Audible did not list the selected extras for this title."
             }
         }
     }
@@ -136,6 +136,7 @@ actor ArchiveWorker {
         var addedOriginal: [URL] = []
         var addedConverted: [URL] = []
         var usesAudioStaging = false
+        var issues: [String] = []
         let staging = try makeStagingDirectory(in: layout.root)
         defer { try? FileManager.default.removeItem(at: staging) }
 
@@ -143,7 +144,14 @@ actor ArchiveWorker {
             ? record.originals.map { Source(audio: $0) } : []
         if sources.isEmpty && (options.savesOriginal || needsConversion) {
             if matches.isEmpty {
-                guard book.isDownloadable else { throw ArchiveError.unavailable }
+                if !book.isDownloadable {
+                    switch book.downloadUnavailableReason {
+                    case .podcastSeries: throw AudibleError.podcastSeries
+                    case .offlineRestricted: throw AudibleError.offlineRestricted
+                    case .unpublished: throw AudibleError.notPublished
+                    case nil: throw ArchiveError.unavailable
+                    }
+                }
                 let audioDirectory = try IncompleteDownloads.audioFolder(
                     for: book.id, account: account, root: layout.root, restart: restartIncomplete
                 )
@@ -155,7 +163,11 @@ actor ArchiveWorker {
                     record.originals = sources.map(\.audio)
                     addedOriginal = record.originals.map(\.url)
                     save(&record, for: key, written: addedOriginal)
-                    try IncompleteDownloads.clear(for: book.id, account: account, root: layout.root)
+                    do {
+                        try IncompleteDownloads.clear(for: book.id, account: account, root: layout.root)
+                    } catch {
+                        issues.append(error.localizedDescription)
+                    }
                     usesAudioStaging = false
                 }
             } else {
@@ -179,7 +191,6 @@ actor ArchiveWorker {
         } else {
             sourceFormat ?? "extras"
         }
-        var issues: [String] = []
         let artwork = try await getArtwork(
             book, audible: audible, staging: staging, title: title, layout: layout,
             format: extrasFormat, saveFiles: options.downloadCover, embed: needsConversion && conversion.embedArtwork,
@@ -233,7 +244,11 @@ actor ArchiveWorker {
             record.addConversion(converted, key: recipe)
             save(&record, for: key, written: converted)
             if usesAudioStaging {
-                try IncompleteDownloads.clear(for: book.id, account: account, root: layout.root)
+                do {
+                    try IncompleteDownloads.clear(for: book.id, account: account, root: layout.root)
+                } catch {
+                    issues.append(error.localizedDescription)
+                }
             }
         }
 
@@ -246,11 +261,13 @@ actor ArchiveWorker {
                     record.pdf = destination
                     save(&record, for: key, written: [destination])
                 } else {
-                    issues.append("Audible didn’t return the PDF.")
+                    let reason = extras.failed["PDF"] ?? .extraUnavailable
+                    issues.append("Couldn’t download the PDF. \(reason.localizedDescription)")
                 }
             } catch {
                 try Task.checkCancellation()
-                issues.append("Couldn’t download the PDF.")
+                let action = error is ArchiveError ? "save" : "download"
+                issues.append("Couldn’t \(action) the PDF. \(error.localizedDescription)")
             }
         }
 
@@ -323,7 +340,7 @@ actor ArchiveWorker {
             return ExportReceipt(url: first, converted: written)
         }
 
-        guard Self.isFile(file.url) else { throw ArchiveError.missingLocalFiles }
+        guard Self.isFile(file.url) else { throw MediaError.sourceMissing }
         let credentials = try await mediaCredentials(
             for: nil, audio: StoredAudio(url: file.url, asin: file.asin), audible: audible, activationBytes: activationBytes
         )
@@ -478,13 +495,16 @@ actor ArchiveWorker {
                     save(&record, for: key, written: [destination])
                     if artwork == source { artwork = destination }
                 }
-                if extras.failed.contains("cover") {
-                    issues.append("Couldn’t download every cover.")
-                }
+            }
+            if let reason = extras.failed["cover"], saveFiles || artwork == nil {
+                issues.append("Couldn’t download the requested cover art. \(reason.localizedDescription)")
             }
         } catch {
             try Task.checkCancellation()
-            if saveFiles { issues.append("Couldn’t save every cover.") }
+            if saveFiles || artwork == nil {
+                let action = error is ArchiveError ? "save" : "download"
+                issues.append("Couldn’t \(action) the requested cover art. \(error.localizedDescription)")
+            }
         }
         return artwork
     }
@@ -535,12 +555,12 @@ actor ArchiveWorker {
                         saved[chapterStyle] = destination
                         record.chapters = saved
                         save(&record, for: key, written: [destination])
-                    } else if extras.failed.contains("chapters") {
-                        issues.append("Couldn’t download the chapter list.")
+                    } else if let reason = extras.failed["chapters"] {
+                        issues.append("Couldn’t download the chapter list. \(reason.localizedDescription)")
                     }
                 } catch {
                     try Task.checkCancellation()
-                    issues.append("Couldn’t save the chapter list.")
+                    issues.append("Couldn’t save the chapter list. \(error.localizedDescription)")
                 }
             }
             if annotations {
@@ -551,18 +571,18 @@ actor ArchiveWorker {
                         )
                         record.annotations = destination
                         save(&record, for: key, written: [destination])
-                    } else if extras.failed.contains("annotations") {
-                        issues.append("Couldn’t download the notes.")
+                    } else if let reason = extras.failed["annotations"] {
+                        issues.append("Couldn’t download the notes. \(reason.localizedDescription)")
                     }
                 } catch {
                     try Task.checkCancellation()
-                    issues.append("Couldn’t save the notes.")
+                    issues.append("Couldn’t save the notes. \(error.localizedDescription)")
                 }
             }
         } catch {
             try Task.checkCancellation()
-            if chapters { issues.append("Couldn’t download the chapter list.") }
-            if annotations { issues.append("Couldn’t download the notes.") }
+            let files = chapters ? (annotations ? "the chapter list and notes" : "the chapter list") : "the notes"
+            issues.append("Couldn’t download \(files). \(error.localizedDescription)")
         }
     }
 
@@ -631,7 +651,13 @@ actor ArchiveWorker {
                     originalFilename: source.originalFilename
                 )
                 if copy {
-                    try FileManager.default.copyItem(at: source.audio.url, to: destination)
+                    do {
+                        try FileManager.default.copyItem(at: source.audio.url, to: destination)
+                    } catch CocoaError.fileReadNoPermission {
+                        throw ArchiveError.matchedFileUnreadable
+                    } catch CocoaError.fileReadNoSuchFile {
+                        throw ArchiveError.missingLocalFiles
+                    }
                 } else {
                     try FileManager.default.moveItem(at: source.audio.url, to: destination)
                 }
@@ -648,7 +674,7 @@ actor ArchiveWorker {
                     try? FileManager.default.moveItem(at: written.audio.url, to: original.audio.url)
                 }
             }
-            throw error
+            throw ArchiveError.storageFailure(error, otherwise: .cannotSaveOutput)
         }
         return saved
     }
@@ -665,21 +691,33 @@ actor ArchiveWorker {
         let destination = try availableURL(
             in: directory, title: title, layout: layout, extension: source.pathExtension, suffix: suffix
         )
-        try FileManager.default.moveItem(at: source, to: destination)
+        do {
+            try FileManager.default.moveItem(at: source, to: destination)
+        } catch {
+            throw ArchiveError.storageFailure(error, otherwise: .cannotSaveOutput)
+        }
         return destination
     }
 
     private func makeOutputDirectory(_ layout: ArchiveLayout, _ title: ArchiveTitle, format: String) throws -> URL {
         let directory = try layout.directory(for: title, format: format)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        } catch {
+            throw ArchiveError.storageFailure(error, otherwise: .cannotSaveOutput)
+        }
         return directory
     }
 
     private func makeStagingDirectory(in root: URL) throws -> URL {
         let url = root.appending(component: ".downaudible-\(UUID().uuidString)", directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(
-            at: url, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]
-        )
+        do {
+            try FileManager.default.createDirectory(
+                at: url, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]
+            )
+        } catch {
+            throw ArchiveError.storageFailure(error, otherwise: .stagingUnavailable)
+        }
         return url
     }
 

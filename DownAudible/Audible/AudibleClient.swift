@@ -181,45 +181,72 @@ nonisolated struct AudibleDownload: Sendable {
 nonisolated struct AudibleExtras: Sendable {
     let covers: [URL]
     let pdf: URL?
-    let failed: [String]
+    let failed: [String: AudibleError]
     var cover: URL? { covers.first }
 }
 
 nonisolated struct AudibleJSONExtras: Sendable {
     let chapters: URL?
     let annotations: URL?
-    let failed: [String]
+    let failed: [String: AudibleError]
 }
 
 nonisolated enum AudibleError: String, Decodable, LocalizedError {
     case activation, activationRequired, authorization, fileAccess, invalidRedirect, keychain, network
     case notSignedIn, service, signInFailed, unavailable, voucherMissing, helperMissing
-    case authImport, cliConfig, importPassword, importMarketplace, unsupportedLegacySignIn
-    case exportPassword
-
-    var isRetryable: Bool { self == .network }
+    case authImport, cliConfig, importPassword, importPasswordIncorrect, importMarketplace, unsupportedLegacySignIn
+    case exportPassword, exportFileAccess, helperStart
+    case aaxUnavailable, aaxcUnavailable, licenseDenied, licenseEntitlement, licenseThrottled, licenseResponse
+    case notFound, notPublished, offlineRestricted, partsUnavailable, requestRejected, podcastSeries, invalidTitle
+    case rateLimited, serverUnavailable, timeout, sourceRejected, downloadResponse, incompleteResponse
+    case diskFull, stagingFileAccess, extraUnavailable
 
     var errorDescription: String? {
         switch self {
         case .activation: "Audible could not provide the activation bytes. You can enter them in Convert Files."
         case .activationRequired: "Sign in to Audible or enter your activation bytes in Convert Files."
-        case .authorization: "Your Audible session has expired. Sign in again and retry."
-        case .fileAccess: "DownAudible could not read or write a file. Check that the folder is available and has enough space."
+        case .authorization: "Audible did not accept your saved sign-in. Sign out of this account in Settings > Accounts, then sign in again."
+        case .fileAccess: "DownAudible could not open the selected file. Check that it still exists and that you can open it in Finder."
         case .invalidRedirect: "Copy the full address from your browser after signing in to Amazon."
         case .keychain: "DownAudible could not access your credentials in Keychain."
-        case .network: "The connection to Audible was interrupted. Try again."
+        case .network: "DownAudible lost its connection while contacting Audible. Check your internet connection and retry."
         case .notSignedIn: "Sign in to Audible to continue."
         case .service: "DownAudible could not complete the request. Try again."
         case .signInFailed: "Amazon could not finish signing you in. Start again with a new sign-in link."
         case .unavailable: "Audible did not provide a download for this title."
         case .voucherMissing: "DownAudible could not find a license for this AAXC file. Keep its .voucher file beside it or match it to your Audible library."
-        case .helperMissing: "The Audible helper is missing. Rebuild DownAudible to restore it."
+        case .helperMissing: "DownAudible’s Audible helper is missing. Reinstall DownAudible and try again."
+        case .helperStart: "DownAudible could not start its Audible helper. Reopen DownAudible and try again."
         case .authImport: "DownAudible could not read this Audible CLI authentication file."
         case .cliConfig: "Choose an Audible CLI config.toml that points to at least one existing authentication file."
         case .importPassword: "Enter the password used to encrypt this Audible CLI authentication file."
+        case .importPasswordIncorrect: "DownAudible could not unlock this account file. Check the password or export a new copy of the file."
         case .importMarketplace: "Choose the Audible marketplace for this authentication file."
         case .unsupportedLegacySignIn: "Audible username sign-in is available in the United Kingdom, United States and Germany."
         case .exportPassword: "Enter a password to protect the account file."
+        case .exportFileAccess: "DownAudible could not save the account file. Choose a folder you can write to in Finder."
+        case .aaxUnavailable: "Audible did not provide an AAX download. Choose AAX with fallback or AAXC in Settings > Downloads and retry."
+        case .aaxcUnavailable: "Audible did not provide a downloadable AAXC version for this title. If you have a local copy, open it in Convert Files."
+        case .licenseDenied: "Audible refused the download license. Check that the title is still available to this account in the Audible app."
+        case .licenseEntitlement: "Audible could not confirm download rights for this account. Check whether the title is still in your purchases or subscription."
+        case .licenseThrottled: "Audible is limiting download licenses for this account. Wait before retrying. If it continues on individual titles, sign out and sign in again."
+        case .licenseResponse: "Audible returned an unreadable download license. Try again later."
+        case .notFound: "Audible could not find what DownAudible requested. Check your account and marketplace, then refresh the library."
+        case .notPublished: "This title has not been released. Refresh your library after the release date."
+        case .offlineRestricted: "Audible does not allow offline downloads of this title for this account. Check that it is still in your purchases or subscription."
+        case .partsUnavailable: "Audible did not provide the audio parts for this book. Refresh your library and retry."
+        case .podcastSeries: "Choose an individual podcast episode to download."
+        case .invalidTitle: "Audible needs a valid title identifier. Refresh the list and choose the title again."
+        case .requestRejected: "Audible rejected the request. Check the account and marketplace. If the problem continues, sign out and sign in again."
+        case .rateLimited: "Audible received too many requests. Wait before retrying. For a batch, lower Simultaneous downloads in Settings > Jobs."
+        case .serverUnavailable: "The Audible service returned a server error. Try again later."
+        case .timeout: "The Audible request timed out. Check your connection or increase Request timeout in Settings > Jobs."
+        case .sourceRejected: "The download server refused to send the file. Retry or check that it is still available in Audible."
+        case .downloadResponse: "The download server sent an unexpected response instead of the requested file. Try again later."
+        case .incompleteResponse: "The download arrived incomplete. Use Retry in Downloads to resume any valid partial file."
+        case .diskFull: "There is not enough space to write the file. Free up space or choose another destination."
+        case .stagingFileAccess: "DownAudible could not access its temporary download files. Reconnect the destination disk or choose a writable folder."
+        case .extraUnavailable: "Audible did not list this file for the title."
         }
     }
 }
@@ -324,11 +351,11 @@ nonisolated struct AudibleClient: Sendable {
         return try await run(.init(command: .catalog, session: session(), query: query))
     }
 
-    @concurrent func addToWishlist(_ asins: [String]) async throws -> [String] {
+    @concurrent func addToWishlist(_ asins: [String]) async throws -> [String: AudibleError] {
         try await run(.init(command: .wishlistAdd, session: session(), asins: asins))
     }
 
-    @concurrent func removeFromWishlist(_ asins: [String]) async throws -> [String] {
+    @concurrent func removeFromWishlist(_ asins: [String]) async throws -> [String: AudibleError] {
         try await run(.init(command: .wishlistRemove, session: session(), asins: asins))
     }
 
@@ -346,7 +373,13 @@ nonisolated struct AudibleClient: Sendable {
         guard !password.isEmpty else { throw AudibleError.exportPassword }
         let contents: String = try await run(.init(command: .exportAuthFile, session: session(), password: password))
         try Task.checkCancellation()
-        try Data(contents.utf8).write(to: destination, options: .atomic)
+        do {
+            try Data(contents.utf8).write(to: destination, options: .atomic)
+        } catch CocoaError.fileWriteOutOfSpace {
+            throw AudibleError.diskFull
+        } catch {
+            throw AudibleError.exportFileAccess
+        }
     }
 
     @concurrent func chapters(for book: AudibleBook) async throws -> [AudibleChapter] {
@@ -389,7 +422,7 @@ nonisolated struct AudibleClient: Sendable {
     ) async throws -> AudibleExtras {
         let getPDF = pdf && book.hasPDF
         let coverURL = cover ? book.coverURL : nil
-        guard getPDF || cover else { return AudibleExtras(covers: [], pdf: nil, failed: []) }
+        guard getPDF || cover else { return AudibleExtras(covers: [], pdf: nil, failed: [:]) }
         let result: ExtrasResponse = try await run(.init(
             command: .extras,
             session: session(),
@@ -410,7 +443,7 @@ nonisolated struct AudibleClient: Sendable {
     @concurrent func downloadJSONExtras(
         _ book: AudibleBook, to directory: URL, chapters: Bool, annotations: Bool
     ) async throws -> AudibleJSONExtras {
-        guard chapters || annotations else { return AudibleJSONExtras(chapters: nil, annotations: nil, failed: []) }
+        guard chapters || annotations else { return AudibleJSONExtras(chapters: nil, annotations: nil, failed: [:]) }
         let result: JSONExtrasResponse = try await run(.init(
             command: .jsonExtras, session: session(), asin: book.asin, directory: directory.path,
             chapters: chapters, annotations: annotations
@@ -583,13 +616,13 @@ private nonisolated struct DownloadResponse: Decodable, Sendable {
 private nonisolated struct ExtrasResponse: Decodable, Sendable {
     let covers: [String]
     let pdf: String?
-    let failed: [String]
+    let failed: [String: AudibleError]
 }
 
 private nonisolated struct JSONExtrasResponse: Decodable, Sendable {
     let chapters: String?
     let annotations: String?
-    let failed: [String]
+    let failed: [String: AudibleError]
 }
 
 private nonisolated struct KeyAndIV: Codable {
@@ -668,10 +701,15 @@ private nonisolated final class AudibleProcess: Sendable {
                 try? writer.close()
             }
 
-            try child.withLock { active in
+            do {
+                try child.withLock { active in
+                    try Task.checkCancellation()
+                    try process.run()
+                    active = process
+                }
+            } catch {
                 try Task.checkCancellation()
-                try process.run()
-                active = process
+                throw AudibleError.helperStart
             }
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .secondsSince1970

@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import errno
 import json
 import logging
 import math
@@ -19,7 +20,16 @@ import audible
 import httpx
 from audible.activation_bytes import extract_activation_bytes
 from audible.aescipher import AESCipher, detect_file_encryption
-from audible.exceptions import NotFoundError, RequestError, Unauthorized
+from audible.client import default_response_callback
+from audible.exceptions import (
+    AuthFlowError,
+    NoRefreshToken,
+    NotFoundError,
+    NotResponding,
+    RequestError,
+    StatusError,
+    Unauthorized,
+)
 from audible.localization import Locale
 from audible.login import build_oauth_url, create_code_verifier
 from audible.register import register
@@ -231,7 +241,7 @@ def import_auth_file(request):
         raise
     except Exception as error:
         raise OperationError(
-            "importPassword" if encryption else "authImport"
+            "importPasswordIncorrect" if encryption else "authImport"
         ) from error
     if not isinstance(values, dict):
         raise OperationError("authImport")
@@ -295,10 +305,10 @@ def represent_book(item):
     unavailable_reason = None
     if item.is_parent_podcast():
         unavailable_reason = "podcastSeries"
-    elif rights.get("is_consumable_offline") is False:
-        unavailable_reason = "offlineRestricted"
     elif not published_or_unknown(item):
         unavailable_reason = "unpublished"
+    elif rights.get("is_consumable_offline") is False:
+        unavailable_reason = "offlineRestricted"
     library_status = item.library_status or {}
     rating = (item.rating or {}).get("overall_distribution") or {}
     genres = (
@@ -479,11 +489,11 @@ async def catalog_search(client, text):
 
 
 async def edit_wishlist(client, command, asins):
-    failed = []
+    failed = {}
     # Audible can throttle bursts of Wishlist requests.
     for asin in dict.fromkeys(asins):
         if not re.fullmatch(r"[A-Za-z0-9]{10}", asin):
-            failed.append(asin)
+            failed[asin] = "invalidTitle"
             continue
         try:
             if command == "wishlistAdd":
@@ -494,9 +504,9 @@ async def edit_wishlist(client, command, asins):
             raise
         except NotFoundError:
             if command == "wishlistAdd":
-                failed.append(asin)
-        except (RequestError, httpx.HTTPError):
-            failed.append(asin)
+                failed[asin] = "notFound"
+        except (RequestError, httpx.HTTPError) as error:
+            failed[asin] = failure_code(error)
     return failed
 
 
@@ -546,6 +556,45 @@ def web_cookies(auth):
     return cookies
 
 
+def check_license_response(response):
+    if not response.request.url.path.endswith("/licenserequest"):
+        return default_response_callback(response)
+
+    if response.status_code in (400, 404):
+        try:
+            error = response.json()
+        except ValueError:
+            pass
+        else:
+            if isinstance(error, dict) and error.get("error_code") == "000307":
+                raise OperationError("aaxcUnavailable")
+
+    data = default_response_callback(response)
+    content_license = data.get("content_license") if isinstance(data, dict) else None
+    if not isinstance(content_license, dict) or not isinstance(
+        content_license.get("status_code"), str
+    ):
+        raise OperationError("licenseResponse")
+    if content_license["status_code"] == "Denied":
+        reasons = content_license.get("license_denial_reasons")
+        if isinstance(reasons, list):
+            if any(
+                isinstance(reason, dict)
+                and reason.get("rejectionReason") == "CustomerThrottled"
+                for reason in reasons
+            ):
+                raise OperationError("licenseThrottled")
+            if reasons and all(
+                isinstance(reason, dict)
+                and reason.get("rejectionReason") == "RequesterEligibility"
+                and reason.get("validationType") in ("Ownership", "Membership", "AYCL")
+                for reason in reasons
+            ):
+                raise OperationError("licenseEntitlement")
+        raise OperationError("licenseDenied")
+    return data
+
+
 def conversion_credentials(license_response):
     voucher = license_response.get("content_license", {}).get("license_response", {})
     if not isinstance(voucher, dict):
@@ -564,10 +613,12 @@ async def download_part(item, client, web, folder, progress, options):
     if (
         not isinstance(item.asin, str)
         or not re.fullmatch(r"[A-Za-z0-9]{10}", item.asin)
-        or not (item.customer_rights or {}).get("is_consumable_offline", True)
-        or not item.is_published()
     ):
         raise OperationError("unavailable")
+    if not item.is_published():
+        raise OperationError("notPublished")
+    if not (item.customer_rights or {}).get("is_consumable_offline", True):
+        raise OperationError("offlineRestricted")
     quality = options.get("quality", "best")
     mode = options.get("format", "preferAAX")
     bandwidth = max(0, options.get("bytesPerSecond", 0))
@@ -599,7 +650,7 @@ async def download_part(item, client, web, folder, progress, options):
             continue
 
     if mode == "aaxOnly":
-        raise OperationError("unavailable")
+        raise OperationError("aaxUnavailable")
     url, codec, voucher = await item.get_aaxc_url(quality)
     extension = "mp3" if codec.lower() == "mpeg" else "aaxc"
     credentials = conversion_credentials(voucher)
@@ -629,7 +680,7 @@ async def resolve_parts(item):
     library = await item.get_child_items() or []
     parts = [part for part in library if part.content_delivery_type == "AudioPart"]
     if not parts:
-        raise OperationError("unavailable")
+        raise OperationError("partsUnavailable")
     return parts
 
 
@@ -680,17 +731,17 @@ async def cover_urls(client, request, options):
 async def download_extras(client, web, request, options):
     folder = Path(request["directory"])
     asin = request["asin"]
-    result = {"covers": [], "failed": []}
+    result = {"covers": [], "failed": {}}
+    failed = result["failed"]
     bandwidth = max(0, options.get("bytesPerSecond", 0))
     if request.get("cover"):
         try:
             urls = await cover_urls(client, request, options)
         except Unauthorized:
             raise
-        except RequestError:
+        except RequestError as error:
+            failed["cover"] = failure_code(error, "extras")
             urls = []
-        if not urls or any(url is None for _, url in urls):
-            result["failed"].append("cover")
         for basename, url in urls:
             if url is None:
                 continue
@@ -700,9 +751,10 @@ async def download_extras(client, web, request, options):
                     web, url, folder / basename, "cover", bandwidth=bandwidth
                 )
                 result["covers"].append(cover.path.name)
-            except (FormatUnavailable, httpx.HTTPError, OperationError):
-                if "cover" not in result["failed"]:
-                    result["failed"].append("cover")
+            except (httpx.HTTPError, OperationError, OSError) as error:
+                failed.setdefault("cover", failure_code(error, "extras"))
+        if not urls or any(url is None for _, url in urls):
+            failed.setdefault("cover", "extraUnavailable")
     if request.get("pdf"):
         try:
             url = (
@@ -717,15 +769,15 @@ async def download_extras(client, web, request, options):
                 bandwidth=bandwidth,
             )
             result["pdf"] = pdf.path.name
-        except (FormatUnavailable, httpx.HTTPError, OperationError):
-            result["failed"].append("PDF")
+        except (httpx.HTTPError, OperationError, OSError) as error:
+            failed["PDF"] = failure_code(error, "extras")
     return result
 
 
 async def download_json_extras(client, request, options):
     folder = Path(request["directory"])
     item = LibraryItem({"asin": request["asin"]}, client)
-    result = {"failed": []}
+    result = {"failed": {}}
     if request.get("chapters"):
         try:
             metadata = await item.get_content_metadata(
@@ -739,8 +791,8 @@ async def download_json_extras(client, request, options):
             result["chapters"] = filename
         except Unauthorized:
             raise
-        except (httpx.HTTPError, RequestError):
-            result["failed"].append("chapters")
+        except (httpx.HTTPError, RequestError, AudibleCliException, OSError) as error:
+            result["failed"]["chapters"] = failure_code(error, "jsonExtras")
     if request.get("annotations"):
         try:
             annotations = await item.get_annotations()
@@ -751,8 +803,8 @@ async def download_json_extras(client, request, options):
             result["annotations"] = filename
         except Unauthorized:
             raise
-        except (httpx.HTTPError, RequestError):
-            result["failed"].append("annotations")
+        except (httpx.HTTPError, RequestError, AudibleCliException, OSError) as error:
+            result["failed"]["annotations"] = failure_code(error, "jsonExtras")
     return result
 
 
@@ -795,6 +847,7 @@ async def execute(request):
         cookies=web_cookies(auth),
         timeout=timeout,
         headers={"Accept-Encoding": "identity", "User-Agent": DOWNLOAD_USER_AGENT},
+        response_callback=check_license_response,
     ) as client:
         if command == "library":
             return await list_books(client, options)
@@ -828,6 +881,40 @@ async def execute(request):
     raise OperationError("service")
 
 
+def failure_code(error, command=None):
+    if isinstance(error, OperationError):
+        return error.code
+    if isinstance(error, LicenseDenied):
+        return "licenseDenied"
+    if isinstance(error, NoDownloadUrl):
+        return "aaxcUnavailable"
+    if isinstance(error, PartsRequired):
+        return "partsUnavailable"
+    if isinstance(error, (AuthFlowError, NoRefreshToken)):
+        return "authorization"
+    if isinstance(error, (StatusError, httpx.HTTPStatusError)):
+        status = error.response.status_code
+        if 500 <= status < 600:
+            return "serverUnavailable"
+        return {
+            401: "authorization",
+            403: "requestRejected",
+            404: "notFound",
+            429: "rateLimited",
+        }.get(status, "requestRejected")
+    if isinstance(error, (httpx.TimeoutException, NotResponding)):
+        return "timeout"
+    if isinstance(error, (httpx.RequestError, RequestError)):
+        return "network"
+    if isinstance(error, OSError):
+        if error.errno in (errno.ENOSPC, errno.EDQUOT):
+            return "diskFull"
+        if command in ("download", "extras", "jsonExtras"):
+            return "stagingFileAccess"
+        return "fileAccess"
+    return "service"
+
+
 def main():
     logging.disable(logging.CRITICAL)
     # Upstream occasionally prints raw responses on failure. Only emit safe protocol messages.
@@ -836,33 +923,13 @@ def main():
         contextlib.redirect_stdout(discard),
         contextlib.redirect_stderr(discard),
     ):
+        request = {}
         try:
-            result = asyncio.run(execute(json.load(sys.stdin)))
-            emit(result=result)
-        except OperationError as error:
-            emit(error=error.code)
-        except Unauthorized:
-            emit(error="authorization")
-        except (
-            NotFoundError,
-            FormatUnavailable,
-            PartsRequired,
-            LicenseDenied,
-            NoDownloadUrl,
-        ):
-            emit(error="unavailable")
-        except httpx.HTTPStatusError as error:
-            emit(
-                error="authorization"
-                if error.response.status_code == 401
-                else "network"
-            )
-        except (httpx.RequestError, RequestError):
-            emit(error="network")
-        except OSError:
-            emit(error="fileAccess")
-        except Exception:  # noqa: BLE001 - upstream exceptions can contain authentication data
-            emit(error="service")
+            request = json.load(sys.stdin)
+            emit(result=asyncio.run(execute(request)))
+        except Exception as error:  # noqa: BLE001 - upstream exceptions can contain authentication data
+            command = request.get("command") if isinstance(request, dict) else None
+            emit(error=failure_code(error, command))
 
 
 if __name__ == "__main__":

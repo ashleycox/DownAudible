@@ -132,11 +132,20 @@ struct AudibleWishlistView: View {
             let failed = try await (removing
                 ? client.removeFromWishlist(asins.sorted())
                 : client.addToWishlist(asins.sorted()))
-            try await load()
+            var problems: [String] = []
             if !failed.isEmpty {
-                let ids = failed.formatted(.list(type: .and))
-                issue = removing ? "Couldn’t remove \(ids)." : "Couldn’t add \(ids)."
+                let action = removing ? "remove" : "add"
+                let titles = failed.count == 1 ? "the selected title" : "\(failed.count) selected titles"
+                problems.append("Couldn’t \(action) \(titles).")
+                problems += Set(failed.values.map(\.localizedDescription)).sorted()
             }
+            do {
+                try await load()
+            } catch {
+                try Task.checkCancellation()
+                problems.append("Couldn’t refresh the Wish List. \(error.localizedDescription)")
+            }
+            issue = problems.isEmpty ? nil : problems.joined(separator: " ")
         }
     }
 

@@ -30,11 +30,19 @@ enum IncompleteDownloads {
         try check(folder)
         try refuseLink(audio)
         if restart, FileManager.default.fileExists(atPath: audio.path) {
-            try FileManager.default.removeItem(at: audio)
+            do {
+                try FileManager.default.removeItem(at: audio)
+            } catch {
+                throw ArchiveError.storageFailure(error, otherwise: .cannotRestart)
+            }
         }
-        try FileManager.default.createDirectory(
-            at: audio, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]
-        )
+        do {
+            try FileManager.default.createDirectory(
+                at: audio, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]
+            )
+        } catch {
+            throw ArchiveError.storageFailure(error, otherwise: .stagingUnavailable)
+        }
         return audio
     }
 
@@ -65,7 +73,11 @@ enum IncompleteDownloads {
         let folder = folder(for: id, account: account, root: root)
         try check(folder)
         if FileManager.default.fileExists(atPath: folder.path) {
-            try FileManager.default.removeItem(at: folder)
+            do {
+                try FileManager.default.removeItem(at: folder)
+            } catch {
+                throw ArchiveError.storageFailure(error, otherwise: .cannotClearStaging)
+            }
         }
     }
 
