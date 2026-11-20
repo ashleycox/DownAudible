@@ -31,8 +31,10 @@ struct LibraryView: View {
                     Button("Sign In…") { openSignIn(adding: false) }
                         .buttonStyle(.borderedProminent)
                         .disabled(!model.canSwitchAccounts)
+                        .appHelp("Connect your Audible account to load its library.")
                     Button("Import from Audible CLI…") { showingImport = true }
                         .disabled(!model.canSwitchAccounts)
+                        .appHelp("Use a saved Audible CLI login to connect your account.")
                 }
             }
         }
@@ -51,38 +53,40 @@ struct LibraryView: View {
                 ToolbarItemGroup {
                     Button("Refresh Library", systemImage: "arrow.clockwise", action: refresh)
                         .disabled(model.isRefreshing || model.isScanning)
-                        .help("Refresh Library")
+                        .appHelp("Fetch the latest information from your Audible library.")
 
-                    Menu("Sort Library", systemImage: "arrow.up.arrow.down") {
+                    Menu(LibraryBrowseMenu.sort.rawValue, systemImage: "arrow.up.arrow.down") {
                         LibrarySortItems(actions: browseActions)
                     }
                     .labelStyle(.iconOnly)
                     .accessibilityValue("\(sort.field.displayName), \(sort.field.orderName(sort.direction))")
-                    .help("Sort Library")
+                    .appHelp("Choose how audiobooks are ordered. Open this menu with Shift–Command–S.")
 
                     Menu {
                         LibraryFilterItems(actions: browseActions)
                     } label: {
-                        Label("Filter Library", systemImage: filters.isEmpty
+                        Label(LibraryBrowseMenu.filter.rawValue, systemImage: filters.isEmpty
                               ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
                     }
                     .labelStyle(.iconOnly)
                     .accessibilityValue(filters.summary.formatted(.list(type: .and)))
-                    .help("Filter Library")
+                    .appHelp("Narrow the library by book details or download status. Open this menu with Shift–Command–F.")
 
                     Menu("Download", systemImage: "arrow.down.to.line") {
                         LibraryDownloadActions(model: model)
                     }
                     .disabled(model.books.isEmpty || !model.canRequestDownloads)
                     .labelStyle(.iconOnly)
-                    .help("Download audiobooks")
+                    .appHelp("Choose which audiobooks to download and whether to review the batch settings first.")
 
                     Menu("Library Actions", systemImage: "ellipsis.circle") {
                         Button("Library Status", systemImage: "info.circle") { openWindow(id: "library-status") }
+                            .appHelp("See which books have saved audio, need a download, or are unavailable.")
                         Button("Recheck Saved Files", systemImage: "arrow.clockwise") {
                             Task { await model.recheckFiles() }
                         }
                             .disabled(model.isScanning || model.isRefreshing || model.isCheckingFiles)
+                            .appHelp("Check that audio files in the archive and matched folder are still present.")
                         Divider()
                         LibraryFolderActions(model: model)
                         let selection = model.selectedAudiobooks
@@ -95,10 +99,11 @@ struct LibraryView: View {
                             Button("Audible Tools…", systemImage: "wrench.and.screwdriver") {
                                 openWindow(id: "audible-tools")
                             }
+                            .appHelp("Open the Wish List, catalogue search, and Audible account tools.")
                         }
                     }
                     .labelStyle(.iconOnly)
-                    .help("Library Actions")
+                    .appHelp("Show file matching, saved audio, and other actions for this library.")
                 }
             }
             if !model.accounts.isEmpty {
@@ -146,16 +151,21 @@ struct LibraryView: View {
                     }
                 }
                 .disabled(!model.canSwitchAccounts || model.activeAccount?.id == account.id)
+                .appHelp("Show the library for \(account.name).")
             }
             Divider()
             Button("Add Account…") { openSignIn(adding: true) }
                 .disabled(!model.canSwitchAccounts)
+                .appHelp("Connect another Audible account.")
             Button("Import from Audible CLI…") { showingImport = true }
                 .disabled(!model.canSwitchAccounts)
+                .appHelp("Connect another account using a saved Audible CLI login.")
             SettingsLink { Label("Settings…", systemImage: "gearshape") }
+                .appHelp("Open DownAudible settings.")
             if model.signedIn {
                 Button("Sign Out", action: model.signOut)
                     .disabled(!model.canRemoveAccounts)
+                    .appHelp("Clear the saved sign-in for the current Audible account.")
             }
         } label: {
             Label(model.activeAccount?.name ?? "Audible Accounts", systemImage: "person.crop.circle")
@@ -163,7 +173,7 @@ struct LibraryView: View {
         .labelStyle(.iconOnly)
         .accessibilityLabel("Audible Accounts")
         .accessibilityValue(model.activeAccount?.name ?? "")
-        .help(model.activeAccount?.name ?? "Audible Accounts")
+        .appHelp("Switch accounts or manage the current Audible sign-in.")
     }
 
     private var library: some View {
@@ -176,19 +186,23 @@ struct LibraryView: View {
             Table(rows, selection: $model.selectedBooks, sortOrder: tableSortOrder) {
                 TableColumn("Title", value: \.title) { row in
                     Text(row.title)
-                        .help(row.title)
+                        .appHelp(row.title)
                 }
                 .width(min: 128, ideal: 280)
-                TableColumn("Author", value: \.authors)
-                    .width(min: 80, ideal: 144)
-                TableColumn("Narrator", value: \.narrators)
-                    .width(min: 80, ideal: 144)
+                TableColumn("Author", value: \.authors) { row in
+                    Text(row.authors).appHelp(row.authors)
+                }
+                .width(min: 80, ideal: 144)
+                TableColumn("Narrator", value: \.narrators) { row in
+                    Text(row.narrators).appHelp(row.narrators)
+                }
+                .width(min: 80, ideal: 144)
                 TableColumn("Download Status", value: \.statusLabel) { row in
                     Label(row.statusLabel, systemImage: row.statusSymbol)
                         .labelStyle(.titleAndIcon)
                         .lineLimit(1)
                         .foregroundStyle(.secondary)
-                        .help(row.statusDetails)
+                        .appHelp(row.statusDetails)
                         .accessibilityValue(row.missingFilesDescription)
                 }
                 .width(min: 124, ideal: 144, max: 180)
@@ -198,8 +212,10 @@ struct LibraryView: View {
                 if !books.isEmpty {
                     Button("Download") { model.requestDownloads(books) }
                         .disabled(!model.canRequestDownloads)
+                        .appHelp("Download these audiobooks using the saved settings.")
                     Button("Download As…") { model.requestDownloads(books, customizing: true) }
                         .disabled(!model.canRequestDownloads)
+                        .appHelp("Review the options before downloading these audiobooks.")
                     LibraryRestartAction(model: model, books: books)
                     Divider()
                     LibraryBookActions(model: model, books: books)
@@ -224,10 +240,11 @@ struct LibraryView: View {
         return HStack(spacing: 8) {
             Label(summary, systemImage: "line.3.horizontal.decrease.circle.fill")
                 .lineLimit(1)
-                .help(summary)
+                .appHelp(summary)
                 .accessibilityLabel("Active filters. \(summary)")
             Spacer(minLength: 8)
             Button("Clear Filters") { filters = LibraryFilters() }
+                .appHelp("Show all books that match the search text.")
         }
         .font(.callout)
         .padding(.horizontal, 16)
@@ -239,6 +256,7 @@ struct LibraryView: View {
         if model.isRefreshing && model.books.isEmpty {
             ProgressView("Loading your library…")
                 .controlSize(.regular)
+                .appHelp("DownAudible is fetching audiobook information from Audible.")
         } else if model.books.isEmpty {
             ContentUnavailableView("No Audiobooks", systemImage: "books.vertical", description: Text("Your library is empty."))
         } else if !filters.isEmpty {
@@ -265,7 +283,7 @@ struct LibraryView: View {
             Button("Library Status", systemImage: "info.circle") { openWindow(id: "library-status") }
                 .labelStyle(.iconOnly)
                 .buttonStyle(.borderless)
-                .help("Library Status")
+                .appHelp("See which books need audio or already have a local copy.")
         }
         .foregroundStyle(.secondary)
         .font(.callout)
@@ -278,6 +296,7 @@ struct LibraryView: View {
         HStack(spacing: 8) {
             if let activity {
                 ProgressView().controlSize(.small).accessibilityHidden(true)
+                    .appHelp("DownAudible is updating library or file information.")
                 Text(activity)
             } else {
                 if visibleCount == model.books.count {
@@ -307,7 +326,7 @@ struct LibraryView: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .accessibilityLabel("Matched folder \(folder.lastPathComponent)")
-                .help(folder.path(percentEncoded: false))
+                .appHelp(folder.path(percentEncoded: false))
         }
     }
 
@@ -370,11 +389,13 @@ struct AudibleSignInView: View {
                 }
                 .keyboardShortcut("b", modifiers: [.control, .shift])
                 .disabled(model.signInBusy)
+                .appHelp("Open the Audible sign-in page in your default browser.")
 
                 SecureField("Browser address", text: $address, prompt: Text("Paste the browser address"))
                     .textFieldStyle(.roundedBorder)
                     .focused($addressFocused)
                     .disabled(model.signInBusy)
+                    .appHelp("Paste the full address of the final page shown in your browser after signing in.")
             } else {
                 VStack(alignment: .leading, spacing: 12) {
                     if reconnecting {
@@ -385,16 +406,19 @@ struct AudibleSignInView: View {
                             TextField("Account name", text: $accountName, prompt: Text("Optional"))
                                 .labelsHidden()
                                 .textFieldStyle(.roundedBorder)
+                                .appHelp("Enter a label that will identify this account in DownAudible.")
                         }
                         Picker("Marketplace", selection: $marketplace) {
                             ForEach(AudibleMarketplace.allCases) { marketplace in
                                 Text(marketplace.displayName).tag(marketplace)
                             }
                         }
+                        .appHelp("Select the Audible store where this account’s library is held.")
                     }
                     if marketplace.supportsLegacySignIn {
                         Toggle("Sign in with a legacy Audible username", isOn: $legacyUsername)
                             .toggleStyle(.checkbox)
+                            .appHelp("Use an older Audible username account when the marketplace supports it.")
                     }
                 }
                 .disabled(model.signInBusy)
@@ -411,25 +435,30 @@ struct AudibleSignInView: View {
                     ProgressView()
                         .controlSize(.small)
                         .accessibilityLabel("Signing in")
+                        .appHelp("DownAudible is waiting for the sign-in request.")
                 }
                 if attempt != nil {
                     Button("Start Again", action: reset)
                         .keyboardShortcut("n", modifiers: [.control, .shift])
                         .disabled(model.signInBusy)
+                        .appHelp("Clear the browser address and start a new sign-in.")
                 }
                 Spacer()
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
                     .disabled(model.signInBusy)
+                    .appHelp("Close the sign-in sheet.")
 
                 if let attempt {
                     Button("Sign In") { finish(attempt) }
                         .keyboardShortcut(.defaultAction)
                         .disabled(model.signInBusy || address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .appHelp("Finish connecting the account with the address from your browser.")
                 } else {
                     Button("Continue", action: begin)
                         .keyboardShortcut(.defaultAction)
                         .disabled(model.signInBusy)
+                        .appHelp("Prepare the browser sign-in page for the selected marketplace.")
                 }
             }
         }
@@ -518,9 +547,11 @@ struct DownloadOptionsView: View {
                 Spacer()
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
+                    .appHelp("Close this sheet without starting the batch.")
                 Button(request.restartsIncomplete ? "Restart" : "Download", action: startDownload)
                     .keyboardShortcut(.defaultAction)
                     .disabled(!layout.isValid || !options.hasSelection || !model.canStartDownloads)
+                    .appHelp("Start this batch using the displayed options.")
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 16)
@@ -549,20 +580,27 @@ struct DownloadOptionsView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Toggle("Download audio", isOn: $options.downloadAudio)
                     .disabled(request.restartsIncomplete)
+                    .appHelp("Include audiobook audio in this batch.")
                 Toggle("Convert to \(model.conversionPreferences.format.displayName)", isOn: $options.convert)
                     .disabled(!options.downloadAudio)
+                    .appHelp("Convert the audio after downloading it.")
                 if options.downloadAudio && options.convert {
                     Toggle("Keep the original after conversion", isOn: $options.keepOriginal)
                         .padding(.leading, 20)
+                        .appHelp("Keep the original audio alongside the converted files.")
                     Text(model.conversionPreferences.chapterMode.displayName)
                         .foregroundStyle(.secondary)
                         .font(.callout)
                         .padding(.leading, 20)
                 }
                 Toggle("Download companion PDFs when available", isOn: $options.downloadPDF)
+                    .appHelp("Save any companion PDFs Audible offers for these books.")
                 Toggle("Save cover images as separate files", isOn: $options.downloadCover)
+                    .appHelp("Save separate cover image files alongside the other downloads.")
                 Toggle("Save chapters as JSON", isOn: $options.downloadChapters)
+                    .appHelp("Save an Audible chapter list for each book as a JSON file.")
                 Toggle("Save annotations as JSON", isOn: $options.downloadAnnotations)
+                    .appHelp("Save Audible notes and bookmarks as JSON files.")
             }
             .toggleStyle(.checkbox)
 
@@ -576,6 +614,7 @@ struct DownloadOptionsView: View {
                         .labelsHidden()
                         .textFieldStyle(.roundedBorder)
                         .font(.body.monospaced())
+                        .appHelp("Use book details and format tokens to arrange the files from this batch into folders.")
                 }
                 Text("Use fields such as {format}, {author}, {title}, and {asin}. Separate folders with /.")
                     .font(.callout)
@@ -607,7 +646,7 @@ struct DownloadOptionsView: View {
             Text("Example paths")
                 .font(.callout.bold())
             if options.savesOriginal, let path = previewPath(for: book, format: sourceFormat, folderOnly: usesAudibleFilename) {
-                Text(path).help(path)
+                Text(path).appHelp(path)
                 if usesAudibleFilename {
                     Text("Uses Audible’s AAX filename when available.")
                         .font(.callout)
@@ -618,11 +657,11 @@ struct DownloadOptionsView: View {
                 for: book, format: model.conversionPreferences.format.fileExtension,
                 separateChapter: model.conversionPreferences.chapterMode == .separate
             ) {
-                Text(path).help(path)
+                Text(path).appHelp(path)
             }
             if !options.downloadAudio && options.hasSelection,
                let path = previewPath(for: book, format: existingFormat ?? "extras", folderOnly: true) {
-                Text(path).help(path)
+                Text(path).appHelp(path)
             }
         }
         .font(.callout.monospaced())

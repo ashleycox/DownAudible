@@ -35,35 +35,45 @@ struct DownAudibleApp: App {
             CommandGroup(replacing: .appInfo) {
                 Button("About DownAudible") { openWindow(id: "about") }
                     .keyboardShortcut("a", modifiers: [.command, .control, .shift])
+                    .appHelp("Show app version, licence, and developer information.")
                 Button("Check for Updates…", action: appDelegate.softwareUpdater.checkForUpdates)
                     .disabled(!appDelegate.softwareUpdater.canCheckForUpdates)
+                    .appHelp("Check for a new version of DownAudible.")
             }
             CommandGroup(replacing: .newItem) {
                 Button("Open Audio Files…", action: openAudioFiles)
                     .keyboardShortcut("o")
                     .disabled(model.isPreparingFiles)
+                    .appHelp("Add audio files to Convert Files.")
                 Button("Open Audio Folder…", action: openAudioFolder)
                     .keyboardShortcut("o", modifiers: [.command, .shift])
                     .disabled(model.isPreparingFiles)
+                    .appHelp("Scan a folder for audio files to add to Convert Files.")
             }
             CommandGroup(after: .toolbar) {
                 Button(sidebarVisibility == .detailOnly ? "Show Sidebar" : "Hide Sidebar", action: toggleSidebar)
                     .keyboardShortcut("s", modifiers: [.command, .control])
+                    .appHelp("Show or hide the sidebar that switches between workspaces.")
                 Button(showsStatusBar ? "Hide Status Bar" : "Show Status Bar") {
                     showsStatusBar.toggle()
                 }
                 .keyboardShortcut("s", modifiers: [.command, .option])
+                .appHelp("Show or hide the library counts and status at the bottom of the window.")
                 LibraryBrowseCommands()
                     .disabled(showingOnboarding || model.downloadRequest != nil)
                 Divider()
                 Button("Library") { show(.library) }
                     .keyboardShortcut("1")
+                    .appHelp("Open the library or use its refresh, file matching, and export commands.")
                 Button(WorkspacePage.transfers.rawValue) { show(.transfers) }
                     .keyboardShortcut("2")
+                    .appHelp("Show the downloads and conversions queue.")
                 Button("Convert Files") { show(.convert) }
                     .keyboardShortcut("3")
+                    .appHelp("Open the workspace for converting local audio files.")
                 Button("Library Status") { openWindow(id: "library-status") }
                     .keyboardShortcut("4")
+                    .appHelp("Open the breakdown of downloaded, matched, and unavailable audiobooks.")
             }
             CommandMenu("Audiobooks") {
                 LibraryDownloadCommands(model: model, activateLibrary: { show(.library) })
@@ -76,12 +86,14 @@ struct DownAudibleApp: App {
                     }
                     .keyboardShortcut("r")
                     .disabled(!model.signedIn || model.isRefreshing || model.isScanning)
+                    .appHelp("Fetch the latest library information from Audible.")
                     Button("Recheck Saved Files") {
                         show(.library)
                         Task { await model.recheckFiles() }
                     }
                     .keyboardShortcut("r", modifiers: [.command, .shift])
                     .disabled(!model.signedIn || model.isRefreshing || model.isScanning || model.isCheckingFiles)
+                    .appHelp("Check that the saved or matched audio files are still present.")
 
                     Divider()
                     LibraryContextCommands(model: model)
@@ -89,18 +101,24 @@ struct DownAudibleApp: App {
                     Menu("Export Library") {
                         Button("JSON…") { Task { await model.exportLibrary(.json) } }
                             .keyboardShortcut("j", modifiers: [.command, .control])
+                            .appHelp("Export book information to a JSON file.")
                         Button("CSV…") { Task { await model.exportLibrary(.csv) } }
                             .keyboardShortcut("c", modifiers: [.command, .control])
+                            .appHelp("Export book information to a comma-separated file.")
                         Button("TSV…") { Task { await model.exportLibrary(.tsv) } }
                             .keyboardShortcut("t", modifiers: [.command, .control])
+                            .appHelp("Export book information to a tab-separated file.")
                     }
                     .disabled(!model.signedIn || model.isRefreshing)
+                    .appHelp("Save the loaded library as a structured list.")
                 }
+                .appHelp("Open the library or use its refresh, file matching, and export commands.")
 
                 Divider()
                 Button("Audible Tools…") { openWindow(id: "audible-tools") }
                     .keyboardShortcut("5")
                     .disabled(model.activeAudibleClient == nil)
+                    .appHelp("Open the Wish List, catalogue search, and account tools.")
                 WishlistExportCommands()
 
                 Divider()
@@ -117,18 +135,21 @@ struct DownAudibleApp: App {
                 }
                 .keyboardShortcut(".", modifiers: [.command, .control])
                 .disabled(!model.isTransferring)
+                .appHelp("Stop the running download and conversion jobs.")
                 Button("Retry Incomplete") {
                     show(.transfers)
                     model.retryBatch()
                 }
                 .keyboardShortcut("r", modifiers: [.command, .option])
                 .disabled(!model.canRetry)
+                .appHelp("Retry unfinished jobs and reuse valid partial downloads.")
                 Button("Restart Incomplete Downloads…") {
                     show(.transfers)
                     requestingBatchRestart = true
                 }
                 .keyboardShortcut("r", modifiers: [.command, .control])
                 .disabled(!model.canRestart)
+                .appHelp("Review restarting unfinished downloads from the beginning.")
                 Divider()
                 Button("Clear Completed") {
                     show(.transfers)
@@ -136,26 +157,34 @@ struct DownAudibleApp: App {
                 }
                 .keyboardShortcut("k", modifiers: [.command, .control])
                 .disabled(!model.canClearCompleted)
+                .appHelp("Remove successful jobs from Downloads and keep their saved files.")
                 TransferSelectionCommands()
             }
             CommandGroup(after: .windowArrangement) {
                 Button("Show DownAudible") { openWindow(id: "workspace") }
                     .keyboardShortcut("0", modifiers: [.command, .control])
+                    .appHelp("Bring the main DownAudible window to the front.")
             }
             CommandGroup(replacing: .help) {
                 Button("DownAudible Help") { openHelp() }
                     .keyboardShortcut("/", modifiers: [.command, .shift])
+                    .appHelp("Open the DownAudible manual.")
                 Button("Keyboard Shortcuts") { openHelp(anchor: DownAudibleHelp.shortcuts) }
                     .keyboardShortcut("/", modifiers: [.command, .option])
+                    .appHelp("Open the keyboard shortcuts chapter of the manual.")
+                Button("Settings Reference") { openHelp(anchor: DownAudibleHelp.settings) }
+                    .appHelp("Open the manual chapter explaining every setting.")
                 Button("Set Up DownAudible…") {
                     openWindow(id: "workspace")
                     showingOnboarding = true
                 }
                 .keyboardShortcut(",", modifiers: [.command, .option])
                 .disabled(showingOnboarding || model.downloadRequest != nil)
+                .appHelp("Open the setup assistant to review accounts and settings.")
                 Divider()
                 Button("Donate…") { openURL(DownAudibleLinks.donation) }
                     .keyboardShortcut("y", modifiers: [.command, .control])
+                    .appHelp("Open the DownAudible donation page in your browser.")
             }
         }
 
@@ -178,6 +207,7 @@ struct DownAudibleApp: App {
                     Label("Sign In to Audible", systemImage: "person.crop.circle")
                 } actions: {
                     Button("Show Library") { show(.library) }
+                        .appHelp("Return to the library to connect an Audible account.")
                 }
             }
         }
@@ -204,8 +234,12 @@ struct DownAudibleApp: App {
     }
 
     private func openHelp(anchor: String? = nil) {
-        if !DownAudibleHelp.openSystemHelp(anchor: anchor) {
-            openWindow(id: anchor == nil ? "help" : "keyboard-shortcuts")
+        if DownAudibleHelp.openSystemHelp(anchor: anchor) { return }
+        if anchor == DownAudibleHelp.shortcuts {
+            openWindow(id: "keyboard-shortcuts")
+        } else {
+            helpChapterRequest = anchor ?? DownAudibleHelp.contents
+            openWindow(id: "help")
         }
     }
 
@@ -342,6 +376,15 @@ private struct SidebarPageRow: View {
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
             }
+        }
+        .appHelp(pageHelp)
+    }
+
+    private var pageHelp: String {
+        switch page {
+        case .library: "Browse and manage the active Audible library."
+        case .transfers: "See the download and conversion queue and manage unfinished jobs."
+        case .convert: "Add and convert audio files already on this Mac."
         }
     }
 

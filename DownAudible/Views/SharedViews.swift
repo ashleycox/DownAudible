@@ -43,13 +43,14 @@ struct DestinationPicker: View {
                     Image(systemName: "folder")
                         .foregroundStyle(.secondary)
                 }
-                .help(directory.path(percentEncoded: false))
+                .appHelp(directory.path(percentEncoded: false))
                 Button("Choose…") {
                     if let selected = Panels.openFolder(allowCreation: true) { directory = selected }
                 }
                 .fixedSize()
                 .keyboardShortcut("y", modifiers: [.control, .shift])
                 .accessibilityLabel("Choose destination folder")
+                .appHelp("Choose where DownAudible saves audio and companion files.")
             }
         }
     }
@@ -99,14 +100,17 @@ struct AboutView: View {
             Link("Developed by Ashley Cox", destination: DownAudibleLinks.website)
                 .keyboardShortcut("w", modifiers: [.control, .shift])
                 .padding(.top, 8)
+                .appHelp("Open Ashley Cox’s website in your browser.")
             Link("View on GitHub", destination: DownAudibleLinks.repository)
                 .keyboardShortcut("g", modifiers: [.control, .shift])
+                .appHelp("Open the DownAudible project on GitHub.")
             Divider()
                 .padding(.vertical, 4)
             VStack(alignment: .leading, spacing: 8) {
                 Text("If this app has helped you, a donation is one way to support my work. There’s no pressure or hard sell. DownAudible is and always will be free.")
                     .fixedSize(horizontal: false, vertical: true)
                 Link("Make a donation", destination: DownAudibleLinks.donation)
+                    .appHelp("Open DownAudible’s donation page in your browser.")
             }
             .font(.callout)
             .frame(maxWidth: .infinity, alignment: .leading)

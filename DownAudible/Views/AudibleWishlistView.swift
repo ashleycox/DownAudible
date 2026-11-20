@@ -21,21 +21,25 @@ struct AudibleWishlistView: View {
                 TextField("Filter Wish List", text: $search)
                     .textFieldStyle(.roundedBorder)
                     .focused($filterFocused)
+                    .appHelp("Show wish list titles that match a title, author, series or ASIN.")
                 Button("Refresh", systemImage: "arrow.clockwise") {
                     run { try await load() }
                 }
                 .keyboardShortcut("r", modifiers: [.control, .shift])
                 .disabled(isBusy)
+                .appHelp("Fetch this account’s latest wish list from Audible.")
                 if isBusy && hasLoaded {
                     ProgressView()
                         .controlSize(.small)
                         .accessibilityLabel("Working on the wish list")
+                        .appHelp("The Wish List is being updated.")
                 }
             }
             AudibleCatalogTable(books: visibleBooks, selection: $selection)
                 .overlay {
                     if loading && !hasLoaded {
                         ProgressView("Loading Wish List")
+                            .appHelp("DownAudible is fetching your Wish List from Audible.")
                     } else if hasLoaded && visibleBooks.isEmpty && issue == nil {
                         if search.isEmpty {
                             ContentUnavailableView("Your Wish List Is Empty", systemImage: "bookmark")
@@ -53,14 +57,17 @@ struct AudibleWishlistView: View {
                 Button("Add Titles…", systemImage: "plus") { showingCatalog = true }
                     .keyboardShortcut("a", modifiers: [.control, .shift])
                     .disabled(isBusy)
+                    .appHelp("Search the Audible catalogue for titles to add to the wish list.")
                 Button("Remove", systemImage: "minus") { confirmingRemoval = true }
                     .keyboardShortcut(.delete, modifiers: [.control, .shift])
                     .disabled(selection.isEmpty || isBusy)
+                    .appHelp("Review removing the selected titles from this account’s wish list.")
                 Spacer()
                 Menu("Export", systemImage: "square.and.arrow.up") {
                     WishlistExportActions(state: exportState)
                 }
                 .disabled(!exportState.canExport)
+                .appHelp("Choose a file format for exporting the complete wish list.")
             }
         }
         .focusedSceneValue(\.wishListCommands, exportState)
@@ -83,6 +90,7 @@ struct AudibleWishlistView: View {
         }
         .confirmationDialog("Remove selected titles from your wish list?", isPresented: $confirmingRemoval) {
             Button("Remove", role: .destructive) { update(selection, removing: true) }
+                .appHelp("Remove the selected titles from this account’s Audible wish list.")
         }
     }
 
@@ -171,10 +179,12 @@ struct WishlistExportCommands: View {
         if let state {
             Button("Find in Wish List", action: state.find)
                 .keyboardShortcut("f")
+                .appHelp("Move keyboard focus to the Wish List filter.")
             Menu("Export Wish List") {
                 WishlistExportActions(state: state, inMenuBar: true)
             }
             .disabled(!state.canExport)
+            .appHelp("Choose a file format for exporting the complete wish list.")
         }
     }
 }
@@ -194,6 +204,7 @@ private struct WishlistExportActions: View {
             Button(format.rawValue.uppercased()) { state.export(format) }
                 .keyboardShortcut(inMenuBar ? KeyboardShortcut(shortcut(for: format), modifiers: [.control, .shift]) : nil)
                 .disabled(!state.canExport)
+                .appHelp("Save the complete wish list as \(format.rawValue.uppercased()).")
         }
     }
 
@@ -225,14 +236,17 @@ private struct AudibleCatalogSearchView: View {
                 TextField("Title or ASIN", text: $query)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit(search)
+                    .appHelp("Enter a book title or its Audible identifier to search the catalogue.")
                 Button("Search", systemImage: "magnifyingglass", action: search)
                     .keyboardShortcut("f", modifiers: [.control, .shift])
                     .disabled(!canSearch)
+                    .appHelp("Find matching Audible titles that you haven’t already added to the wish list.")
             }
             AudibleCatalogTable(books: books, selection: $selection)
                 .overlay {
                     if work != nil {
                         ProgressView("Searching Audible")
+                            .appHelp("Audible is searching its catalogue.")
                     } else if books.isEmpty && hasSearched && issue == nil {
                         ContentUnavailableView(
                             "No New Titles Found", systemImage: "magnifyingglass",
@@ -249,12 +263,14 @@ private struct AudibleCatalogSearchView: View {
                 Spacer()
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
+                    .appHelp("Close the catalogue search without adding titles.")
                 Button("Add to Wish List") {
                     add(selection)
                     dismiss()
                 }
                 .keyboardShortcut("a", modifiers: [.control, .shift])
                 .disabled(selection.isEmpty || work != nil)
+                .appHelp("Add the selected search results to this account’s wish list.")
             }
         }
         .padding(16)
@@ -292,14 +308,23 @@ private struct AudibleCatalogTable: View {
 
     var body: some View {
         Table(books, selection: $selection) {
-            TableColumn("Title", value: \.title)
-                .width(min: 140, ideal: 148)
-            TableColumn("Author") { Text($0.authors.formatted(.list(type: .and))) }
-                .width(min: 84, ideal: 92)
-            TableColumn("Series") { Text($0.series ?? "") }
-                .width(min: 60, ideal: 64)
-            TableColumn("ASIN", value: \.asin)
-                .width(min: 78, ideal: 82)
+            TableColumn("Title") { book in
+                Text(book.title).appHelp(book.title)
+            }
+            .width(min: 140, ideal: 148)
+            TableColumn("Author") { book in
+                let authors = book.authors.formatted(.list(type: .and))
+                Text(authors).appHelp(authors)
+            }
+            .width(min: 84, ideal: 92)
+            TableColumn("Series") { book in
+                Text(book.series ?? "").appHelp(book.series ?? "")
+            }
+            .width(min: 60, ideal: 64)
+            TableColumn("ASIN") { book in
+                Text(book.asin).appHelp("Audible identifies this edition as \(book.asin).")
+            }
+            .width(min: 78, ideal: 82)
         }
     }
 }

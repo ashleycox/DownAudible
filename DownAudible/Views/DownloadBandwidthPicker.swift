@@ -21,6 +21,7 @@ struct DownloadBandwidthPicker: View {
             }
             Text("Custom").tag(Limit.custom)
         }
+        .appHelp("Limit the network speed used by each active download.")
         if selection.wrappedValue == .custom {
             LabeledContent("Custom bandwidth (kbps)") {
                 TextField("Custom bandwidth (kbps)", value: customRate,
@@ -29,6 +30,7 @@ struct DownloadBandwidthPicker: View {
                     .monospacedDigit()
                     .multilineTextAlignment(.trailing)
                     .frame(width: 128)
+                    .appHelp("Enter a custom per-download speed in kilobits per second.")
             }
         }
     }

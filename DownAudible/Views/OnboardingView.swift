@@ -85,6 +85,7 @@ struct OnboardingView: View {
                 }
                 .progressViewStyle(.linear)
                 .frame(width: 100)
+                .appHelp("Shows which step of the setup assistant you are on.")
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 16)
@@ -99,27 +100,34 @@ struct OnboardingView: View {
             if page != .welcome {
                 Button("Back") { history.removeLast() }
                     .keyboardShortcut("b", modifiers: [.control, .shift])
+                    .appHelp("Go back to the previous setup step.")
             }
             Spacer()
             switch page {
             case .welcome:
                 Button("Skip Setup") { history.append(.finish) }
                     .keyboardShortcut("p", modifiers: [.control, .shift])
+                    .appHelp("Go straight to the last setup page.")
                 Button("Continue", action: advance)
                     .keyboardShortcut(.defaultAction)
+                    .appHelp("Start setup with the first settings page.")
             case .settings(let pane):
                 Button("Skip Configuration") { history.append(.finish) }
                     .keyboardShortcut("p", modifiers: [.control, .shift])
+                    .appHelp("Finish setup using the settings chosen so far.")
                 Button(
                     pane == .accounts && !model.signedIn ? "Continue Without an Account" : "Continue",
                     action: advance
                 )
                 .keyboardShortcut(.defaultAction)
+                .appHelp("Continue to the next setup step.")
             case .finish:
                 Button("Open Manual") { finish(.manual) }
                     .keyboardShortcut("m", modifiers: [.control, .shift])
+                    .appHelp("Finish setup and open DownAudible Help.")
                 Button("Open DownAudible") { finish(.app) }
                     .keyboardShortcut(.defaultAction)
+                    .appHelp("Finish setup and open the main window.")
             }
         }
     }

@@ -34,6 +34,10 @@ The **Audiobooks** menu groups download commands under **Download** and library 
 | Refresh Library | Command–R |
 | Recheck Saved Files | Shift–Command–R |
 | Find in Library | Command–F |
+| Open Sort Menu | Shift–Command–S |
+| Open Filter Menu | Shift–Command–F |
+| Reverse Sort Order | Option–Shift–Command–S |
+| Clear Filters | Option–Shift–Command–F |
 | Choose a library filter suggestion | Up or Down Arrow, then Return |
 | Download Selected | Command–D |
 | Download Selected As… | Option–Command–D |

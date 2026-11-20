@@ -37,11 +37,13 @@ struct TransfersView: View {
                         Button("Restart Incomplete Downloads…", systemImage: "arrow.counterclockwise",
                                action: askToRestartBatch)
                             .disabled(!model.canRestart)
+                            .appHelp("Review restarting unfinished downloads from the beginning.")
                         Button("Clear Completed", systemImage: "checkmark.circle", action: model.clearCompletedTransfers)
                             .disabled(!model.canClearCompleted)
+                            .appHelp("Remove successful jobs from the list and keep their saved files.")
                     }
                     .labelStyle(.iconOnly)
-                    .help("Download Actions")
+                    .appHelp("Download Actions")
                 }
             }
         }
@@ -53,6 +55,7 @@ struct TransfersView: View {
         ) { ids in
             Button("Restart Downloads") { model.retryTransfers(ids, restartIncomplete: true) }
                 .keyboardShortcut(.defaultAction)
+                .appHelp("Discard the selected partial downloads and start them again.")
         } message: { _ in
             Text("DownAudible will discard the temporary audio for these incomplete downloads. Files already saved in the archive stay available.")
         }
@@ -87,13 +90,16 @@ struct TransfersView: View {
                         .labelsHidden()
                         .accessibilityLabel("Batch progress")
                         .frame(maxWidth: 160)
+                        .appHelp("Shows how much of the current batch has finished.")
                 }
             }
             Spacer()
             if model.isTransferring {
                 Button("Cancel Batch", role: .cancel) { model.cancelBatch() }
+                    .appHelp("Stop running jobs and leave unfinished work available to retry.")
             } else if model.canRetry {
                 Button("Retry Incomplete") { model.retryBatch() }
+                    .appHelp("Retry unfinished jobs and resume usable partial downloads.")
             }
         }
         .padding(.horizontal, 16)
@@ -150,31 +156,37 @@ private struct TransferSelectionActions: View {
             }
             .keyboardShortcut(shortcut("x"))
             .disabled(!canCancel)
+            .appHelp("Stop the selected transfer jobs.")
         }
         if inMenuBar || !incomplete.isEmpty {
             Button(inMenuBar ? "Retry Selected Transfers" : "Retry") { model.retryTransfers(incomplete.map(\.id)) }
                 .keyboardShortcut(shortcut("r"))
                 .disabled(incomplete.isEmpty || !model.canRetry)
+                .appHelp("Retry the selected unfinished jobs and reuse any valid partial downloads.")
         }
         if inMenuBar || !restartable.isEmpty {
             Button(inMenuBar ? "Restart Selected Downloads…" : "Restart Download…") { selection.askToRestart(restartable) }
                 .keyboardShortcut(shortcut("d"))
                 .disabled(restartable.isEmpty || !model.canRestart)
+                .appHelp("Review restarting these selected downloads from the beginning.")
         }
         if inMenuBar || !files.isEmpty {
             Button("Show Output in Finder", systemImage: "folder") { NSWorkspace.shared.activateFileViewerSelecting(files) }
                 .keyboardShortcut(shortcut("f"))
                 .disabled(files.isEmpty)
+                .appHelp("Reveal saved files from the selected jobs.")
         }
         if inMenuBar || canAddToBooks {
             Button("Add to Apple Books", systemImage: "books.vertical") { Task { await model.addToAppleBooks(files) } }
                 .keyboardShortcut(shortcut("b"))
                 .disabled(!canAddToBooks)
+                .appHelp("Send the selected saved audio files to Apple Books.")
         }
         if inMenuBar || !partial.isEmpty {
             Button("Show Partial Files") { NSWorkspace.shared.activateFileViewerSelecting(partial) }
                 .keyboardShortcut(shortcut("p"))
                 .disabled(partial.isEmpty)
+                .appHelp("Reveal the folders containing incomplete downloads.")
         }
         if inMenuBar || !errors.isEmpty {
             Button(errors.count == 1 ? "Copy Error" : "Copy Errors") {
@@ -183,12 +195,14 @@ private struct TransferSelectionActions: View {
             }
             .keyboardShortcut(shortcut("e"))
             .disabled(errors.isEmpty)
+            .appHelp("Copy the selected job titles and error details.")
         }
         if inMenuBar || !items.isEmpty {
             Divider()
             Button("Remove from List") { model.removeTransfers(ids) }
                 .keyboardShortcut(shortcut(.delete))
                 .disabled(items.isEmpty || model.isTransferring)
+                .appHelp("Remove the selected entries from Downloads and keep files already saved.")
         }
     }
 
@@ -221,6 +235,7 @@ private struct TransferRow: View {
                         ProgressView(value: min(1, max(0, progress)))
                             .labelsHidden()
                             .accessibilityLabel("Job progress")
+                            .appHelp("Shows progress for this job.")
                     }
                 case .done(_, let note):
                     if let note {
@@ -249,7 +264,7 @@ private struct TransferRow: View {
                 }
                 .labelStyle(.iconOnly)
                 .buttonStyle(.borderless)
-                .help("Show in Finder")
+                .appHelp("Show in Finder")
             }
         }
         .padding(.vertical, 8)

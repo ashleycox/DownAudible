@@ -15,8 +15,10 @@ struct ConverterView: View {
                     Text("Choose an audio file or folder, or drag files here from Finder.")
                 } actions: {
                     Button("Add Files…", systemImage: "plus", action: pickFiles)
+                        .appHelp("Choose one or more audio files to add to the conversion list.")
                         .disabled(model.isPreparingFiles)
                     Button("Add Folder…", systemImage: "folder", action: pickFolder)
+                        .appHelp("Scan a folder and its subfolders for supported audio files.")
                         .disabled(model.isPreparingFiles)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -42,7 +44,7 @@ struct ConverterView: View {
                 if model.localFiles.contains(where: { $0.format == "aax" }) {
                     SecureField("Activation bytes (optional)", text: $model.activationBytes)
                         .textFieldStyle(.roundedBorder)
-                        .help("Enter eight hexadecimal characters from the Audible account that downloaded these files, or leave this blank to use the active account.")
+                        .appHelp("Enter eight hexadecimal characters from the Audible account that downloaded these files, or leave this blank to use the active account.")
                     if !model.hasValidActivationBytes {
                         Text("Enter eight hexadecimal characters.")
                             .foregroundStyle(.secondary)
@@ -55,6 +57,7 @@ struct ConverterView: View {
             HStack {
                 if model.isPreparingFiles {
                     ProgressView().controlSize(.small)
+                        .appHelp("DownAudible is checking the audio files you added.")
                     Text("Reading audio files…").foregroundStyle(.secondary)
                 } else if !model.selectedFiles.isEmpty {
                     Text("\(model.selectedFiles.count) selected").foregroundStyle(.secondary)
@@ -64,6 +67,7 @@ struct ConverterView: View {
 
                 Button(commandContext.convertTitle, action: commandContext.convert)
                     .buttonStyle(.borderedProminent)
+                    .appHelp(commandContext.conversionHelp)
                     .disabled(!commandContext.canConvert)
             }
             .padding([.horizontal, .bottom], 12)
@@ -79,9 +83,11 @@ struct ConverterView: View {
             ToolbarItemGroup {
                 Menu("Add Audio", systemImage: "plus") {
                     Button("Add Files…", systemImage: "doc.badge.plus", action: pickFiles)
+                        .appHelp("Choose one or more audio files to add to the conversion list.")
                     Button("Add Folder…", systemImage: "folder", action: pickFolder)
+                        .appHelp("Scan a folder and its subfolders for supported audio files.")
                 }
-                .help("Add audio files or a folder")
+                .appHelp("Add audio files or a folder")
                 .disabled(model.isPreparingFiles)
             }
         }
@@ -96,6 +102,7 @@ struct ConverterView: View {
                     Spacer()
                     Button("Done") { showingOptions = false }
                         .keyboardShortcut(.defaultAction)
+                        .appHelp("Close Conversion Options and return to the audio files.")
                 }
                 .padding(12)
             }
@@ -110,6 +117,7 @@ struct ConverterView: View {
             }
         }
         .fixedSize()
+        .appHelp("Choose the file type for the converted audio.")
     }
 
     private var conversionOptions: some View {
@@ -117,22 +125,26 @@ struct ConverterView: View {
             Text(model.conversionPreferences.chapterMode.displayName)
                 .foregroundStyle(.secondary)
             Button("Conversion Options…", systemImage: "slider.horizontal.3") { showingOptions = true }
+                .appHelp("Choose how to split, encode, and tag the converted audio.")
         }
     }
 
     private var filesTable: some View {
         Table(model.localFiles.sorted(using: sortOrder), selection: $model.selectedFiles, sortOrder: $sortOrder) {
             TableColumn("Title", value: \.title) { file in
-                Text(file.title).help(file.url.path(percentEncoded: false))
+                Text(file.title).appHelp(file.url.path(percentEncoded: false))
             }
             .width(min: 132, ideal: 260)
             TableColumn("Author") { file in
                 Text(file.author ?? "—")
                     .foregroundStyle(file.author == nil ? .secondary : .primary)
+                    .appHelp(file.author ?? "This audio file has no author tag.")
             }
             .width(min: 88, ideal: 150)
             TableColumn("Format", value: \.format) { file in
-                Text(file.format.uppercased()).foregroundStyle(.secondary)
+                Text(file.format.uppercased())
+                    .foregroundStyle(.secondary)
+                    .appHelp("The source file uses the \(file.format.uppercased()) format.")
             }
             .width(min: 64, ideal: 72, max: 90)
         }
@@ -166,6 +178,7 @@ struct ConversionSelectionCommands: View {
     var body: some View {
         Button("Conversion Options…", action: showOptions)
             .keyboardShortcut(context == nil ? nil : KeyboardShortcut("o", modifiers: [.control, .shift]))
+            .appHelp("Open the conversion settings for audio files.")
 
         if let context {
             Divider()
@@ -182,6 +195,9 @@ private struct ConversionCommandContext {
     var files: [LocalAudioFile] { model.localFiles.filter { ids.contains($0.id) } }
     private var conversionFiles: [LocalAudioFile] { ids.isEmpty ? model.localFiles : files }
     var convertTitle: LocalizedStringKey { ids.isEmpty ? "Convert All" : "Convert Selected" }
+    var conversionHelp: String {
+        ids.isEmpty ? "Convert every audio file in the list." : "Convert the selected audio files."
+    }
     var canConvert: Bool {
         guard model.didRestoreTransfers, !model.isTransferring, !model.isPreparingFiles, model.layout.isValid else { return false }
         let inputs = conversionFiles
@@ -208,28 +224,34 @@ private struct ConversionActions: View {
 
         Button(inMenuBar ? context.convertTitle : "Convert", action: context.convert)
             .keyboardShortcut(shortcut("v"))
+            .appHelp(context.conversionHelp)
             .disabled(!context.canConvert || (!inMenuBar && files.isEmpty))
 
         if inMenuBar || !urls.isEmpty {
             Divider()
             Button("Show in Finder", systemImage: "folder") { NSWorkspace.shared.activateFileViewerSelecting(urls) }
                 .keyboardShortcut(shortcut("s"))
+                .appHelp("Select the source files in Finder.")
                 .disabled(urls.isEmpty)
             if inMenuBar || canAddToBooks {
                 Button("Add to Apple Books", systemImage: "book") { Task { await context.model.addToAppleBooks(urls) } }
                     .keyboardShortcut(shortcut("b"))
+                    .appHelp("Open the selected audio files in Apple Books.")
                     .disabled(!canAddToBooks)
             }
             Button("Copy Path", systemImage: "doc.on.doc") { copyPaths(urls) }
                 .keyboardShortcut(shortcut("c"))
+                .appHelp("Copy the locations of the selected files to the clipboard.")
                 .disabled(urls.isEmpty)
         }
         Divider()
         Button("Remove from List", systemImage: "minus.circle") { context.removeFiles(Set(files.map(\.id))) }
             .keyboardShortcut(shortcut(.delete))
+            .appHelp("Take the selected files out of the conversion list.")
             .disabled(files.isEmpty)
         Button("Clear List") { context.removeFiles(Set(allFiles.map(\.id))) }
             .keyboardShortcut(shortcut("k"))
+            .appHelp("Empty the conversion list.")
             .disabled(allFiles.isEmpty)
     }
 

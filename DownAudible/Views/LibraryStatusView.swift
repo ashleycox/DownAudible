@@ -69,6 +69,7 @@ struct LibraryStatusView: View {
                 .foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .combine)
+        .appHelp(scope.explanation)
         .tag(scope)
     }
 
@@ -84,7 +85,7 @@ struct LibraryStatusView: View {
                     Label(account.name, systemImage: "person.crop.circle")
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
-                        .help(account.name)
+                        .appHelp(account.name)
                 }
             }
             Text(scope.explanation)
@@ -92,6 +93,7 @@ struct LibraryStatusView: View {
             if let activity {
                 ProgressView(activity)
                     .controlSize(.small)
+                    .appHelp("DownAudible is checking the state of the library or its saved files.")
             }
         }
         .padding(16)
@@ -107,29 +109,29 @@ struct LibraryStatusView: View {
     private func booksTable(_ rows: [Row], showsTransfers: Bool) -> some View {
         Table(rows.sorted(using: sortOrder), sortOrder: $sortOrder) {
             TableColumn("Title", value: \.title) { row in
-                Text(row.title).help(row.title)
+                Text(row.title).appHelp(row.title)
             }
             .width(min: 116, ideal: 184)
             TableColumn("Author", value: \.author) { row in
-                Text(row.author).help(row.author)
+                Text(row.author).appHelp(row.author)
             }
             .width(min: 64, ideal: 104)
             TableColumn("Local Audio", value: \.localAudio) { row in
                 Label(row.localAudio, systemImage: row.audioIcon)
                     .lineLimit(1)
-                    .help(row.audioDetails.isEmpty ? row.localAudio : row.audioDetails)
+                    .appHelp(row.audioDetails.isEmpty ? row.localAudio : row.audioDetails)
                     .accessibilityValue(row.audioDetails)
             }
             .width(min: 140, ideal: 152)
             TableColumn("Audible Download", value: \.availability) { row in
                 Text(row.availability)
-                    .help(row.availabilityDetails)
+                    .appHelp(row.availabilityDetails)
                     .accessibilityValue(row.availabilityDetails)
             }
             .width(min: 112, ideal: 126)
             if showsTransfers {
                 TableColumn("Transfer") { row in
-                    Text(row.transferStage)
+                    Text(row.transferStage).appHelp(row.transferStage)
                 }
                 .width(min: 84, ideal: 96)
             }

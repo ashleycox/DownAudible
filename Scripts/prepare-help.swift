@@ -22,12 +22,14 @@ enum HelpBuildError: LocalizedError {
     case missingTitle(String)
     case missingChapters
     case indexFailed(Int32)
+    case missingAnchors([String])
 
     var errorDescription: String? {
         switch self {
         case .missingTitle(let file): "Missing a top-level heading in \(file)."
         case .missingChapters: "No help chapters found."
         case .indexFailed(let status): "Help indexing failed with status \(status)."
+        case .missingAnchors(let anchors): "The Help index is missing these anchors: \(anchors.joined(separator: ", "))."
         }
     }
 }
@@ -73,9 +75,9 @@ func tag(for kind: PresentationIntent.Kind, parent: PresentationIntent.Kind?, se
     case .thematicBreak:
         HTMLTag(start: "<hr>")
     case .table:
-        HTMLTag("table", attributes: section.map { " aria-labelledby=\"\($0)\"" } ?? "")
+        HTMLTag(start: "<table" + (section.map { " aria-labelledby=\"\($0)\"" } ?? "") + ">", end: "</tbody></table>")
     case .tableHeaderRow:
-        HTMLTag(start: "<thead><tr>", end: "</tr></thead>")
+        HTMLTag(start: "<thead><tr>", end: "</tr></thead><tbody>")
     case .tableRow:
         HTMLTag("tr")
     case .tableCell(let column):
@@ -95,6 +97,16 @@ func html(for markdown: AttributedString) -> String {
     var html = ""
     var open: [(identity: Int, tag: HTMLTag)] = []
     var section: String?
+    var headings: [Int: String] = [:]
+    for run in markdown.runs {
+        if let heading = run.presentationIntent?.components.first(where: {
+            if case .header = $0.kind { return true }
+            return false
+        }) {
+            headings[heading.identity, default: ""] += String(markdown[run.range].characters)
+        }
+    }
+    var usedSections: Set<String> = []
     for run in markdown.runs {
         let path = Array((run.presentationIntent?.components ?? []).reversed())
         let shared = zip(open, path).prefix { $0.identity == $1.identity }.count
@@ -104,7 +116,19 @@ func html(for markdown: AttributedString) -> String {
         open.removeLast(open.count - shared)
         for (index, node) in path.enumerated().dropFirst(shared) {
             if case .header = node.kind {
-                section = "section-\(node.identity)"
+                let heading = headings[node.identity, default: ""].lowercased()
+                let slug = heading.map {
+                    if $0.isWhitespace { return "-" }
+                    return $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" ? String($0) : ""
+                }.joined()
+                let base = slug.isEmpty ? "section-\(node.identity)" : slug
+                var candidate = base
+                var suffix = 1
+                while !usedSections.insert(candidate).inserted {
+                    candidate = "\(base)-\(suffix)"
+                    suffix += 1
+                }
+                section = candidate
             }
             let parent = index > 0 ? path[index - 1].kind : nil
             let tag = tag(for: node.kind, parent: parent, section: section)
@@ -121,9 +145,15 @@ func html(for markdown: AttributedString) -> String {
             if style.contains(.lineBreak) { text = "<br>" }
         }
         if let url = run.link {
-            let destination = url.scheme == nil && url.pathExtension == "md"
-                ? url.deletingPathExtension().lastPathComponent + ".html"
-                : url.absoluteString
+            let destination: String
+            if url.scheme == nil, url.pathExtension == "md",
+               var relative = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+                let name = url.deletingPathExtension().lastPathComponent
+                relative.path = name == "README" ? "index.html" : name + ".html"
+                destination = relative.string ?? url.absoluteString
+            } else {
+                destination = url.absoluteString
+            }
             text = "<a href=\"\(escaped(destination))\">\(text)</a>"
         }
         html += text
@@ -134,11 +164,10 @@ func html(for markdown: AttributedString) -> String {
     return html
 }
 
-func page(title: String, content: String, isIndex: Bool = false) -> String {
-    let bookTitle = "DownAudible Help"
-    let metadata = isIndex ? "<meta name=\"AppleTitle\" content=\"\(bookTitle)\">" : ""
-    let navigation = isIndex ? "" : """
-        <nav aria-label="Help navigation"><a href="index.html">\(bookTitle)</a></nav>
+func page(title: String, content: String, bookIdentifier: String? = nil) -> String {
+    let metadata = bookIdentifier.map { "<meta name=\"AppleTitle\" content=\"\(escaped($0))\">" } ?? ""
+    let navigation = bookIdentifier != nil ? "" : """
+        <nav aria-label="Help navigation"><a href="index.html">Contents</a></nav>
         """
     return """
         <!doctype html>
@@ -146,6 +175,7 @@ func page(title: String, content: String, isIndex: Bool = false) -> String {
         <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="color-scheme" content="light dark">
         \(metadata)
         <title>\(escaped(title))</title>
         <link rel="stylesheet" href="help.css">
@@ -166,10 +196,10 @@ func buildHelp(in destination: URL, source: URL, bookID: String) throws {
     let chapters = try files.map(Chapter.init(source:))
     guard !chapters.isEmpty else { throw HelpBuildError.missingChapters }
 
-    if manager.fileExists(atPath: destination.path) {
-        try manager.removeItem(at: destination)
-    }
-    let contents = destination.appendingPathComponent("Contents", isDirectory: true)
+    let scratch = destination.deletingLastPathComponent()
+        .appendingPathComponent(".help-build-\(UUID().uuidString)", isDirectory: true)
+    defer { try? manager.removeItem(at: scratch) }
+    let contents = scratch.appendingPathComponent("Contents", isDirectory: true)
     let pages = contents.appendingPathComponent("Resources/en.lproj", isDirectory: true)
     try manager.createDirectory(at: pages, withIntermediateDirectories: true)
     let indexName = "DownAudible.cshelpindex"
@@ -179,6 +209,7 @@ func buildHelp(in destination: URL, source: URL, bookID: String) throws {
         "CFBundleInfoDictionaryVersion": "6.0",
         "CFBundleName": "DownAudible Help",
         "CFBundlePackageType": "BNDL",
+        "CFBundleShortVersionString": ProcessInfo.processInfo.environment["MARKETING_VERSION"] ?? "1.0",
         "CFBundleSignature": "hbwr",
         "CFBundleVersion": ProcessInfo.processInfo.environment["CURRENT_PROJECT_VERSION"] ?? "1",
         "HPDBookAccessPath": "index.html",
@@ -188,6 +219,8 @@ func buildHelp(in destination: URL, source: URL, bookID: String) throws {
     ]
     let plist = try PropertyListSerialization.data(fromPropertyList: properties, format: .xml, options: 0)
     try plist.write(to: contents.appendingPathComponent("Info.plist"))
+    let englishTitle = "\"HPDBookTitle\" = \"DownAudible Help\";\n"
+    try englishTitle.write(to: pages.appendingPathComponent("InfoPlist.strings"), atomically: true, encoding: .utf8)
     let style = source.deletingLastPathComponent().appendingPathComponent("help.css")
     try manager.copyItem(at: style, to: pages.appendingPathComponent("help.css"))
 
@@ -200,8 +233,11 @@ func buildHelp(in destination: URL, source: URL, bookID: String) throws {
         "<li><a href=\"\(escaped(chapter.name)).html\">\(escaped(chapter.title))</a></li>"
     }.joined(separator: "\n")
     let support = try chapters.first?.support.map { "<hr>" + html(for: try AttributedString(markdown: String($0))) } ?? ""
-    let contentsPage = "<h1>DownAudible Help</h1><nav aria-label=\"Chapters\"><ul>\(links)</ul></nav>\(support)"
-    try page(title: "DownAudible Help", content: contentsPage, isIndex: true)
+    let contentsPage = """
+        <a name="index" id="index"></a><h1>DownAudible Help</h1>
+        <nav aria-label="Chapters"><ul>\(links)</ul></nav>\(support)
+        """
+    try page(title: "DownAudible Help", content: contentsPage, bookIdentifier: bookID)
         .write(to: pages.appendingPathComponent("index.html"), atomically: true, encoding: .utf8)
 
     let indexer = Process()
@@ -211,6 +247,25 @@ func buildHelp(in destination: URL, source: URL, bookID: String) throws {
     try indexer.run()
     indexer.waitUntilExit()
     guard indexer.terminationStatus == 0 else { throw HelpBuildError.indexFailed(indexer.terminationStatus) }
+
+    let anchors = Process()
+    let output = Pipe()
+    anchors.executableURL = indexer.executableURL
+    anchors.arguments = ["-I", "corespotlight", "-A", "-f", pages.appendingPathComponent(indexName).path]
+    anchors.standardOutput = output
+    try anchors.run()
+    let data = output.fileHandleForReading.readDataToEndOfFile()
+    anchors.waitUntilExit()
+    guard anchors.terminationStatus == 0 else { throw HelpBuildError.indexFailed(anchors.terminationStatus) }
+    let indexed = Set(String(decoding: data, as: UTF8.self).split(whereSeparator: \.isNewline).map(String.init))
+    let missing = (["index"] + chapters.map(\.name)).filter { !indexed.contains($0) }
+    guard missing.isEmpty else { throw HelpBuildError.missingAnchors(missing) }
+
+    if manager.fileExists(atPath: destination.path) {
+        _ = try manager.replaceItemAt(destination, withItemAt: scratch)
+    } else {
+        try manager.moveItem(at: scratch, to: destination)
+    }
 }
 
 guard CommandLine.arguments.count == 4 else {

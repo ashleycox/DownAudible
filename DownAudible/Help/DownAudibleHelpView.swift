@@ -3,25 +3,33 @@ import SwiftUI
 import WebKit
 
 enum DownAudibleHelp {
+    static let contents = "index"
     static let shortcuts = "help-10-keyboard-shortcuts"
+    static let settings = "help-12-settings"
+
+    private static var book: Bundle? {
+        guard let folder = Bundle.main.object(forInfoDictionaryKey: "CFBundleHelpBookFolder") as? String,
+              let identifier = Bundle.main.object(forInfoDictionaryKey: "CFBundleHelpBookName") as? String,
+              let url = Bundle.main.resourceURL?.appending(path: folder, directoryHint: .isDirectory),
+              let book = Bundle(url: url), book.bundleIdentifier == identifier else { return nil }
+        return book
+    }
 
     static var pages: URL? {
-        Bundle.main.resourceURL?.appending(path: "DownAudible.help/Contents/Resources/en.lproj", directoryHint: .isDirectory)
+        book?.url(forResource: contents, withExtension: "html")?.deletingLastPathComponent()
     }
 
     @MainActor
     static func openSystemHelp(anchor: String? = nil) -> Bool {
         let appPath = Bundle.main.bundleURL.resolvingSymlinksInPath().pathComponents
         let applications = FileManager.default.urls(for: .applicationDirectory, in: [.localDomainMask, .userDomainMask])
+        let topic = anchor ?? contents
         // macOS Help cannot always read a third-party book outside an Applications directory.
         guard applications.contains(where: { appPath.starts(with: $0.resolvingSymlinksInPath().pathComponents) }),
-              let book = Bundle.main.object(forInfoDictionaryKey: "CFBundleHelpBookName") as? String,
+              let book, let identifier = book.bundleIdentifier,
+              book.url(forResource: topic, withExtension: "html") != nil,
               NSHelpManager.shared.registerBooks(in: Bundle.main) else { return false }
-        if let anchor {
-            NSHelpManager.shared.openHelpAnchor(.init(anchor), inBook: .init(book))
-        } else {
-            NSApplication.shared.showHelp(nil)
-        }
+        NSHelpManager.shared.openHelpAnchor(.init(topic), inBook: .init(identifier))
         return true
     }
 }
@@ -31,14 +39,15 @@ struct DownAudibleHelpView: View {
     var keyboardShortcuts = false
     @Binding var requestedChapter: String?
     @State private var selection: HelpChapter.ID? = HelpChapter.all.first?.id
+    @State private var fragment: (chapter: HelpChapter.ID, anchor: String)?
     @State private var search = ""
 
     var body: some View {
         Group {
             if keyboardShortcuts {
                 if let chapter = HelpChapter.all.first(where: { $0.id == DownAudibleHelp.shortcuts }) {
-                    article(chapter) { chapterID in
-                        requestedChapter = chapterID
+                    article(chapter) { chapterID, anchor in
+                        requestedChapter = anchor.map { "\(chapterID)#\($0)" } ?? chapterID
                         openWindow(id: "help")
                     }
                 } else {
@@ -53,23 +62,30 @@ struct DownAudibleHelpView: View {
 
     private var manual: some View {
         NavigationSplitView {
-            List(resultChapters, selection: $selection) { chapter in
-                Text(chapter.title).tag(chapter.id)
+            VStack(spacing: 8) {
+                TextField("Search Help", text: $search)
+                    .textFieldStyle(.roundedBorder)
+                    .padding([.horizontal, .top], 8)
+                    .appHelp("Find help chapters by their titles or text.")
+
+                List(resultChapters, selection: $selection) { chapter in
+                    Text(chapter.title)
+                        .tag(chapter.id)
+                        .appHelp("Open the \(chapter.title) help page.")
+                }
+                .listStyle(.sidebar)
+                .accessibilityLabel("Help chapters")
             }
-            .listStyle(.sidebar)
             .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 280)
-            .accessibilityLabel("Help chapters")
         } detail: {
             if let chapter = resultChapters.first(where: { $0.id == selection }) ?? resultChapters.first {
-                article(chapter, openChapter: showChapter)
-                    .id(chapter.id)
+                article(chapter, anchor: fragment?.chapter == chapter.id ? fragment?.anchor : nil, openChapter: showChapter)
             } else if HelpChapter.all.isEmpty {
                 unavailable
             } else {
                 ContentUnavailableView.search(text: search)
             }
         }
-        .searchable(text: $search, prompt: "Search Help")
         .onChange(of: search) {
             if !resultChapters.contains(where: { $0.id == selection }) {
                 selection = resultChapters.first?.id
@@ -77,29 +93,41 @@ struct DownAudibleHelpView: View {
         }
         .onChange(of: requestedChapter, initial: true) { _, chapterID in
             if let chapterID {
-                showChapter(chapterID)
+                let parts = chapterID.split(separator: "#", maxSplits: 1)
+                if let page = parts.first { showChapter(String(page), parts.dropFirst().first.map(String.init)) }
                 requestedChapter = nil
             }
         }
     }
 
-    private func showChapter(_ chapterID: HelpChapter.ID) {
+    private func showChapter(_ chapterID: HelpChapter.ID, _ anchor: String?) {
         if !resultChapters.contains(where: { $0.id == chapterID }) { search = "" }
+        fragment = anchor.map { (chapterID, $0) }
         selection = chapterID
     }
 
     @ViewBuilder
-    private func article(_ chapter: HelpChapter, openChapter: @escaping (HelpChapter.ID) -> Void) -> some View {
+    private func article(
+        _ chapter: HelpChapter, anchor: String? = nil,
+        openChapter: @escaping (HelpChapter.ID, String?) -> Void
+    ) -> some View {
         if let pages = DownAudibleHelp.pages {
-            let url = pages.appending(path: chapter.id + ".html", directoryHint: .notDirectory)
-            if FileManager.default.fileExists(atPath: url.path) {
-                HelpWebPage(url: url, openChapter: openChapter)
+            let file = pages.appending(path: chapter.id + ".html", directoryHint: .notDirectory)
+            if FileManager.default.fileExists(atPath: file.path) {
+                let url = pageURL(file, anchor: anchor)
+                HelpWebPage(url: url, openChapter: openChapter).id(url)
             } else {
                 unavailable
             }
         } else {
             unavailable
         }
+    }
+
+    private func pageURL(_ file: URL, anchor: String?) -> URL {
+        guard let anchor, var parts = URLComponents(url: file, resolvingAgainstBaseURL: false) else { return file }
+        parts.fragment = anchor
+        return parts.url ?? file
     }
 
     private var unavailable: some View {
@@ -116,7 +144,7 @@ struct DownAudibleHelpView: View {
 
 private struct HelpWebPage: NSViewRepresentable {
     let url: URL
-    let openChapter: (HelpChapter.ID) -> Void
+    let openChapter: (HelpChapter.ID, String?) -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(openChapter: openChapter)
@@ -137,9 +165,9 @@ private struct HelpWebPage: NSViewRepresentable {
 
     @MainActor
     final class Coordinator: NSObject, WKNavigationDelegate {
-        var openChapter: (HelpChapter.ID) -> Void
+        var openChapter: (HelpChapter.ID, String?) -> Void
 
-        init(openChapter: @escaping (HelpChapter.ID) -> Void) {
+        init(openChapter: @escaping (HelpChapter.ID, String?) -> Void) {
             self.openChapter = openChapter
         }
 
@@ -147,15 +175,11 @@ private struct HelpWebPage: NSViewRepresentable {
             guard action.navigationType == .linkActivated, let url = action.request.url else { return .allow }
             if url.isFileURL {
                 let id = url.deletingPathExtension().lastPathComponent
-                if id == "index", let firstChapter = HelpChapter.all.first {
-                    openChapter(firstChapter.id)
-                    return .cancel
-                }
+                if webView.url?.path == url.path, url.fragment != nil { return .allow }
                 if HelpChapter.all.contains(where: { $0.id == id }) {
-                    openChapter(id)
-                    return .cancel
+                    openChapter(id, url.fragment)
                 }
-                return .allow
+                return .cancel
             }
             if url.scheme == "https" || url.scheme == "http" {
                 NSWorkspace.shared.open(url)
@@ -173,7 +197,7 @@ private struct HelpChapter: Identifiable {
     static let all: [HelpChapter] = {
         let folders: [String?] = [nil, "Manual", "Help/Manual"]
         let urls = Set(folders.flatMap { Bundle.main.urls(forResourcesWithExtension: "md", subdirectory: $0) ?? [] })
-        return urls.filter { $0.lastPathComponent.hasPrefix("help-") }
+        let chapters: [HelpChapter] = urls.filter { $0.lastPathComponent.hasPrefix("help-") }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
             .compactMap { url in
                 guard let text = try? String(contentsOf: url, encoding: .utf8),
@@ -182,6 +206,8 @@ private struct HelpChapter: Identifiable {
                 return HelpChapter(id: url.deletingPathExtension().lastPathComponent,
                                    title: String(heading.dropFirst(2)), searchableText: String(text[..<footerStart]))
             }
+        guard DownAudibleHelp.pages != nil else { return [] }
+        return [HelpChapter(id: DownAudibleHelp.contents, title: "Contents", searchableText: "")] + chapters
     }()
 
     func matches(_ query: String) -> Bool {

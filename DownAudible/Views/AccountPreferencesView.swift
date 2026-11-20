@@ -32,18 +32,27 @@ struct AccountPreferencesView: View {
                         .foregroundStyle(.secondary)
                 } else {
                     Table(model.accounts, selection: $selectedAccount) {
-                        TableColumn("Account", value: \.name)
-                        TableColumn("Marketplace") { account in Text(account.marketplace.displayName) }
+                        TableColumn("Account") { account in
+                            Text(account.name).appHelp(account.name)
+                        }
+                        TableColumn("Marketplace") { account in
+                            Text(account.marketplace.displayName)
+                                .appHelp("This account uses the Audible marketplace in \(account.marketplace.displayName).")
+                        }
                         TableColumn("Status") { account in
                             if model.activeAccount?.id == account.id {
                                 Label(model.signedIn ? "Active" : "Signed out",
                                       systemImage: model.signedIn ? "checkmark.circle" : "person.crop.circle.badge.exclamationmark")
                                     .foregroundStyle(.secondary)
+                                    .appHelp(model.signedIn
+                                        ? "The Library is showing books from this account."
+                                        : "Sign in to this account to refresh the library or download its books.")
                             }
                         }
                         .width(min: 96, ideal: 112, max: 132)
                     }
                     .frame(minHeight: 160)
+                    .appHelp("Select an account to see sign-in and account management actions.")
                     .contextMenu(forSelectionType: SavedAudibleAccount.ID.self) { ids in
                         if let selected = model.accounts.first(where: { ids.contains($0.id) }) {
                             accountActions(selected)
@@ -54,11 +63,14 @@ struct AccountPreferencesView: View {
                 HStack(spacing: 8) {
                     Button("Add Account…", systemImage: "person.badge.plus") { sheet = .add }
                         .keyboardShortcut("a", modifiers: [.control, .shift])
+                        .appHelp("Connect another Audible account through your browser.")
                     Button("Import from Audible CLI…", systemImage: "square.and.arrow.down") { sheet = .importCLI }
                         .keyboardShortcut("i", modifiers: [.control, .shift])
+                        .appHelp("Connect an account using an Audible CLI profile or auth file.")
                     if model.accountBusy {
                         ProgressView().controlSize(.small)
                             .accessibilityLabel("Updating Audible accounts")
+                            .appHelp("DownAudible is updating the Audible account.")
                     }
                 }
                 .disabled(!model.canSwitchAccounts)
@@ -95,7 +107,9 @@ struct AccountPreferencesView: View {
         }
         .alert("Remove Account?", isPresented: $showingRemove, presenting: accountToRemove) { account in
             Button("Cancel", role: .cancel) { accountToRemove = nil }
+                .appHelp("Close this message and keep the account in DownAudible.")
             Button("Remove Account", role: .destructive) { removeAccount(account) }
+                .appHelp("Remove this account, its saved sign-in and its file matches from DownAudible.")
         } message: { account in
             Text("This removes \(account.name) from DownAudible and clears its saved sign-in.")
         }
@@ -112,25 +126,30 @@ struct AccountPreferencesView: View {
                 Button("Sign In…") { sheet = .reconnect }
                     .keyboardShortcut("s", modifiers: [.control, .shift])
                     .disabled(!model.canSwitchAccounts)
+                    .appHelp("Open the browser sign-in steps for this account.")
             } else {
                 Button("Sign Out", action: model.signOut)
                     .keyboardShortcut("q", modifiers: [.control, .shift])
                     .disabled(!model.canRemoveAccounts)
+                    .appHelp("Clear this account’s saved sign-in. You can sign in to the same profile later.")
             }
         } else {
             Button("Switch to This Account") { switchAccount(to: account) }
                 .keyboardShortcut("s", modifiers: [.control, .shift])
                 .disabled(!model.canSwitchAccounts)
+                .appHelp("Make this account active and load its library.")
         }
         Button("Rename…", systemImage: "pencil") { sheet = .rename(account) }
             .keyboardShortcut("n", modifiers: [.control, .shift])
             .disabled(!model.canSwitchAccounts)
+            .appHelp("Change the name shown for this account in DownAudible.")
         Button("Remove Account…", role: .destructive) {
             accountToRemove = account
             showingRemove = true
         }
         .keyboardShortcut(.delete, modifiers: [.control, .shift])
         .disabled(!model.canRemoveAccounts)
+        .appHelp("Review removal of this account and its saved sign-in from DownAudible.")
     }
 
     private func switchAccount(to account: SavedAudibleAccount) {
@@ -172,16 +191,19 @@ private struct RenameAccountView: View {
                 .accessibilityAddTraits(.isHeader)
             TextField("Account name", text: $name)
                 .textFieldStyle(.roundedBorder)
+                .appHelp("Enter the name you want to see in the account switcher.")
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
+                    .appHelp("Close this sheet and keep the current account name.")
                 Button("Save") {
                     model.renameAccount(account, to: trimmedName)
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(trimmedName.isEmpty || trimmedName == account.name)
+                .appHelp("Use this name for the account in DownAudible.")
             }
         }
         .padding(24)

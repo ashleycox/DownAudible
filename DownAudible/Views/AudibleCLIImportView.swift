@@ -37,6 +37,7 @@ struct AudibleCLIImportView: View {
             .pickerStyle(.segmented)
             .disabled(isImporting)
             .onChange(of: source) { resetFields() }
+            .appHelp("Choose a profile from an Audible CLI configuration, or choose an auth file directly.")
 
             Group {
                 if source == .profile {
@@ -50,12 +51,14 @@ struct AudibleCLIImportView: View {
                         TextField("Account name", text: $name)
                             .labelsHidden()
                             .textFieldStyle(.roundedBorder)
+                            .appHelp("Enter the name to show in the account switcher after importing.")
                     }
                     if requiresPassword {
                         LabeledContent("Auth file password") {
                             SecureField("Auth file password", text: $password)
                                 .labelsHidden()
                                 .textFieldStyle(.roundedBorder)
+                                .appHelp("Enter the password used to encrypt the selected auth file.")
                         }
                     }
                     Picker("Marketplace", selection: $marketplace) {
@@ -65,6 +68,7 @@ struct AudibleCLIImportView: View {
                             Text(market.displayName).tag(Optional(market))
                         }
                     }
+                    .appHelp("Use the marketplace detected in the file, or choose the Audible store for this account.")
                 }
             }
             .disabled(isImporting)
@@ -82,15 +86,18 @@ struct AudibleCLIImportView: View {
                     ProgressView()
                         .controlSize(.small)
                         .accessibilityLabel(isImporting ? "Importing account" : "Reading Audible CLI files")
+                        .appHelp("DownAudible is reading the Audible CLI account.")
                 }
                 Spacer()
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
                     .disabled(isImporting)
+                    .appHelp("Close this sheet without importing an account.")
                 Button("Import", action: importAccount)
                     .keyboardShortcut(.defaultAction)
                     .disabled(importFile == nil || isReading || isImporting || !model.canSwitchAccounts
                         || (requiresPassword && password.isEmpty))
+                    .appHelp("Save the selected Audible account in Keychain and load its library.")
             }
         }
         .padding(24)
@@ -101,7 +108,9 @@ struct AudibleCLIImportView: View {
 
     private var profileFields: some View {
         Group {
-            filePicker("Configuration", url: config) { config = $0 }
+            filePicker("Configuration", url: config, hint: "Choose the config.toml that contains your Audible CLI profiles.") {
+                config = $0
+            }
             if !profiles.isEmpty {
                 Picker("Profile", selection: $selectedProfileName) {
                     ForEach(profiles) { profile in
@@ -115,23 +124,26 @@ struct AudibleCLIImportView: View {
                     marketplace = nil
                     problem = nil
                 }
+                .appHelp("Choose which account profile to import from this configuration.")
             }
         }
         .task(id: config) { await readProfiles() }
     }
 
     private var authFileFields: some View {
-        filePicker("Auth file", url: authFile) { authFile = $0 }
-            .task(id: authFile) { await readAuthFile() }
+        filePicker("Auth file", url: authFile, hint: "Choose an Audible CLI auth file or an exported DownAudible account file.") {
+            authFile = $0
+        }
+        .task(id: authFile) { await readAuthFile() }
     }
 
-    private func filePicker(_ title: String, url: URL?, select: @escaping (URL) -> Void) -> some View {
+    private func filePicker(_ title: String, url: URL?, hint: String, select: @escaping (URL) -> Void) -> some View {
         LabeledContent(title) {
             HStack(spacing: 8) {
                 Text(url?.lastPathComponent ?? "Choose a file")
                     .lineLimit(1)
                     .truncationMode(.middle)
-                    .help(url?.path(percentEncoded: false) ?? "")
+                    .appHelp(url?.path(percentEncoded: false) ?? hint)
                 Button("Choose…") {
                     let panel = NSOpenPanel()
                     panel.canChooseFiles = true
@@ -145,6 +157,7 @@ struct AudibleCLIImportView: View {
                 }
                 .keyboardShortcut("o", modifiers: [.control, .shift])
                 .accessibilityLabel("Choose \(title.lowercased()) file")
+                .appHelp(hint)
             }
         }
     }

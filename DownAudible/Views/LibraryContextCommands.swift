@@ -20,28 +20,35 @@ struct LibraryContextCommands: View {
             Button("Find in Library", action: actions.find)
                 .keyboardShortcut("f")
                 .disabled(!model.signedIn)
+                .appHelp("Focus the search field for finding books in this library.")
 
             Menu("File Matching") {
                 LibraryFolderActions(model: model, inMenuBar: true)
             }
             .disabled(!model.signedIn)
+            .appHelp("Find existing audiobook files and match them to your library.")
 
             Menu("Selected Books") {
                 LibraryBookActions(model: model, books: model.selectedAudiobooks, inMenuBar: true)
             }
             .disabled(model.selectedBooks.isEmpty)
+            .appHelp("Show actions for the currently selected audiobooks.")
 
             Menu("Audible Accounts") {
                 Button(model.signedIn ? "Add Account…" : "Sign In…", action: actions.signIn)
                     .keyboardShortcut("a", modifiers: [.control, .shift])
                     .disabled(!model.canSwitchAccounts)
+                    .appHelp("Start connecting an Audible account.")
                 Button("Import from Audible CLI…", action: actions.importAccount)
                     .keyboardShortcut("i", modifiers: [.control, .shift])
                     .disabled(!model.canSwitchAccounts)
+                    .appHelp("Connect an Audible account using a saved CLI login.")
                 Button("Sign Out", action: model.signOut)
                     .keyboardShortcut("q", modifiers: [.control, .shift])
                     .disabled(!model.signedIn || !model.canRemoveAccounts)
+                    .appHelp("Clear the saved sign-in for this account.")
             }
+            .appHelp("Connect another Audible account or manage the current sign-in.")
         }
     }
 }
@@ -58,6 +65,7 @@ struct LibraryFolderActions: View {
         }
         .keyboardShortcut(shortcut("f"))
         .disabled(busy)
+        .appHelp("Scan a folder for files that match your audiobooks.")
 
         if inMenuBar || folder != nil {
             Button("Rescan Matched Folder") {
@@ -65,14 +73,17 @@ struct LibraryFolderActions: View {
             }
             .keyboardShortcut(shortcut("r"))
             .disabled(busy || folder == nil)
+            .appHelp("Look for new, changed, or removed audio in the matched folder.")
             Button("Show Matched Folder in Finder") {
                 if let folder { NSWorkspace.shared.open(folder) }
             }
             .keyboardShortcut(shortcut("o"))
             .disabled(folder == nil)
+            .appHelp("Open the matched audio folder in Finder.")
             Button("Stop Matching This Folder", action: model.unlinkFolder)
                 .keyboardShortcut(shortcut("u"))
                 .disabled(busy || folder == nil)
+                .appHelp("Disconnect the matched folder and keep its files on disk.")
         }
     }
 
@@ -101,6 +112,7 @@ struct LibraryBookActions: View {
             Button("Show Audio in Finder") { NSWorkspace.shared.activateFileViewerSelecting(files) }
                 .keyboardShortcut(shortcut("s"))
                 .disabled(files.isEmpty)
+                .appHelp("Reveal the available audio files for the selected audiobooks.")
             let supported = files.filter { AppleBooks.supports($0) }
             if inMenuBar || !supported.isEmpty {
                 appleBooksActions(supported, originals: Set(books.flatMap { model.originalFiles(for: $0) }))
@@ -114,12 +126,14 @@ struct LibraryBookActions: View {
             }
             .keyboardShortcut(shortcut("t"))
             .disabled(books.count != 1)
+            .appHelp("Copy the selected audiobook’s title to the clipboard.")
         }
         Button(books.count > 1 ? "Copy ASINs" : "Copy ASIN") {
             copy(books.map(\.asin).joined(separator: "\n"))
         }
         .keyboardShortcut(shortcut("c"))
         .disabled(books.isEmpty)
+        .appHelp("Copy the selected books’ Audible product identifiers.")
     }
 
     private func appleBooksActions(_ urls: [URL], originals: Set<URL>) -> some View {
@@ -131,6 +145,7 @@ struct LibraryBookActions: View {
             booksButton("M4B Files", urls: m4b, key: "2")
             booksButton("Other Audio", urls: other, key: "3")
         }
+        .appHelp("Send saved audio for the selected books to Apple Books.")
     }
 
     @ViewBuilder
@@ -139,6 +154,7 @@ struct LibraryBookActions: View {
             Button(title) { Task { await model.addToAppleBooks(urls) } }
                 .keyboardShortcut(shortcut(key))
                 .disabled(urls.isEmpty)
+                .appHelp("Send this type of saved audio to Apple Books.")
         }
     }
 
@@ -151,10 +167,12 @@ struct LibraryBookActions: View {
         }
         .keyboardShortcut(shortcut("m"))
         .disabled(model.isScanning)
+        .appHelp("Choose an audio file or several parts to associate with this book.")
         if inMenuBar || hasMatch {
             Button("Remove File Match") { model.removeMatch(book) }
                 .keyboardShortcut(shortcut(.delete))
                 .disabled(model.isScanning || !hasMatch)
+                .appHelp("Remove this book’s file association and leave the audio on disk.")
         }
     }
 

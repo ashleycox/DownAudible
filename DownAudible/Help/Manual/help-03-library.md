@@ -6,6 +6,8 @@ Choose **Sort Library** in the toolbar or **View > Sort Library**. Pick a field 
 
 Choose **Filter Library** in the toolbar or **View > Filter Library** to narrow the table by title, author, series, narrator, genre, language, release year, or download status. You can apply several filters together. Choose the same field again to edit it or choose **Remove Filter**. Under **Download Status**, choose **Any Status** to remove that filter. Choose **Clear Filters** to start over. Filters clear when you switch accounts, sign out, or quit DownAudible.
 
+Press Shift–Command–S to open the sort menu or Shift–Command–F to open the filter menu. Use the arrow keys and Return to choose an item. Use Option–Shift–Command–S to reverse the current sort or Option–Shift–Command–F to clear the filters.
+
 When you type a filter, DownAudible suggests matches from the current library. Click a suggestion or use the Up and Down Arrow keys and press Return. You can also enter your own value. To hide suggestions, turn off **Suggest filter values as you type** in **Settings > Library**.
 
 Press Command–F to search by title, author, narrator, series, or ASIN. Search works within your active filters. Click one book, then Command-click to add individual books to the selection. Shift-click selects a range.

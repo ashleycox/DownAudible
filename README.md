@@ -27,6 +27,8 @@ The setup wizard opens the first time you run DownAudible. Use it to connect an 
 3. In **Audiobooks → Download**, choose **Download Missing** to fetch eligible titles without a complete audio copy, or select books and choose **Download Selected**. Use the corresponding **As…** command to review the destination, audio, conversion, and optional PDFs, cover images, chapters, and notes.
 4. If a batch is interrupted, open **Downloads** and choose **Retry Incomplete**. DownAudible resumes partial audio when Audible can confirm it is the same file. Choose **Restart Download…** from a job’s contextual menu to discard its temporary bytes and download it from the start.
 
+In **Settings → Jobs**, choose a sound for the end of a batch or for each download and conversion outcome. You can also turn on Notification Center alerts for those outcomes.
+
 **Audiobooks → Audible Tools** opens the wish list, catalogue search, activation bytes, and encrypted Audible CLI account export for the current account. Use **Audiobooks → Library → Export Library** to save the loaded library as JSON, CSV, or TSV.
 
 Use **Sort Library** and **Filter Library** in the library toolbar or the **View** menu to organise the table. Each account remembers its sort order. Filters clear when you switch accounts or quit. **Settings → Library** controls suggestions as you type a filter. **View → Library Status** shows which books need audio, which are downloaded or matched, and which Audible lists as unavailable. The **View** menu also controls the sidebar and the library status bar.
@@ -37,6 +39,8 @@ To convert existing files, drag them into **Convert Files** or choose **Add File
 
 When creating separate M4B or M4A files, turn on **Copy chapter audio when possible** to keep the original audio for compatible AAC chapters.
 
+When exporting MP3, turn on **Move converted AAX files to Trash** to remove eligible AAX sources after the complete export is saved.
+
 When DownAudible can’t unlock an AAX download for conversion, it tries to refresh the account’s activation code. With **AAX with fallback**, it requests AAXC for conversion if it still can’t unlock the AAX. Any originals already saved are kept. AAX files opened in **Convert Files** need the activation code for the account that downloaded them.
 
 Folder and filename templates are independent. The default folder template, `{format}/{author}/{title}`, groups original and converted formats separately. For chapter filenames you might use `{title} - {chapterNumber} - {chapter}`. Settings shows a preview as you edit.
@@ -45,9 +49,9 @@ Turn on **Keep Audible’s AAX filename** in **Settings → Files** to save new 
 
 ## Manual and keyboard shortcuts
 
-Open **Help → DownAudible Help** for the manual, including steps for recovering a batch, fixing missing files, and using Audible CLI profiles. **Help → Keyboard Shortcuts** opens the keyboard reference. [Browse manual chapters](DownAudible/Help/Manual) · [Keyboard shortcuts](DownAudible/Help/Manual/help-10-keyboard-shortcuts.md)
+Open **Help → DownAudible Help** for the manual or choose **Settings Reference** or **Keyboard Shortcuts** to go straight to that chapter. **Settings → General → Show Help Tags** controls the tips shown when you point to DownAudible controls. [Manual contents](DownAudible/Help/Manual/README.md) · [Settings reference](DownAudible/Help/Manual/help-12-settings.md) · [Keyboard shortcuts](DownAudible/Help/Manual/help-10-keyboard-shortcuts.md)
 
-From an Applications folder, these commands open macOS Help. From a build folder, DownAudible displays the same help pages in its own windows.
+Each build generates the indexed HTML Help bundle (`DownAudible.help`) from the Markdown chapters maintained on GitHub. Installed apps open the book in macOS Help. DownAudible displays the same HTML in its own window when system Help is unavailable.
 
 ## Build and run
 

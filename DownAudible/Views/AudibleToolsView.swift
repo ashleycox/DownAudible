@@ -11,21 +11,28 @@ struct AudibleToolsView: View {
     var body: some View {
         VStack(spacing: 12) {
             TabView {
-                Tab("Wish List", systemImage: "bookmark") {
+                Tab {
                     AudibleWishlistView(client: client)
+                } label: {
+                    Label("Wish List", systemImage: "bookmark")
+                        .appHelp("Browse and manage this account’s Audible wish list.")
                 }
-                Tab("Account", systemImage: "person.crop.circle") {
+                Tab {
                     AudibleAccountToolsView(client: client)
+                } label: {
+                    Label("Account", systemImage: "person.crop.circle")
+                        .appHelp("Show activation bytes and export an encrypted account file.")
                 }
             }
             HStack {
                 Label(accountName, systemImage: "person.crop.circle")
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                    .help(accountName)
+                    .appHelp("These tools are using the \(accountName) account.")
                 Spacer()
                 Button("Done") { dismiss() }
                     .keyboardShortcut(.cancelAction)
+                    .appHelp("Close Audible Tools.")
             }
         }
         .padding(20)
@@ -51,6 +58,7 @@ private struct AudibleAccountToolsView: View {
                         Text(bytes)
                             .monospaced()
                             .textSelection(.enabled)
+                            .appHelp("Use these activation bytes to convert an AAX file downloaded by this account.")
                     } else {
                         Text("Hidden")
                             .foregroundStyle(.secondary)
@@ -60,21 +68,26 @@ private struct AudibleAccountToolsView: View {
                     if bytes == nil {
                         Button("Show", systemImage: "eye") { load() }
                             .keyboardShortcut("h", modifiers: [.control, .shift])
+                            .appHelp("Display the activation bytes for this Audible account.")
                     } else {
                         Button("Hide", systemImage: "eye.slash") {
                             bytes = nil
                             isCopied = false
                         }
                         .keyboardShortcut("h", modifiers: [.control, .shift])
+                        .appHelp("Hide your activation bytes from view.")
                         Button("Copy", systemImage: "doc.on.doc", action: copyBytes)
                             .keyboardShortcut("c", modifiers: [.control, .shift])
+                            .appHelp("Copy the activation bytes to the clipboard for use with an AAX file.")
                     }
                     Button("Reload from Audible", systemImage: "arrow.clockwise") { load(refresh: true) }
                         .keyboardShortcut("l", modifiers: [.control, .shift])
+                        .appHelp("Ask Audible for fresh activation bytes for this account.")
                     if work != nil {
                         ProgressView()
                             .controlSize(.small)
                             .accessibilityLabel("Getting activation bytes")
+                            .appHelp("DownAudible is requesting the account’s activation bytes.")
                     }
                 }
                 .disabled(work != nil)
@@ -93,6 +106,7 @@ private struct AudibleAccountToolsView: View {
                     didExport = false
                 }
                 .keyboardShortcut("e", modifiers: [.control, .shift])
+                .appHelp("Save a password-protected account file that Audible CLI or DownAudible can import.")
                 if didExport {
                     Label("Account file saved.", systemImage: "checkmark.circle")
                         .foregroundStyle(.secondary)
@@ -152,7 +166,9 @@ private struct AudibleAuthExportView: View {
             Form {
                 Section("Export Encrypted Account File") {
                     SecureField("Password", text: $password)
+                        .appHelp("Set a password to protect the exported account file.")
                     SecureField("Confirm password", text: $confirmation)
+                        .appHelp("Enter the same password again.")
                     if !confirmation.isEmpty && password != confirmation {
                         Text("The passwords don’t match.")
                             .foregroundStyle(.secondary)
@@ -172,13 +188,16 @@ private struct AudibleAuthExportView: View {
                     ProgressView()
                         .controlSize(.small)
                         .accessibilityLabel("Encrypting account file")
+                        .appHelp("DownAudible is saving the encrypted account file.")
                 }
                 Spacer()
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
+                    .appHelp("Close this sheet and discard the password you entered.")
                 Button("Save Encrypted File…") { save() }
                     .keyboardShortcut(.defaultAction)
                     .disabled(password.isEmpty || password != confirmation || work != nil)
+                    .appHelp("Choose where to save this password-protected account file.")
             }
             .padding(.horizontal, 20)
             .padding(.bottom, 20)

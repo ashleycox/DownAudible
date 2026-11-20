@@ -1,4 +1,5 @@
 import Accessibility
+import AppKit
 import SwiftUI
 
 struct LibraryBrowseActions {
@@ -18,8 +19,34 @@ struct LibraryBrowseCommands: View {
     var body: some View {
         if let actions {
             Divider()
-            Menu("Sort Library") { LibrarySortItems(actions: actions) }
-            Menu("Filter Library") { LibraryFilterItems(actions: actions) }
+            Menu(LibraryBrowseMenu.sort.rawValue) { LibrarySortItems(actions: actions) }
+                .appHelp("Choose the field and direction used to order the library.")
+            Menu(LibraryBrowseMenu.filter.rawValue) { LibraryFilterItems(actions: actions) }
+                .appHelp("Choose what to show in the library without changing its contents.")
+            Button("Open Sort Menu", action: LibraryBrowseMenu.sort.open)
+                .keyboardShortcut("s", modifiers: [.command, .shift])
+                .appHelp("Open the menu for choosing a library sort field and direction.")
+            Button("Open Filter Menu", action: LibraryBrowseMenu.filter.open)
+                .keyboardShortcut("f", modifiers: [.command, .shift])
+                .appHelp("Open the menu for setting or clearing library filters.")
+        }
+    }
+}
+
+enum LibraryBrowseMenu: String {
+    case sort = "Sort Library"
+    case filter = "Filter Library"
+
+    @MainActor func open() {
+        // Wait for the View menu to finish tracking before presenting its submenu.
+        DispatchQueue.main.async {
+            guard let window = NSApp.keyWindow, window.attachedSheet == nil, window.sheetParent == nil,
+                  let view = window.contentView,
+                  let menu = NSApp.mainMenu?.items.lazy.compactMap({
+                      $0.submenu?.item(withTitle: rawValue)?.submenu
+                  }).first else { return }
+            let top = view.isFlipped ? view.bounds.minY + 16 : view.bounds.maxY - 16
+            menu.popUp(positioning: nil, at: NSPoint(x: view.bounds.minX + 16, y: top), in: view)
         }
     }
 }
@@ -34,6 +61,7 @@ struct LibrarySortItems: View {
             }
         }
         .pickerStyle(.inline)
+        .appHelp("Choose which book detail determines the order.")
 
         Divider()
 
@@ -44,6 +72,15 @@ struct LibrarySortItems: View {
             }
         }
         .pickerStyle(.inline)
+        .appHelp("Choose the direction of the current sort.")
+
+        Divider()
+
+        Button("Reverse Sort Order") {
+            actions.direction.wrappedValue = actions.direction.wrappedValue == .ascending ? .descending : .ascending
+        }
+        .keyboardShortcut("s", modifiers: [.command, .option, .shift])
+        .appHelp("Change the current sort to the opposite direction.")
     }
 }
 
@@ -62,6 +99,7 @@ struct LibraryFilterItems: View {
                     Text("\(field.displayName)…")
                 }
             }
+            .appHelp("Enter a filter value for this book detail.")
         }
 
         Menu("Download Status") {
@@ -72,12 +110,16 @@ struct LibraryFilterItems: View {
                 }
             }
             .pickerStyle(.inline)
+            .appHelp("Show books with a particular download status.")
         }
+        .appHelp("Show books with a particular download status.")
 
         Divider()
 
         Button("Clear Filters") { actions.filters.wrappedValue = LibraryFilters() }
+            .keyboardShortcut("f", modifiers: [.command, .option, .shift])
             .disabled(actions.filters.wrappedValue.isEmpty)
+            .appHelp("Remove all filters from the library table.")
     }
 }
 
@@ -120,6 +162,7 @@ struct LibraryTextFilterView: View {
                 }
                 .onSubmit(applyFilter)
                 .accessibilityHint(suggestions == nil ? "" : "Use the Up and Down Arrow keys to choose a suggestion.")
+                .appHelp("Enter part of a matching book detail or choose a suggestion.")
 
             if !matches.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
@@ -136,13 +179,16 @@ struct LibraryTextFilterView: View {
             HStack {
                 if hasFilter {
                     Button("Remove Filter") { finish(with: "") }
+                        .appHelp("Remove this filter and keep the other active filters.")
                 }
                 Spacer()
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
+                    .appHelp("Close the sheet without changing this filter.")
                 Button("Apply Filter", action: applyFilter)
                     .keyboardShortcut(.defaultAction)
                     .disabled(!canApply(highlighted ?? text))
+                    .appHelp("Filter the library using the entered value or highlighted suggestion.")
             }
         }
         .padding(24)
@@ -165,7 +211,7 @@ struct LibraryTextFilterView: View {
                 }
         }
         .buttonStyle(.plain)
-        .help(suggestion)
+        .appHelp(suggestion)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
