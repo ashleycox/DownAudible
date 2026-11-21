@@ -35,8 +35,9 @@ class PartsRequired(Exception):
 
 
 class FormatUnavailable(OperationError):
-    def __init__(self, code="downloadResponse"):
+    def __init__(self, code="downloadResponse", *, status_code=None):
         super().__init__(code)
+        self.status_code = status_code
 
 
 class RestartDownload(Exception):
@@ -290,7 +291,7 @@ async def receive(
     response, target, kind, progress, bandwidth, representation, state_path, resume
 ):
     if response.status_code in (400, 401, 403, 404, 410):
-        raise FormatUnavailable("sourceRejected")
+        raise FormatUnavailable("sourceRejected", status_code=response.status_code)
     filename = None
     if response.status_code in (206, 416):
         if resume is None:

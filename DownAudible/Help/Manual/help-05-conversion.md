@@ -30,7 +30,9 @@ Cleanup requires a new, successful conversion. A new job that reuses existing MP
 
 ## Format and chapters
 
-In **Settings > Conversion**, choose **M4B**, **M4A**, or **MP3**. An M4B is the usual choice for an audiobook with chapters in one file. You can keep a book in one file or write a separate file for each chapter.
+In **Settings > Conversion**, choose **M4B**, **M4A**, or **MP3**. An M4B is the usual choice for an audiobook with chapters in one file. Under **Chapters**, choose **One file** to save a book as one file or **Separate chapter files** to write a file for each chapter.
+
+When you convert a download from the Library with **One file** selected, DownAudible joins any parts Audible supplies. If those parts contain spoken continuation announcements, you’ll still hear them in the converted audio.
 
 For a single file, **Copy audio when possible** preserves a compatible audio stream. **Always encode** writes a new stream. Choosing a bitrate, channel count, or sample rate can also require encoding.
 

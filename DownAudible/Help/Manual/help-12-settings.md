@@ -44,7 +44,7 @@ The purchase date settings affect which titles the library loads. Use **Filter L
 | Setting | What it does |
 | --- | --- |
 | Download audio | Fetches audio when you download a title. On by default. Turn it off to request companion files only. |
-| Download format | **AAX with fallback** is the default and tries AAX first. **AAX only** requires AAX. **AAXC** requests the per-title download directly. |
+| Download format | **AAX with fallback** is the default. It tries to get the whole book as AAX, then as AAXC if needed, before requesting individual parts. **AAX only** requires AAX. **AAXC** requests the per-title download directly. |
 | Download quality | Requests **Best**, **High** or **Normal** from Audible. The default is **Best**. The available audio depends on the title and marketplace. |
 | Convert to M4B, M4A or MP3 | Creates a playable copy in the format selected in **Conversion**. Off by default. The label shows your chosen file format. |
 | Keep the original after conversion | Saves the original download as well as the converted copy. On by default. This setting applies when both audio downloading and conversion are on. |

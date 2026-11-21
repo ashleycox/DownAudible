@@ -39,6 +39,8 @@ Use **Sort Library** and **Filter Library** in the library toolbar or the **View
 
 To convert existing files, drag them into **Convert Files** or choose **Add Files…** or **Add Folder…**. Click a row’s **Remove from List** button to take that file out of the list. With the list focused, Backspace or Forward Delete removes selected entries. The source files stay on disk. **Audiobooks → Conversion Options…** controls the format, chapters, audio encoding, artwork, and metadata. In **Settings → Downloads**, you can send new original downloads or M4Bs to Apple Books.
 
+DownAudible requests the whole audiobook before downloading individual parts. If Audible supplies parts, **Settings → Conversion → Chapters → One file** joins them when you convert a download from the Library. Any spoken continuation announcements in the source audio carry through to the converted file.
+
 When creating separate M4B or M4A files, turn on **Copy chapter audio when possible** to keep the original audio for compatible AAC chapters.
 
 When exporting MP3, turn on **Move converted AAX files to Trash** to remove eligible AAX sources after the complete export is saved.

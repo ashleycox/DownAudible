@@ -609,7 +609,7 @@ def conversion_credentials(license_response):
     return {}
 
 
-async def download_part(item, client, web, folder, progress, options):
+async def download_audio(item, client, web, folder, progress, options):
     if (
         not isinstance(item.asin, str)
         or not re.fullmatch(r"[A-Za-z0-9]{10}", item.asin)
@@ -617,8 +617,13 @@ async def download_part(item, client, web, folder, progress, options):
         raise OperationError("unavailable")
     if not item.is_published():
         raise OperationError("notPublished")
-    if not (item.customer_rights or {}).get("is_consumable_offline", True):
+    rights = item.customer_rights or {}
+    if not rights.get("is_consumable_offline", True):
         raise OperationError("offlineRestricted")
+    has_parts = item.content_delivery_type == "MultiPartBook"
+    if has_parts and "is_consumable_offline" not in rights:
+        # The download URL providers require explicit offline rights for their item.
+        raise PartsRequired()
     quality = options.get("quality", "best")
     mode = options.get("format", "preferAAX")
     bandwidth = max(0, options.get("bytesPerSecond", 0))
@@ -646,29 +651,41 @@ async def download_part(item, client, web, folder, progress, options):
             }
         except NotDownloadableAsAAX:
             break
+        except PartsRequired:
+            has_parts = True
         except (AudibleCliException, FormatUnavailable):
             continue
 
     if mode == "aaxOnly":
+        if has_parts:
+            raise PartsRequired()
         raise OperationError("aaxUnavailable")
-    url, codec, voucher = await item.get_aaxc_url(quality)
-    extension = "mp3" if codec.lower() == "mpeg" else "aaxc"
-    credentials = conversion_credentials(voucher)
-    representation = (
-        fingerprint(extension, quality, codec, credentials)
-        if credentials or extension == "mp3"
-        else None
-    )
-    target = await stream_file(
-        web,
-        url,
-        folder / (item.asin + "." + extension),
-        extension,
-        progress,
-        api=client,
-        bandwidth=bandwidth,
-        representation=representation,
-    )
+    try:
+        url, codec, voucher = await item.get_aaxc_url(quality)
+        extension = "mp3" if codec.lower() == "mpeg" else "aaxc"
+        credentials = conversion_credentials(voucher)
+        representation = (
+            fingerprint(extension, quality, codec, credentials)
+            if credentials or extension == "mp3"
+            else None
+        )
+        target = await stream_file(
+            web,
+            url,
+            folder / (item.asin + "." + extension),
+            extension,
+            progress,
+            api=client,
+            bandwidth=bandwidth,
+            representation=representation,
+        )
+    except (NoDownloadUrl, NotFoundError, OperationError) as error:
+        if has_parts and (
+            failure_code(error) in ("aaxcUnavailable", "notFound", "downloadResponse")
+            or (isinstance(error, FormatUnavailable) and error.status_code in (404, 410))
+        ):
+            raise PartsRequired() from error
+        raise
     return {
         "file": target.path.name,
         "asin": item.asin,
@@ -686,21 +703,18 @@ async def resolve_parts(item):
 
 async def download_book(client, web, asin, folder, options):
     item = await library_item(client, asin)
-    if item.content_delivery_type == "MultiPartBook":
+    try:
+        result = await download_audio(
+            item,
+            client,
+            web,
+            folder,
+            lambda progress: emit(progress=progress),
+            options,
+        )
+        return {"parts": [result]}
+    except PartsRequired:
         parts = await resolve_parts(item)
-    else:
-        try:
-            result = await download_part(
-                item,
-                client,
-                web,
-                folder,
-                lambda progress: emit(progress=progress),
-                options,
-            )
-            return {"parts": [result]}
-        except PartsRequired:
-            parts = await resolve_parts(item)
 
     results = []
     for index, part in enumerate(parts):
@@ -709,7 +723,7 @@ async def download_book(client, web, asin, folder, options):
             emit(progress=(part_index + progress) / len(parts))
 
         results.append(
-            await download_part(part, client, web, folder, report_progress, options)
+            await download_audio(part, client, web, folder, report_progress, options)
         )
     return {"parts": results}
 
