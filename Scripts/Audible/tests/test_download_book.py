@@ -58,7 +58,8 @@ class DownloadBookTests(unittest.IsolatedAsyncioTestCase):
         self.requests = []
 
     async def download(
-        self, mode, *, aax=(), licenses=None, parts=False, include_book_rights=True, book_aaxc_status=200
+        self, mode, *, aax=(), licenses=None, parts=False, include_book_rights=True,
+        book_aaxc_status=200, delivery_type="MultiPartBook", prefer_whole_book=None,
     ):
         licenses = licenses or {}
 
@@ -66,7 +67,7 @@ class DownloadBookTests(unittest.IsolatedAsyncioTestCase):
             path = request.url.path
             if path == f"/1.0/library/{BOOK}":
                 self.requests.append(("book", BOOK))
-                book = item(BOOK, "MultiPartBook")
+                book = item(BOOK, delivery_type)
                 if not include_book_rights:
                     del book["customer_rights"]
                 return httpx.Response(200, json={"item": book})
@@ -110,6 +111,9 @@ class DownloadBookTests(unittest.IsolatedAsyncioTestCase):
         async def sign(_auth, request):
             yield request
 
+        options = {"format": mode}
+        if prefer_whole_book is not None:
+            options["preferWholeBookDownloads"] = prefer_whole_book
         with (
             patch("httpx.AsyncClient", new=client),
             patch("audible.Authenticator.async_auth_flow", new=sign),
@@ -121,7 +125,7 @@ class DownloadBookTests(unittest.IsolatedAsyncioTestCase):
                 "session": json.dumps(ACCOUNT),
                 "asin": BOOK,
                 "directory": str(self.directory),
-                "options": {"format": mode},
+                "options": options,
             })
 
     def assert_files(self, result, asins, extension):
@@ -138,6 +142,22 @@ class DownloadBookTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_multipart_book_downloads_as_one_file_when_available(self):
         result = await self.download("aaxcOnly", licenses={BOOK: license_for(BOOK)})
+        self.assert_files(result, (BOOK,), "aaxc")
+        self.assertEqual(self.requests, [("book", BOOK), ("license", BOOK), ("aaxc", BOOK)])
+
+    async def test_whole_book_opt_out_requests_parts_for_multipart_title(self):
+        result = await self.download(
+            "aaxcOnly", licenses={asin: license_for(asin) for asin in PARTS},
+            parts=True, prefer_whole_book=False,
+        )
+        self.assert_files(result, PARTS, "aaxc")
+        self.assertEqual(self.requests[:2], [("book", BOOK), ("parts", BOOK)])
+
+    async def test_whole_book_opt_out_still_downloads_single_file_titles(self):
+        result = await self.download(
+            "aaxcOnly", licenses={BOOK: license_for(BOOK)},
+            delivery_type="SinglePartBook", prefer_whole_book=False,
+        )
         self.assert_files(result, (BOOK,), "aaxc")
         self.assertEqual(self.requests, [("book", BOOK), ("license", BOOK), ("aaxc", BOOK)])
 

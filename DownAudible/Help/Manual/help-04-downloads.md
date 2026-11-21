@@ -12,11 +12,11 @@ Choose **Download Selected As…**, **Download Missing As…**, or **Download En
 
 To save only converted audio from a new download, turn off **Keep the original after conversion**. To move a previously saved AAX file to Trash after a new MP3 conversion, also turn on **Move converted AAX files to Trash** in **Settings > Conversion**.
 
-## Choose an Audible format and quality
+## Choose a format, quality and download layout
 
-**Settings > Downloads** controls the source format and quality. **AAX with fallback** asks for the whole book as AAX first, then tries AAXC if Audible can’t supply a single AAX file. When conversion is on, it also requests AAXC if DownAudible can’t unlock the AAX after trying to refresh the activation bytes. **AAX only** requires an AAX download and needs the account’s activation bytes for conversion. **AAXC** requests AAXC directly and keeps the format Audible supplies. **Settings > Conversion** controls the exported file format.
+**Settings > Downloads** controls the source format and quality. **AAX with fallback** tries AAX first, then AAXC if needed. When conversion is on, it also requests AAXC if DownAudible can’t unlock the AAX after trying to refresh the activation bytes. **AAX only** requires an AAX download and needs the account’s activation bytes for conversion. **AAXC** requests AAXC directly and keeps the format Audible supplies. **Settings > Conversion** controls the exported file format.
 
-DownAudible requests the whole book before downloading individual parts. Some titles are available only in parts in the formats allowed by your download settings. DownAudible can keep those parts and combine them during conversion. Where available, cover and annotation files can also be downloaded separately.
+**Prefer whole-book downloads** is on by default. DownAudible tries to download one file for the title before requesting individual parts, using the formats allowed by **Download format**. Turn the setting off to request individual files for titles Audible lists as multipart. DownAudible can keep those parts and combine them during conversion. Where available, cover and annotation files can also be downloaded separately.
 
 ## Set defaults for later
 

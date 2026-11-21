@@ -105,6 +105,12 @@ nonisolated struct AudibleAPIOptions: Codable, Equatable, Sendable {
     var coverSizes: [Int] = []
     var chapterStyle: AudibleChapterStyle = .tree
     var bytesPerSecond: Int = 0
+    private var preferWholeBookDownloads: Bool?
+
+    var prefersWholeBookDownloads: Bool {
+        get { preferWholeBookDownloads ?? true }
+        set { preferWholeBookDownloads = newValue ? nil : false }
+    }
 }
 
 nonisolated struct AudibleCLIProfile: Decodable, Identifiable, Sendable {

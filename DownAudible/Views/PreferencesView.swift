@@ -210,6 +210,9 @@ private struct DownloadPreferencesView: View {
                 }
                 .disabled(!model.downloadOptions.downloadAudio)
                 .appHelp("Choose the audio quality DownAudible requests from Audible.")
+                Toggle("Prefer whole-book downloads", isOn: $model.apiOptions.prefersWholeBookDownloads)
+                    .disabled(!model.downloadOptions.downloadAudio)
+                    .appHelp("Ask for the whole book before requesting individual parts.")
                 Toggle("Convert to \(model.conversionPreferences.format.displayName)", isOn: $model.downloadOptions.convert)
                     .disabled(!model.downloadOptions.downloadAudio)
                     .appHelp("Convert downloaded audio using the current Conversion settings.")

@@ -703,19 +703,25 @@ async def resolve_parts(item):
 
 async def download_book(client, web, asin, folder, options):
     item = await library_item(client, asin)
-    try:
-        result = await download_audio(
-            item,
-            client,
-            web,
-            folder,
-            lambda progress: emit(progress=progress),
-            options,
-        )
-        return {"parts": [result]}
-    except PartsRequired:
-        parts = await resolve_parts(item)
+    prefer_parts = (
+        item.content_delivery_type == "MultiPartBook"
+        and options.get("preferWholeBookDownloads") is False
+    )
+    if not prefer_parts:
+        try:
+            result = await download_audio(
+                item,
+                client,
+                web,
+                folder,
+                lambda progress: emit(progress=progress),
+                options,
+            )
+            return {"parts": [result]}
+        except PartsRequired:
+            pass
 
+    parts = await resolve_parts(item)
     results = []
     for index, part in enumerate(parts):
 

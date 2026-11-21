@@ -1034,9 +1034,12 @@ struct ArchiveChecks {
         conversion.format = .mp3
         conversion.chapterMode = .separate
         let activation = "A1B2C3D4"
+        var apiOptions = AudibleAPIOptions()
+        check(apiOptions.prefersWholeBookDownloads)
+        apiOptions.prefersWholeBookDownloads = false
         var batch = TransferBatch(
             work: [.library(book, matches: [file.url]), .local(file)], account: account,
-            apiOptions: AudibleAPIOptions(), layout: layout, options: options, conversion: conversion,
+            apiOptions: apiOptions, layout: layout, options: options, conversion: conversion,
             appleBooks: .off, preferences: TransferPreferences(), jobLimit: 2
         )
         batch.activation = activation
@@ -1070,6 +1073,7 @@ struct ArchiveChecks {
             fatalError("Transfer queue did not reopen")
         }
         check(savedBatch.account == account && savedBatch.activation == nil)
+        check(!savedBatch.apiOptions.prefersWholeBookDownloads)
         check(savedBatch.layout == layout && savedBatch.options.downloadCover && savedBatch.options.makesConversion)
         check(savedBatch.conversion == conversion && savedBatch.jobLimit == 2)
         check(saved.transfers.map(\.id) == [downloading.id, failed.id])
@@ -1092,10 +1096,18 @@ struct ArchiveChecks {
 
         var legacyJSON = try JSONSerialization.jsonObject(with: raw) as? [String: Any] ?? [:]
         legacyJSON.removeValue(forKey: "history")
+        guard var legacyBatch = legacyJSON["batch"] as? [String: Any],
+              var legacyAPIOptions = legacyBatch["apiOptions"] as? [String: Any] else {
+            fatalError("Transfer queue did not save Audible options")
+        }
+        check(legacyAPIOptions.removeValue(forKey: "preferWholeBookDownloads") as? Bool == false)
+        legacyBatch["apiOptions"] = legacyAPIOptions
+        legacyJSON["batch"] = legacyBatch
         let legacySnapshot = try JSONDecoder().decode(
             TransferQueueSnapshot.self, from: JSONSerialization.data(withJSONObject: legacyJSON)
         )
         check(legacySnapshot.history.isEmpty && legacySnapshot.batch?.repairsArchive == nil)
+        check(legacySnapshot.batch?.apiOptions.prefersWholeBookDownloads == true)
         check(legacySnapshot.transfers.map(\.id) == [downloading.id, failed.id])
 
         var repairBatch = batch
