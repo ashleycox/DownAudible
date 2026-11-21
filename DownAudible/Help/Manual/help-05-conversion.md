@@ -20,6 +20,14 @@ Encrypted AAX files need the eight hexadecimal characters from the account that 
 
 AAXC files need their saved licence or a compatible `.voucher` beside the book. Keep multipart audio and companion files together when moving them.
 
+## Edit a book before conversion
+
+In the Library, Control-click one book and choose **Edit Book…**. If the editor needs to fetch the audio, click **Download Original**. To work with files already on your Mac, select one file or several parts of the same book in **Convert Files**, then click **Edit Book…**. DownAudible orders selected parts by filename.
+
+Click **Preview** to hear up to 10 seconds from the start of a part or chapter. Clear the checkbox beside each part or chapter you want to leave out. If a spoken announcement has its own section, you can leave it out the same way. Keep at least one section selected, then click **Convert to M4B** to save a separate copy. When you exclude audio, DownAudible adds ` - Edited` to the filename. The source files stay in place.
+
+The editor saves one M4B and uses your audio and book details options from **Settings > Conversion**.
+
 ## Move converted AAX files to Trash
 
 In **Settings > Conversion**, choose **MP3**, then turn on **Move converted AAX files to Trash**. DownAudible moves an AAX source queued in **Convert Files** to the Mac’s Trash after all MP3 output for that file has been saved. You can restore the original from Trash in Finder.
@@ -39,6 +47,8 @@ For a single file, **Copy audio when possible** preserves a compatible audio str
 For separate M4B or M4A files, turn on **Copy chapter audio when possible** to keep compatible AAC audio without encoding. Leave bitrate, channels, and sample rate at their defaults. DownAudible encodes MP3, incompatible sources, and chapters spanning two source files. Some players may play extra audio at the edge of a copied chapter. Turn off the option if your player has trouble with the chapter cuts.
 
 For MP3, **Constant (CBR)** keeps one bitrate throughout the file. **Variable (VBR)** adjusts the bitrate as the audio changes, using the selected quality level. For a single file, turn on **Keep chapter markers** to retain navigation. **Keep book metadata** and **Embed cover image** control the book tags and cover in the output.
+
+With **Separate chapter files** and **Keep book metadata** selected, DownAudible writes the track number and a title such as `Chapter 3 - The Garden`. A heading that already begins with a chapter number keeps its wording. An unnamed chapter uses a title such as `Chapter 3`.
 
 ## Choose settings for a player
 

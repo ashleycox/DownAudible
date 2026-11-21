@@ -9,18 +9,37 @@ enum MediaTags {
         "tempo", "location", "creation_time"
     ]
     private static let containerKeys: Set<String> = ["major_brand", "minor_version", "compatible_brands"]
+    private static let iTunesPrefix = "com.apple.iTunes:"
+    private static let editedBookKey = "DOWNAUDIBLE_EDITED"
+    private static let editedBookKeys = [editedBookKey.lowercased(), (iTunesPrefix + editedBookKey).lowercased()]
+
+    static func isEditedBook(_ tags: [String: String]) -> Bool {
+        editedBookKeys.contains { tags[$0] == "1" }
+    }
 
     static func file(
         _ url: URL,
         tags: [String: String],
         chapters: [MediaChapter],
         output: ConversionOutput,
-        outputCount: Int
+        outputCount: Int,
+        editedBookFormat: ConversionFormat? = nil
     ) throws {
         var tags = tags
-        if !tags.isEmpty, let number = output.chapterNumber, let title = output.chapterTitle {
-            tags["title"] = title
+        if !tags.isEmpty, let number = output.chapterNumber {
+            let title = output.chapterTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let label = "Chapter \(number)"
+            if title.isEmpty {
+                tags["title"] = label
+            } else if title.range(of: #"^chapter\s+\d+\b"#, options: [.caseInsensitive, .regularExpression]) != nil {
+                tags["title"] = title
+            } else {
+                tags["title"] = "\(label) - \(title)"
+            }
             tags["track"] = "\(number)/\(outputCount)"
+        }
+        if let format = editedBookFormat {
+            tags[(format == .mp3 ? "" : iTunesPrefix) + editedBookKey] = "1"
         }
         var fields = [";FFMETADATA1"]
         for (key, value) in tags.sorted(by: { $0.key < $1.key }) where !value.isEmpty {
@@ -38,11 +57,11 @@ enum MediaTags {
         probes: [AudioProbe], source: URL, metadata: MediaMetadata, format: ConversionFormat
     ) -> [String: String] {
         var tags: [String: String] = [:]
-        let customPrefix = format == .mp3 ? "" : "com.apple.iTunes:"
+        let customPrefix = format == .mp3 ? "" : iTunesPrefix
         for probe in probes {
             for (name, value) in (probe.format.tags ?? [:]) {
                 let lower = name.lowercased()
-                guard !containerKeys.contains(lower), !value.isEmpty else { continue }
+                guard !containerKeys.contains(lower), !editedBookKeys.contains(lower), !value.isEmpty else { continue }
                 let key = nativeKeys.contains(lower) ? lower : customPrefix + name
                 if tags[key] == nil { tags[key] = value }
             }

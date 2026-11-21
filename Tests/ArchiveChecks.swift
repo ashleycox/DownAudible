@@ -18,6 +18,8 @@ struct ArchiveChecks {
         check(!ArchiveLayout(root: root, template: "../{title}").isValid)
         check(!ArchiveLayout(root: root, template: "{typo}").isValid)
         try checkMediaChapterBounds()
+        try checkBookEditing(in: workspace)
+        try checkSplitChapterTags(in: workspace)
         try checkLosslessChapters()
         try await checkActivationRefresh(in: workspace)
         try await checkDownloadAfterActivationFailure(in: workspace)
@@ -342,6 +344,8 @@ struct ArchiveChecks {
                     tags='{"title":"The Opening","album":"The River: A Story (Unabridged)","artist":"A Narrator","album_artist":"Zoë Bell"}' ;;
                 */Chapter.mp3)
                     tags='{"asin":"B000000004","album":"Winter","tracktotal":"12"}' ;;
+                */Edited.m4b)
+                    tags='{"asin":"B000000009","title":"Edited Fixture","DOWNAUDIBLE_EDITED":"1"}' ;;
                 */Spring.aax)
                     tags='{"title":"Spring","album_artist":"Audible Studios"}' ;;
                 *) exit 1 ;;
@@ -367,10 +371,11 @@ struct ArchiveChecks {
         let converted = library.appending(path: "Imported.m4b")
         let album = library.appending(path: "AnotherName.m4a")
         let chapter = library.appending(path: "Chapter.mp3")
+        let edited = library.appending(path: "Edited.m4b")
         let compact = library.appending(path: "BehindtheClouds_AAX_64_64.aax")
         let nameAndAuthor = library.appending(path: "Jules Verne - The Lighthouse.aaxc")
         let ignored = library.appending(path: "Unsupported.flac")
-        let audio = [archived, conflictingArtist, original, untagged, converted, album, chapter, compact, nameAndAuthor]
+        let audio = [archived, conflictingArtist, original, untagged, converted, album, chapter, edited, compact, nameAndAuthor]
         for url in audio + [ignored] {
             try Data().write(to: url)
         }
@@ -378,6 +383,9 @@ struct ArchiveChecks {
         let files = try await MediaTools(toolDirectory: tools).scan(library)
         check(Set(files.map(\.url)) == Set(audio))
         let index = LocalAudioIndex(files: files)
+        let shortened = try matchingBook("Edited Fixture", asin: "B000000009", duration: 600)
+        check(files.first { $0.url == edited }?.isSegment == true)
+        check(try index.matches(for: [shortened]).isEmpty)
         let imported = try matchingBook("Other App Export", asin: "B000000001", duration: 600)
         check(try index.matches(for: [imported]) == [imported.id: [original]])
         check(try LocalAudioIndex(files: files.filter { $0.url != original })
@@ -471,6 +479,90 @@ struct ArchiveChecks {
         check(catalogChapters == [
             supplied[0], MediaChapter(startMilliseconds: 1_000, durationMilliseconds: 1_000, title: "Closing")
         ])
+    }
+
+    private static func checkSplitChapterTags(in workspace: URL) throws {
+        let metadata = workspace.appending(path: "Chapter.ffmetadata")
+        let tags = ["album": "Book", "title": "Book", "track": "7/8"]
+        let cases: [(String?, String)] = [
+            ("The Opening", "Chapter 1 - The Opening"),
+            ("Chapter 2: A Later Chapter", "Chapter 2: A Later Chapter"),
+            (nil, "Chapter 1"),
+        ]
+        for (sourceTitle, expectedTitle) in cases {
+            let output = ConversionOutput(chapterNumber: 1, chapterTitle: sourceTitle)
+            try MediaTags.file(metadata, tags: tags, chapters: [], output: output, outputCount: 2)
+            let contents = try String(contentsOf: metadata, encoding: .utf8)
+            check(contents == ";FFMETADATA1\nalbum=Book\ntitle=\(expectedTitle)\ntrack=1/2\n")
+        }
+        let output = ConversionOutput(chapterNumber: 1, chapterTitle: "The Opening")
+        try MediaTags.file(metadata, tags: [:], chapters: [], output: output, outputCount: 2)
+        check(try String(contentsOf: metadata, encoding: .utf8) == ";FFMETADATA1\n")
+        try MediaTags.file(metadata, tags: [:], chapters: [], output: output, outputCount: 2, editedBookFormat: .m4b)
+        check(try String(contentsOf: metadata, encoding: .utf8) == ";FFMETADATA1\ncom.apple.iTunes:DOWNAUDIBLE_EDITED=1\n")
+    }
+
+    private static func checkBookEditing(in workspace: URL) throws {
+        let data = Data(#"{"streams":[{"index":0,"codec_type":"audio","duration":"2.000"}],"chapters":[],"format":{}}"#.utf8)
+        let probe = try JSONDecoder().decode(AudioProbe.self, from: data)
+        let chapters = [
+            MediaChapter(startMilliseconds: 250, durationMilliseconds: 500, title: "First"),
+            MediaChapter(startMilliseconds: 900, durationMilliseconds: 1_600, title: "Middle"),
+            MediaChapter(startMilliseconds: 2_700, durationMilliseconds: 800, title: "Last")
+        ]
+        let layout = try BookEditingLayout(probes: [probe, probe], chapters: chapters)
+        check(layout.sourceCount == 2)
+        check(layout.sections.map(\.sourceIndex) == [0, 0, 0, 0, 1, 1, 1, 1])
+        check(layout.sections.map(\.title) == [
+            "Opening audio", "First", "Audio between chapters", "Middle",
+            "Middle", "Audio between chapters", "Last", "Closing audio"
+        ])
+        check(layout.sections.map(\.range) == [
+            0..<250, 250..<750, 750..<900, 900..<2_000, 0..<500, 500..<700, 700..<1_500, 1_500..<2_000
+        ])
+        let partPreview = BookEditSection.partPreview(layout.sections.filter { $0.sourceIndex == 1 })
+        check(partPreview?.title == "Part 2" && partPreview?.range == 0..<2_000)
+
+        let original = BookEdit(layout: layout, excludedSections: [])
+        let all = try BookEditSelection(edit: original, layout: layout)
+        check(all.segments.map(\.range) == [0..<2_000, 0..<2_000] && all.chapters == chapters)
+
+        let edited = BookEdit(layout: layout, excludedSections: [0, 3, 4, 7])
+        let retained = try BookEditSelection(edit: edited, layout: layout)
+        check(retained.segments.map(\.sourceIndex) == [0, 1])
+        check(retained.segments.map(\.range) == [250..<900, 500..<1_500])
+        check(retained.durationMilliseconds == 1_650)
+        check(retained.chapters == [
+            MediaChapter(startMilliseconds: 0, durationMilliseconds: 500, title: "First"),
+            MediaChapter(startMilliseconds: 850, durationMilliseconds: 800, title: "Last")
+        ])
+        let empty = BookEdit(layout: layout, excludedSections: Set(layout.sections.map(\.id)))
+        do {
+            _ = try BookEditSelection(edit: empty, layout: layout)
+            fatalError("An edited book needs at least one included section")
+        } catch BookEditError.emptySelection {}
+        let changed = try BookEditingLayout(probes: [probe, probe], chapters: [])
+        do {
+            _ = try BookEditSelection(edit: edited, layout: changed)
+            fatalError("An edit should apply only to the layout used to make it")
+        } catch BookEditError.sourceChanged {}
+
+        let sources = try (0..<layout.sourceCount).map { index in
+            let source = workspace.appending(path: "Edit source \(index).aax")
+            try Data("Audio fixture".utf8).write(to: source)
+            guard let revision = FileRevision(source) else { fatalError("Source has no file revision") }
+            return BookEditSource(audio: StoredAudio(url: source, asin: nil), revision: revision)
+        }
+        let title = ArchiveTitle(title: "Edited fixture", author: "Fixture author", asin: nil)
+        let work = TransferWork.editedBook(BookEditWork(
+            origin: .local(title), sources: sources, audibleChapters: chapters, edit: edited
+        ))
+        let saved = try JSONDecoder().decode(TransferWork.self, from: JSONEncoder().encode(work))
+        guard case .editedBook(let restored) = saved else { fatalError("Edited queue item changed on reload") }
+        check(saved.title == title.title && !saved.isDownload && saved.acceptsEnteredActivation)
+        check(restored.edit == edited && restored.audibleChapters == chapters)
+        check(restored.sources.map(\.audio.url) == sources.map(\.audio.url))
+        check(restored.sources.map(\.revision) == sources.map(\.revision))
     }
 
     private static func checkActivationRefresh(in workspace: URL) async throws {

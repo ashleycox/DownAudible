@@ -40,7 +40,7 @@ struct MediaMetadata: Sendable {
     var chapters: [MediaChapter] = []
 }
 
-struct MediaChapter: Hashable, Sendable {
+struct MediaChapter: Codable, Hashable, Sendable {
     var startMilliseconds: Int64
     var durationMilliseconds: Int64
     var title: String

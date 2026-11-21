@@ -123,10 +123,11 @@ struct MediaTools: Sendable {
         } + ["track", "disc"].compactMap { key in
             tags[key]?.split(separator: "/").dropFirst().first.flatMap { Int($0) }
         }
+        let isSegment = MediaTags.isEditedBook(tags) || totals.contains { $0 > 1 }
         return LocalAudioFile(
             url: url, format: format, title: title ?? (fallback.isEmpty ? stem : fallback),
             author: artist, asin: asin, durationSeconds: inspection?.durationSeconds,
-            metadata: metadata.isEmpty ? nil : metadata, isSegment: totals.contains { $0 > 1 } ? true : nil,
+            metadata: metadata.isEmpty ? nil : metadata, isSegment: isSegment ? true : nil,
             collectionTitle: collection, collectionAuthor: collectionAuthor
         )
     }

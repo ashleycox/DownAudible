@@ -133,6 +133,9 @@ struct LibraryBookActions: View {
 
     var body: some View {
         if books.count == 1, let book = books.first {
+            Button("Edit Book…", systemImage: "scissors") { model.editBook(book) }
+                .disabled(!model.canOpenBookEditor)
+                .appHelp("Preview parts or chapters and choose which sections to include in a new M4B.")
             matchActions(book)
         }
         let files = Array(Set(books.flatMap { model.localAudio(for: $0) + model.exportedFiles[$0.id, default: []] }))

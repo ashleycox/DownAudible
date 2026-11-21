@@ -4,12 +4,54 @@ import ImageIO
 import UniformTypeIdentifiers
 
 extension MediaTools {
+    @concurrent func bookEditingLayout(
+        _ inputs: [MediaInput], metadata: MediaMetadata = .init(),
+        refreshActivation: (@Sendable () async throws -> String)? = nil
+    ) async throws -> BookEditingLayout {
+        guard let first = inputs.first else { throw MediaError.noInput }
+        let workspace = try Self.workspace()
+        defer { try? FileManager.default.removeItem(at: workspace) }
+        let sources = try await Self.prepare(
+            inputs, ffmpeg: executable(named: "ffmpeg"), ffprobe: executable(named: "ffprobe"),
+            workspace: workspace, refreshActivation: refreshActivation
+        )
+        let probes = sources.map(\.probe)
+        let title = MediaTags.values(probes: probes, source: first.url, metadata: metadata, format: .m4b)["title"]
+        let chapters = MediaTags.markers(probes: probes, supplied: metadata.chapters, title: title)
+        return try BookEditingLayout(probes: probes, chapters: chapters)
+    }
+
+    @concurrent func previewBookSection(
+        _ section: BookEditSection, input: MediaInput, to destination: URL,
+        refreshActivation: (@Sendable () async throws -> String)? = nil
+    ) async throws {
+        let workspace = try Self.workspace()
+        defer { try? FileManager.default.removeItem(at: workspace) }
+        let ffmpeg = try executable(named: "ffmpeg")
+        let sources = try await Self.prepare(
+            [input], ffmpeg: ffmpeg, ffprobe: executable(named: "ffprobe"), workspace: workspace,
+            refreshActivation: refreshActivation
+        )
+        let source = sources[0]
+        guard let duration = source.probe.durationMilliseconds,
+              section.range.lowerBound >= 0, !section.range.isEmpty, section.range.upperBound <= duration else {
+            throw BookEditError.sourceChanged
+        }
+        let end = section.range.lowerBound + min(section.durationMilliseconds, 10_000)
+        let range = section.range.lowerBound..<end
+        let arguments = Self.sectionArguments(source, range: range) + [
+            "-c:a", "aac", "-ac", "2", "-ar", "44100", "-b:a", "96k", "-f", "ipod", destination.path
+        ]
+        try await Self.encode(ffmpeg, arguments: arguments, directory: workspace, duration: nil, progress: { _ in })
+    }
+
     @concurrent func convert(
         _ inputs: [MediaInput],
         preferences: ConversionPreferences,
         metadata: MediaMetadata = .init(),
         artwork: URL? = nil,
         refreshActivation: (@Sendable () async throws -> String)? = nil,
+        bookEdit: BookEdit? = nil,
         destinations: @escaping @Sendable ([ConversionOutput]) async throws -> [URL],
         progress: @escaping MediaProcess.Progress = { _ in }
     ) async throws -> [URL] {
@@ -29,15 +71,27 @@ extension MediaTools {
         let tags = MediaTags.values(
             probes: probes, source: firstInput.url, metadata: metadata, format: preferences.format
         )
-        let chapters = MediaTags.markers(probes: probes, supplied: metadata.chapters, title: tags["title"])
-        let duration = Self.duration(of: probes)
+        let sourceChapters = MediaTags.markers(probes: probes, supplied: metadata.chapters, title: tags["title"])
+        let selection: BookEditSelection?
+        if let bookEdit, !bookEdit.excludedSections.isEmpty {
+            guard preferences.format == .m4b, preferences.chapterMode == .single else {
+                throw BookEditError.unsupportedConversion
+            }
+            let layout = try BookEditingLayout(probes: probes, chapters: sourceChapters)
+            selection = try BookEditSelection(edit: bookEdit, layout: layout)
+        } else {
+            selection = nil
+        }
+        let chapters = selection?.chapters ?? sourceChapters
+        let duration = selection?.durationMilliseconds ?? Self.duration(of: probes)
+        let isEditedBook = selection != nil || probes.contains { MediaTags.isEditedBook($0.formatTags) }
         let clips = Self.clips(for: preferences.chapterMode, chapters: chapters, duration: duration)
         let slicing = clips[0].range != nil
         let copiedChapters = LosslessChapter.plan(
             clips.map(\.range), sources: probes.map(\.audio), enabled: preferences.copyChapterAudio
         )
         let encoding = try AudioEncoding(
-            preferences: preferences, probes: probes, slicing: slicing,
+            preferences: preferences, probes: probes, slicing: slicing || selection != nil,
             containsLegacyAudio: sources.contains(where: \.legacyClock)
         )
         let output = try await destinations(clips.map(\.output))
@@ -45,7 +99,13 @@ extension MediaTools {
         defer { staged.forEach { try? manager.removeItem(at: $0.temporary) } }
 
         func prepareAudio(progress: @escaping MediaProcess.Progress) async throws -> AudioSource {
-            try await Self.prepareAudio(
+            if let selection {
+                return try await Self.prepareEditedAudio(
+                    sources, selection: selection, encoding: encoding, ffmpeg: ffmpeg,
+                    workspace: workspace, progress: progress
+                )
+            }
+            return try await Self.prepareAudio(
                 sources, encoding: encoding, format: preferences.format, slicing: slicing,
                 ffmpeg: ffmpeg, duration: duration, workspace: workspace, progress: progress
             )
@@ -64,7 +124,7 @@ extension MediaTools {
             try MediaTags.file(
                 metadataFile, tags: preferences.preserveMetadata ? tags : [:],
                 chapters: preferences.embedChapters ? chapters : [],
-                output: clip.output, outputCount: clips.count
+                output: clip.output, outputCount: clips.count, editedBookFormat: isEditedBook ? preferences.format : nil
             )
             let seconds = clip.range.map { Double($0.count) / 1_000 } ?? duration.map { Double($0) / 1_000 }
             let start = elapsed
@@ -390,6 +450,52 @@ extension MediaTools {
             )
         }
         return assemble(sources, encoding: encoding)
+    }
+
+    private static func prepareEditedAudio(
+        _ sources: [PreparedSource], selection: BookEditSelection, encoding: AudioEncoding,
+        ffmpeg: URL, workspace: URL, progress: @escaping MediaProcess.Progress
+    ) async throws -> AudioSource {
+        let share = 0.6
+        let total = Double(selection.durationMilliseconds)
+        var elapsed = 0.0
+        var lines = ["ffconcat version 1.0"]
+        for (index, segment) in selection.segments.enumerated() {
+            try Task.checkCancellation()
+            let filename = "section-\(index).flac"
+            let output = workspace.appending(path: filename)
+            let duration = Double(segment.range.upperBound - segment.range.lowerBound)
+            let start = elapsed
+            let source = sources[segment.sourceIndex]
+            let arguments = sectionArguments(source, range: segment.range) + [
+                "-c:a", "flac", "-sample_fmt", "s32", "-bits_per_raw_sample", "24",
+                "-ar", String(encoding.sampleRate), "-ac", String(encoding.channels), "-f", "flac", output.path
+            ]
+            try await encode(ffmpeg, arguments: arguments, directory: workspace, duration: duration / 1_000) {
+                await progress($0.map { share * (start + duration * $0) / total })
+            }
+            elapsed += duration
+            lines.append("file '\(filename)'")
+        }
+        let manifest = workspace.appending(path: "sections.ffconcat")
+        try Data((lines.joined(separator: "\n") + "\n").utf8).write(to: manifest)
+        return AudioSource(
+            arguments: ["-f", "concat", "-safe", "1", "-i", manifest.path], inputCount: 1,
+            filter: nil, direct: false, legacyClock: false, preparationShare: share
+        )
+    }
+
+    private static func sectionArguments(_ source: PreparedSource, range: Range<Int64>) -> [String] {
+        let start = String(Double(range.lowerBound) / 1_000)
+        let duration = String(Double(range.upperBound - range.lowerBound) / 1_000)
+        let map = ["-map", "0:a:0", "-map_metadata", "-1", "-map_chapters", "-1"]
+        if source.legacyClock {
+            return source.arguments + map + [
+                "-af", "asetpts=N/SR/TB,atrim=start=\(start):duration=\(duration),asetpts=N/SR/TB"
+            ]
+        }
+        let seek = range.lowerBound > 0 ? ["-ss", start] : []
+        return seek + source.arguments + map + ["-t", duration]
     }
 
     private static func assemble(_ sources: [PreparedSource], encoding: AudioEncoding) -> AudioSource {

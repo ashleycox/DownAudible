@@ -3,6 +3,16 @@ import Foundation
 import Observation
 import UniformTypeIdentifiers
 
+struct BookEditRequest: Identifiable {
+    let id = UUID()
+    let origin: BookEditOrigin
+    let localAudio: [StoredAudio]
+    let account: SavedAudibleAccount?
+    let apiOptions: AudibleAPIOptions
+    let destination: ArchiveLayout
+    var activationBytes: String? = nil
+}
+
 @MainActor @Observable
 final class WorkspaceModel {
     struct Notice: Identifiable {
@@ -56,6 +66,7 @@ final class WorkspaceModel {
     var localFiles: [LocalAudioFile] = []
     var activationBytes = ""
     var downloadRequest: DownloadRequest?
+    var bookEditRequest: BookEditRequest?
     var notice: Notice?
 
     var outputDirectory: URL {
@@ -233,7 +244,7 @@ final class WorkspaceModel {
     var canStartDownloads: Bool {
         didRestoreTransfers && signedIn && !accountBusy && !signInBusy && !isTransferring && !isFinishingForQuit
     }
-    var canRequestDownloads: Bool { canStartDownloads && downloadRequest == nil }
+    var canRequestDownloads: Bool { canStartDownloads && downloadRequest == nil && bookEditRequest == nil }
     var canAddToDownloadQueue: Bool {
         acceptingDownloadRunID != nil && !isFinishingForQuit && signedIn && !accountBusy && !signInBusy
             && activeAccountID != nil && lastBatch?.account?.id == activeAccountID
@@ -819,6 +830,94 @@ final class WorkspaceModel {
         run(batch)
     }
 
+    var canOpenBookEditor: Bool {
+        didRestoreTransfers && !isTransferring && !isFinishingForQuit && !isPreparingFiles
+            && bookEditRequest == nil && downloadRequest == nil
+    }
+
+    func editBook(_ book: AudibleBook) {
+        guard canOpenBookEditor, let account = activeAccount else { return }
+        let matches = (validLocalMatches[book.id] ?? []).map { StoredAudio(url: $0, asin: nil) }
+        bookEditRequest = BookEditRequest(
+            origin: .library(book), localAudio: matches, account: account, apiOptions: apiOptions, destination: layout
+        )
+    }
+
+    func editBook(_ files: [LocalAudioFile]) {
+        guard canOpenBookEditor else { return }
+        let ordered = files.sorted { lhs, rhs in
+            let order = lhs.url.lastPathComponent.localizedStandardCompare(rhs.url.lastPathComponent)
+            return order == .orderedSame ? lhs.url.path < rhs.url.path : order == .orderedAscending
+        }
+        guard let first = ordered.first else { return }
+        let usesActivation = ordered.contains { $0.format == "aax" }
+        guard !usesActivation || hasValidActivationBytes else {
+            show("Check the activation bytes", error: ArchiveError.invalidActivation)
+            return
+        }
+        let firstTitle = ArchiveTitle(first)
+        let title = ordered.count == 1 ? firstTitle : ArchiveTitle(
+            title: first.collectionTitle ?? firstTitle.title, author: first.collectionAuthor ?? firstTitle.author,
+            asin: first.asin, metadata: firstTitle.metadata
+        )
+        bookEditRequest = BookEditRequest(
+            origin: .local(title), localAudio: ordered.map { StoredAudio(url: $0.url, asin: $0.asin) },
+            account: activeAccount, apiOptions: apiOptions, destination: layout,
+            activationBytes: usesActivation ? enteredActivationBytes : nil
+        )
+    }
+
+    func prepareBookEdit(_ request: BookEditRequest) async throws -> PreparedBookEdit? {
+        try await archive.prepareBookEdit(
+            request.origin, localAudio: request.localAudio, account: request.account.map(archiveID(for:)),
+            audible: client(for: request.account, with: request.apiOptions), layout: request.destination,
+            activationBytes: request.activationBytes
+        )
+    }
+
+    func previewBookSection(
+        _ section: BookEditSection, source: BookEditSource, request: BookEditRequest, to destination: URL
+    ) async throws {
+        try await archive.previewBookSection(
+            section, source: source, book: request.origin.book,
+            audible: client(for: request.account, with: request.apiOptions),
+            activationBytes: request.activationBytes, to: destination
+        )
+    }
+
+    func downloadOriginalForBookEdit(_ request: BookEditRequest) -> UUID? {
+        guard canStartDownloads, let book = request.origin.book, book.isDownloadable,
+              request.account?.id == activeAccountID else { return nil }
+        let batch = TransferBatch(
+            work: [.library(book, matches: [])], account: request.account, apiOptions: request.apiOptions,
+            layout: request.destination, options: DownloadOptions(), conversion: conversionPreferences,
+            appleBooks: .off, preferences: transferPreferences, jobLimit: 1
+        )
+        run(batch)
+        return isTransferring ? transfers.first?.id : nil
+    }
+
+    func convertEditedBook(_ request: BookEditRequest, prepared: PreparedBookEdit, excludedSections: Set<Int>) {
+        guard !isTransferring, !isFinishingForQuit, request.destination.isValid,
+              excludedSections.count < prepared.layout.sections.count else { return }
+        var conversion = conversionPreferences
+        conversion.format = .m4b
+        conversion.chapterMode = .single
+        conversion.moveAAXToTrash = false
+        let work = BookEditWork(
+            origin: request.origin, sources: prepared.sources, audibleChapters: prepared.audibleChapters,
+            edit: BookEdit(layout: prepared.layout, excludedSections: excludedSections)
+        )
+        var batch = TransferBatch(
+            work: [.editedBook(work)], account: request.account, apiOptions: request.apiOptions,
+            layout: request.destination, options: DownloadOptions(), conversion: conversion,
+            appleBooks: appleBooksDestination, preferences: transferPreferences, jobLimit: 1
+        )
+        batch.activation = request.activationBytes
+        run(batch)
+        if isTransferring { bookEditRequest = nil }
+    }
+
     func downloadQueueAdditions(from books: [AudibleBook]) -> [AudibleBook] {
         guard canAddToDownloadQueue, let batch = lastBatch else { return [] }
         let libraryIDs = Set(self.books.map(\.id))
@@ -949,10 +1048,7 @@ final class WorkspaceModel {
                 batch.work[index] = .library(book, matches: requiresDownload ? [] : sourceFiles(for: book))
             }
         }
-        if selected.contains(where: { index in
-            if case .local(let file) = batch.work[index] { return file.format == "aax" }
-            return false
-        }) {
+        if selected.contains(where: { batch.work[$0].acceptsEnteredActivation }) {
             guard hasValidActivationBytes else {
                 show("Check the activation bytes", error: ArchiveError.invalidActivation)
                 return
@@ -1171,6 +1267,11 @@ final class WorkspaceModel {
                     file, audible: client, layout: batch.layout, activationBytes: batch.activation,
                     existingFiles: batch.preferences.existingFiles, conversion: batch.conversion,
                     requestID: id, feedback: feedback, progress: progress
+                )
+            case .editedBook(let work):
+                receipt = try await archive.convertEditedBook(
+                    work, audible: client, layout: batch.layout, activationBytes: batch.activation,
+                    conversion: batch.conversion, requestID: id, feedback: feedback, progress: progress
                 )
             }
 

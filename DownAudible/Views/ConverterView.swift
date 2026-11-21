@@ -65,6 +65,10 @@ struct ConverterView: View {
 
                 Spacer()
 
+                Button("Edit Book…", systemImage: "scissors", action: commandContext.editBook)
+                    .appHelp("Preview the selected audio files as one book before converting to M4B.")
+                    .disabled(!commandContext.canEditBook)
+
                 Button(commandContext.convertTitle, action: commandContext.convert)
                     .buttonStyle(.borderedProminent)
                     .appHelp(commandContext.conversionHelp)
@@ -217,6 +221,8 @@ private struct ConversionCommandContext {
     }
 
     func convert() { model.startConversion(conversionFiles) }
+    var canEditBook: Bool { model.canOpenBookEditor && !files.isEmpty }
+    func editBook() { model.editBook(files) }
 }
 
 private struct ConversionActions: View {
@@ -233,6 +239,9 @@ private struct ConversionActions: View {
             .keyboardShortcut(shortcut("v"))
             .appHelp(context.conversionHelp)
             .disabled(!context.canConvert || (!inMenuBar && files.isEmpty))
+        Button("Edit Book…", systemImage: "scissors", action: context.editBook)
+            .appHelp("Preview the selected audio files as one book before converting to M4B.")
+            .disabled(!context.canEditBook)
 
         if inMenuBar || !urls.isEmpty {
             Divider()

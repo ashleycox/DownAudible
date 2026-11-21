@@ -3,11 +3,13 @@ import Foundation
 enum TransferWork: Codable, Sendable {
     case library(AudibleBook, matches: [URL])
     case local(LocalAudioFile)
+    case editedBook(BookEditWork)
 
     var title: String {
         switch self {
         case .library(let book, _): book.title
         case .local(let file): file.title
+        case .editedBook(let work): work.origin.title
         }
     }
 
@@ -17,6 +19,52 @@ enum TransferWork: Codable, Sendable {
     }
 
     var isDownload: Bool { bookID != nil }
+
+    var acceptsEnteredActivation: Bool {
+        switch self {
+        case .library: false
+        case .local(let file): file.format == "aax"
+        case .editedBook(let work):
+            work.origin.book == nil && work.sources.contains { $0.audio.url.pathExtension.lowercased() == "aax" }
+        }
+    }
+}
+
+enum BookEditOrigin: Codable, Sendable {
+    case library(AudibleBook)
+    case local(ArchiveTitle)
+
+    var book: AudibleBook? {
+        if case .library(let book) = self { return book }
+        return nil
+    }
+
+    var title: String { archiveTitle.title }
+
+    var archiveTitle: ArchiveTitle {
+        switch self {
+        case .library(let book): ArchiveTitle(book)
+        case .local(let title): title
+        }
+    }
+}
+
+struct BookEditSource: Codable, Sendable {
+    let audio: StoredAudio
+    let revision: FileRevision
+}
+
+struct PreparedBookEdit: Sendable {
+    let sources: [BookEditSource]
+    let audibleChapters: [MediaChapter]
+    let layout: BookEditingLayout
+}
+
+struct BookEditWork: Codable, Sendable {
+    let origin: BookEditOrigin
+    let sources: [BookEditSource]
+    let audibleChapters: [MediaChapter]
+    let edit: BookEdit
 }
 
 struct TransferBatch: Codable, Sendable {

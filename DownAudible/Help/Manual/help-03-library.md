@@ -32,6 +32,10 @@ DownAudible compares Audible identifiers, tags, filenames, and title and author 
 
 Use **Rescan Matched Folder** after putting more books in the folder. **Show Matched Folder in Finder** opens it. **Stop Matching This Folder** clears the automatic links to that folder. To change a single book, use **Change Matched Files…** or **Remove File Match** in its contextual menu.
 
+## Edit a book
+
+Control-click one book and choose **Edit Book…** to preview its audio and choose which parts or chapters to include in a separate M4B. If the book needs an original download, click **Download Original** in the editor. [Editing a book before conversion](help-05-conversion.md#edit-a-book-before-conversion)
+
 ## Downloads and missing files
 
 The **Download Status** column shows six states. **Downloaded** means at least one complete audio copy is in the archive. **Matched** means DownAudible can read the source you linked. **Incomplete** means part of the transfer is saved. **Files missing** means a recorded copy went away. **Not downloaded** means the book has yet to be saved. **Unavailable** means Audible is withholding the download.

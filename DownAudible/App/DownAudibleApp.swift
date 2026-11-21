@@ -107,7 +107,7 @@ struct DownAudibleApp: App {
 
                     Divider()
                     LibraryContextCommands(model: model)
-                        .disabled(showingOnboarding || model.downloadRequest != nil)
+                        .disabled(showingOnboarding || model.downloadRequest != nil || model.bookEditRequest != nil)
                     Menu("Export Library") {
                         Button("JSON…") { Task { await model.exportLibrary(.json) } }
                             .keyboardShortcut("j", modifiers: [.command, .control])
@@ -137,7 +137,7 @@ struct DownAudibleApp: App {
                     show(.convert)
                     showingConversionOptions = true
                 }
-                .disabled(showingOnboarding || model.downloadRequest != nil)
+                .disabled(showingOnboarding || model.downloadRequest != nil || model.bookEditRequest != nil)
             }
             CommandMenu(WorkspacePage.transfers.rawValue) {
                 Button("Cancel Batch") {
@@ -330,6 +330,9 @@ private struct WorkspaceView: View {
         }
         .sheet(item: $model.downloadRequest) { request in
             DownloadOptionsView(model: model, request: request)
+        }
+        .sheet(item: $model.bookEditRequest) { request in
+            BookEditorView(model: model, request: request)
         }
         .sheet(isPresented: $model.showingArchiveVerification) {
             ArchiveVerificationView(model: model)

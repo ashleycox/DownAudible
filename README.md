@@ -39,9 +39,11 @@ Use **Sort Library** and **Filter Library** in the library toolbar or the **View
 
 To convert existing files, drag them into **Convert Files** or choose **Add Files…** or **Add Folder…**. Click a row’s **Remove from List** button to take that file out of the list. With the list focused, Backspace or Forward Delete removes selected entries. The source files stay on disk. **Audiobooks → Conversion Options…** controls the format, chapters, audio encoding, artwork, and metadata. In **Settings → Downloads**, you can send new original downloads or M4Bs to Apple Books.
 
-DownAudible requests the whole audiobook before downloading individual parts. If Audible supplies parts, **Settings → Conversion → Chapters → One file** joins them when you convert a download from the Library. Any spoken continuation announcements in the source audio carry through to the converted file.
+**Prefer whole-book downloads** is on by default in **Settings → Downloads**. With it on, DownAudible requests the whole audiobook first and falls back to individual parts when needed. If Audible supplies parts, **Settings → Conversion → Chapters → One file** joins them when you convert a download from the Library.
 
-When creating separate M4B or M4A files, turn on **Copy chapter audio when possible** to keep the original audio for compatible AAC chapters.
+To leave out parts or chapters, choose **Edit Book…** from a Library book’s contextual menu or select one book’s files in **Convert Files** and click **Edit Book…**. Preview the audio, clear the checkboxes for the parts or chapters you want to leave out, then click **Convert to M4B** to save a separate copy. [Editing a book before conversion](DownAudible/Help/Manual/help-05-conversion.md#edit-a-book-before-conversion)
+
+With **Separate chapter files** and **Keep book metadata** selected, each chapter is tagged with its track number and a title such as `Chapter 3 - The Garden`. For separate M4B or M4A files, turn on **Copy chapter audio when possible** to keep the original audio for compatible AAC chapters.
 
 When exporting MP3, turn on **Move converted AAX files to Trash** to remove eligible AAX sources after the complete export is saved.
 

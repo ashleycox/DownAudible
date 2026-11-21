@@ -1,6 +1,27 @@
 import CryptoKit
 import Foundation
 
+struct FileRevision: Codable, Equatable, Sendable {
+    let inode: UInt64
+    let device: UInt64
+    let size: UInt64
+    let modified: Date
+
+    init?(_ url: URL) {
+        guard url.isFileURL,
+              let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              attributes[.type] as? FileAttributeType == .typeRegular,
+              let inode = attributes[.systemFileNumber] as? NSNumber,
+              let device = attributes[.systemNumber] as? NSNumber,
+              let size = attributes[.size] as? NSNumber, size.uint64Value > 0,
+              let modified = attributes[.modificationDate] as? Date else { return nil }
+        self.inode = inode.uint64Value
+        self.device = device.uint64Value
+        self.size = size.uint64Value
+        self.modified = modified
+    }
+}
+
 actor ArchiveWorker {
     typealias Progress = @Sendable (String, Double?) async -> Void
 
@@ -129,27 +150,6 @@ actor ArchiveWorker {
         }
     }
 
-    private struct FileRevision: Codable, Equatable {
-        let inode: UInt64
-        let device: UInt64
-        let size: UInt64
-        let modified: Date
-
-        init?(_ url: URL) {
-            guard url.isFileURL,
-                  let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
-                  attributes[.type] as? FileAttributeType == .typeRegular,
-                  let inode = attributes[.systemFileNumber] as? NSNumber,
-                  let device = attributes[.systemNumber] as? NSNumber,
-                  let size = attributes[.size] as? NSNumber, size.uint64Value > 0,
-                  let modified = attributes[.modificationDate] as? Date else { return nil }
-            self.inode = inode.uint64Value
-            self.device = device.uint64Value
-            self.size = size.uint64Value
-            self.modified = modified
-        }
-    }
-
     private struct AAXOriginal: Codable, Equatable {
         let url: URL
         private let resolvedPath: String
@@ -210,11 +210,13 @@ actor ArchiveWorker {
     private enum WorkError: LocalizedError {
         case alreadyRunning
         case noExtras(String?)
+        case editSourceChanged
 
         var errorDescription: String? {
             switch self {
             case .alreadyRunning: "This audiobook already has a transfer in progress."
             case .noExtras(let message): message ?? "Audible did not list the selected extras for this title."
+            case .editSourceChanged: "An audio source has changed or moved. Open Edit Book again to review the current audio."
             }
         }
     }
@@ -369,12 +371,7 @@ actor ArchiveWorker {
             await progress("Preparing conversion", nil)
             let needsChapters = conversion.embedChapters || conversion.chapterMode == .separate
             let chapters = needsChapters ? try await chapterMetadata(for: book, audible: audible) : []
-            let metadata = MediaMetadata(
-                title: book.title, subtitle: book.subtitle, authors: book.authors, narrators: book.narrators,
-                description: book.description, publisher: book.publisher, releaseDate: book.releaseDate,
-                asin: book.asin, series: book.series, seriesSequence: book.seriesSequence,
-                language: book.language, genres: book.genres ?? [], chapters: chapters
-            )
+            let metadata = Self.bookMetadata(book, chapters: chapters)
             func convertSources(_ sources: [Source]) async throws -> [URL] {
                 var inputs: [MediaInput] = []
                 for source in sources {
@@ -564,6 +561,118 @@ actor ArchiveWorker {
         )
     }
 
+    func prepareBookEdit(
+        _ origin: BookEditOrigin, localAudio: [StoredAudio], account: String?, audible: AudibleClient,
+        layout: ArchiveLayout, activationBytes: String?
+    ) async throws -> PreparedBookEdit? {
+        let audio: [StoredAudio]
+        if localAudio.isEmpty, let book = origin.book, let account {
+            let record = existingRecord(recordKey(layout, account, book.id))
+            if !record.originals.isEmpty, record.originals.allSatisfy({ record.contains($0.url) }) {
+                audio = record.originals
+            } else {
+                let completeFiles = record.audioGroups.lazy.filter { $0.count == 1 }.compactMap(\.first)
+                    .filter { ["m4b", "m4a", "mp3"].contains($0.pathExtension.lowercased()) && record.contains($0) }
+                let converted = completeFiles.first { $0.pathExtension.lowercased() == "m4b" } ?? completeFiles.first
+                audio = converted.map { [StoredAudio(url: $0, asin: nil)] } ?? []
+            }
+        } else {
+            audio = localAudio
+        }
+        guard !audio.isEmpty else { return nil }
+        let sources = try audio.map { item in
+            guard let revision = FileRevision(item.url) else { throw MediaError.sourceMissing }
+            return BookEditSource(audio: item, revision: revision)
+        }
+        let inputs = try await editingInputs(sources, book: origin.book, audible: audible, activationBytes: activationBytes)
+        let chapters = if let book = origin.book { try await chapterMetadata(for: book, audible: audible) } else { [MediaChapter]() }
+        var metadata = Self.bookMetadata(origin.book, chapters: chapters)
+        metadata.title = origin.title
+        let sections = try await media.bookEditingLayout(
+            inputs, metadata: metadata, refreshActivation: Self.editingActivation(audible, override: activationBytes)
+        )
+        return PreparedBookEdit(sources: sources, audibleChapters: chapters, layout: sections)
+    }
+
+    func previewBookSection(
+        _ section: BookEditSection, source: BookEditSource, book: AudibleBook?, audible: AudibleClient,
+        activationBytes: String?, to destination: URL
+    ) async throws {
+        let inputs = try await editingInputs([source], book: book, audible: audible, activationBytes: activationBytes)
+        try await media.previewBookSection(
+            section, input: inputs[0], to: destination, refreshActivation: Self.editingActivation(audible, override: activationBytes)
+        )
+    }
+
+    func convertEditedBook(
+        _ work: BookEditWork, audible: AudibleClient, layout: ArchiveLayout, activationBytes: String?,
+        conversion: ConversionPreferences, requestID: UUID,
+        feedback: @escaping @Sendable (FeedbackMilestone) async -> Void, progress: @escaping Progress
+    ) async throws -> ExportReceipt {
+        // A shortened export should never count as a complete Library copy.
+        let key = recordKey(layout, "Edited books", requestID.uuidString)
+        guard activeRecords.insert(key).inserted else { throw WorkError.alreadyRunning }
+        defer { activeRecords.remove(key) }
+        var record = existingRecord(key)
+        let recipe = try Self.recipeKey(conversion)
+        let saved = record.outputs(for: conversion, key: recipe)
+        if let first = saved.first { return ExportReceipt(url: first, converted: saved) }
+
+        await feedback(.preparingConversion)
+        let inputs = try await editingInputs(work.sources, book: work.origin.book, audible: audible, activationBytes: activationBytes)
+        var metadata = Self.bookMetadata(work.origin.book, chapters: work.audibleChapters)
+        metadata.title = work.origin.title
+        let converted = try await convertAudio(
+            inputs, audible: activationBytes == nil ? audible : nil, title: work.origin.archiveTitle,
+            layout: layout, preferences: conversion, metadata: metadata, bookEdit: work.edit,
+            filenameSuffix: work.edit.excludedSections.isEmpty ? "" : " - Edited", progress: progress
+        )
+        guard let first = converted.first else { throw ArchiveError.noAudio }
+        record.addConversion(converted, key: recipe)
+        save(&record, for: key, written: converted)
+        await feedback(.converted)
+        return ExportReceipt(url: first, converted: converted, addedConverted: converted)
+    }
+
+    private func editingInputs(
+        _ sources: [BookEditSource], book: AudibleBook?, audible: AudibleClient, activationBytes: String?
+    ) async throws -> [MediaInput] {
+        var inputs: [MediaInput] = []
+        for source in sources {
+            try Task.checkCancellation()
+            guard FileRevision(source.audio.url) == source.revision else { throw WorkError.editSourceChanged }
+            let credentials = try await mediaCredentials(
+                for: book, audio: source.audio, audible: audible, activationBytes: activationBytes
+            )
+            inputs.append(MediaInput(url: source.audio.url, credentials: credentials))
+        }
+        guard sources.allSatisfy({ FileRevision($0.audio.url) == $0.revision }) else { throw WorkError.editSourceChanged }
+        return inputs
+    }
+
+    private static func editingActivation(
+        _ audible: AudibleClient, override: String?
+    ) -> (@Sendable () async throws -> String)? {
+        guard override == nil else { return nil }
+        return {
+            do {
+                return try await audible.activationBytes(refresh: true)
+            } catch AudibleError.notSignedIn {
+                throw MediaError.activationRequired
+            }
+        }
+    }
+
+    private static func bookMetadata(_ book: AudibleBook?, chapters: [MediaChapter]) -> MediaMetadata {
+        guard let book else { return MediaMetadata(chapters: chapters) }
+        return MediaMetadata(
+            title: book.title, subtitle: book.subtitle, authors: book.authors, narrators: book.narrators,
+            description: book.description, publisher: book.publisher, releaseDate: book.releaseDate,
+            asin: book.asin, series: book.series, seriesSequence: book.seriesSequence,
+            language: book.language, genres: book.genres ?? [], chapters: chapters
+        )
+    }
+
     private static func archivedAAXSources(_ sources: [Source], in record: Record, root: URL) -> [AAXOriginal] {
         let archived = Set(record.originals.map(\.url))
         return sources.compactMap { source in
@@ -635,6 +744,7 @@ actor ArchiveWorker {
     private func convertAudio(
         _ inputs: [MediaInput], audible: AudibleClient?, title: ArchiveTitle, layout: ArchiveLayout,
         preferences: ConversionPreferences, metadata: MediaMetadata = .init(), artwork: URL? = nil,
+        bookEdit: BookEdit? = nil, filenameSuffix: String = "",
         progress: @escaping Progress
     ) async throws -> [URL] {
         let conversionID = UUID()
@@ -662,16 +772,18 @@ actor ArchiveWorker {
             refreshActivation = nil
         }
         return try await media.convert(
-            inputs, preferences: preferences, metadata: metadata, artwork: artwork, refreshActivation: refreshActivation
+            inputs, preferences: preferences, metadata: metadata, artwork: artwork,
+            refreshActivation: refreshActivation, bookEdit: bookEdit
         ) { outputs in
-            try await self.reserve(outputs, for: title, layout: layout, format: format, id: conversionID)
+            try await self.reserve(outputs, for: title, layout: layout, format: format, suffix: filenameSuffix, id: conversionID)
         } progress: { fraction in
             await progress(converting, fraction)
         }
     }
 
     private func reserve(
-        _ outputs: [ConversionOutput], for title: ArchiveTitle, layout: ArchiveLayout, format: String, id: UUID
+        _ outputs: [ConversionOutput], for title: ArchiveTitle, layout: ArchiveLayout, format: String,
+        suffix: String, id: UUID
     ) throws -> [URL] {
         try outputs.map { output in
             let directory = try layout.directory(
@@ -679,7 +791,7 @@ actor ArchiveWorker {
             )
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let url = try availableURL(
-                in: directory, title: title, layout: layout, extension: format,
+                in: directory, title: title, layout: layout, extension: format, suffix: suffix,
                 chapterNumber: output.chapterNumber, chapterTitle: output.chapterTitle
             )
             let reservation = Self.reservationKey(url)

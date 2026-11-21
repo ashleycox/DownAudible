@@ -194,7 +194,7 @@ struct ArchiveLayout: Codable, Equatable, Sendable {
     }
 }
 
-struct ArchiveTitle: Sendable {
+struct ArchiveTitle: Codable, Sendable {
     static let unknownASIN = "No ASIN"
 
     let title: String
