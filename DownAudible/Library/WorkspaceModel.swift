@@ -876,10 +876,11 @@ final class WorkspaceModel {
     }
 
     func previewBookSection(
-        _ section: BookEditSection, source: BookEditSource, request: BookEditRequest, to destination: URL
+        _ section: BookEditSection, at position: BookPreviewPosition, source: BookEditSource,
+        request: BookEditRequest, to destination: URL
     ) async throws {
         try await archive.previewBookSection(
-            section, source: source, book: request.origin.book,
+            section, at: position, source: source, book: request.origin.book,
             audible: client(for: request.account, with: request.apiOptions),
             activationBytes: request.activationBytes, to: destination
         )

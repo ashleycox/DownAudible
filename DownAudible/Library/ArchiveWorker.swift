@@ -1,27 +1,6 @@
 import CryptoKit
 import Foundation
 
-struct FileRevision: Codable, Equatable, Sendable {
-    let inode: UInt64
-    let device: UInt64
-    let size: UInt64
-    let modified: Date
-
-    init?(_ url: URL) {
-        guard url.isFileURL,
-              let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
-              attributes[.type] as? FileAttributeType == .typeRegular,
-              let inode = attributes[.systemFileNumber] as? NSNumber,
-              let device = attributes[.systemNumber] as? NSNumber,
-              let size = attributes[.size] as? NSNumber, size.uint64Value > 0,
-              let modified = attributes[.modificationDate] as? Date else { return nil }
-        self.inode = inode.uint64Value
-        self.device = device.uint64Value
-        self.size = size.uint64Value
-        self.modified = modified
-    }
-}
-
 actor ArchiveWorker {
     typealias Progress = @Sendable (String, Double?) async -> Void
 
@@ -585,7 +564,13 @@ actor ArchiveWorker {
             return BookEditSource(audio: item, revision: revision)
         }
         let inputs = try await editingInputs(sources, book: origin.book, audible: audible, activationBytes: activationBytes)
-        let chapters = if let book = origin.book { try await chapterMetadata(for: book, audible: audible) } else { [MediaChapter]() }
+        // A different edition or a separately delivered part can have different chapter offsets.
+        let chapters: [MediaChapter] = if localAudio.isEmpty, audio.count == 1,
+                                          let book = origin.book, audio[0].asin == book.asin {
+            try await chapterMetadata(for: book, audible: audible)
+        } else {
+            []
+        }
         var metadata = Self.bookMetadata(origin.book, chapters: chapters)
         metadata.title = origin.title
         let sections = try await media.bookEditingLayout(
@@ -595,12 +580,14 @@ actor ArchiveWorker {
     }
 
     func previewBookSection(
-        _ section: BookEditSection, source: BookEditSource, book: AudibleBook?, audible: AudibleClient,
+        _ section: BookEditSection, at position: BookPreviewPosition, source: BookEditSource,
+        book: AudibleBook?, audible: AudibleClient,
         activationBytes: String?, to destination: URL
     ) async throws {
         let inputs = try await editingInputs([source], book: book, audible: audible, activationBytes: activationBytes)
         try await media.previewBookSection(
-            section, input: inputs[0], to: destination, refreshActivation: Self.editingActivation(audible, override: activationBytes)
+            section, at: position, input: inputs[0], to: destination,
+            refreshActivation: Self.editingActivation(audible, override: activationBytes)
         )
     }
 
@@ -644,9 +631,9 @@ actor ArchiveWorker {
             let credentials = try await mediaCredentials(
                 for: book, audio: source.audio, audible: audible, activationBytes: activationBytes
             )
-            inputs.append(MediaInput(url: source.audio.url, credentials: credentials))
+            inputs.append(MediaInput(url: source.audio.url, credentials: credentials, expectedRevision: source.revision))
         }
-        guard sources.allSatisfy({ FileRevision($0.audio.url) == $0.revision }) else { throw WorkError.editSourceChanged }
+        guard inputs.allSatisfy(\.sourceRevisionMatches) else { throw WorkError.editSourceChanged }
         return inputs
     }
 

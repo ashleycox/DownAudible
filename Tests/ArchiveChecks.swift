@@ -19,9 +19,11 @@ struct ArchiveChecks {
         check(!ArchiveLayout(root: root, template: "{typo}").isValid)
         try checkMediaChapterBounds()
         try checkBookEditing(in: workspace)
+        try await checkEditedSourceReplacement(in: workspace)
         try checkSplitChapterTags(in: workspace)
         try checkLosslessChapters()
         try await checkActivationRefresh(in: workspace)
+        try await checkBookEditorSourceTiming(in: workspace)
         try await checkDownloadAfterActivationFailure(in: workspace)
         try await checkAAXCleanup(in: workspace)
         let literal = ArchiveTitle(title: "{author}/Book", author: "Name/Name", asin: nil)
@@ -522,6 +524,20 @@ struct ArchiveChecks {
         ])
         let partPreview = BookEditSection.partPreview(layout.sections.filter { $0.sourceIndex == 1 })
         check(partPreview?.title == "Part 2" && partPreview?.range == 0..<2_000)
+        check(partPreview?.previewRange(at: .start) == 0..<2_000 && partPreview?.previewRange(at: .end) == 0..<2_000)
+        check(layout.sections[1].previewRange(at: .start) == 250..<750)
+        check(layout.sections[1].previewRange(at: .end) == 250..<750)
+
+        let longProbe = try JSONDecoder().decode(AudioProbe.self, from: Data(
+            #"{"streams":[{"index":0,"codec_type":"audio","duration":"26.000"}],"chapters":[],"format":{}}"#.utf8
+        ))
+        let longLayout = try BookEditingLayout(probes: [longProbe], chapters: [
+            MediaChapter(startMilliseconds: 2_000, durationMilliseconds: 22_000, title: "Long chapter")
+        ])
+        check(longLayout.sections[1].previewRange(at: .start) == 2_000..<12_000)
+        check(longLayout.sections[1].previewRange(at: .end) == 14_000..<24_000)
+        let longPart = BookEditSection.partPreview(longLayout.sections)
+        check(longPart?.previewRange(at: .start) == 0..<10_000 && longPart?.previewRange(at: .end) == 16_000..<26_000)
 
         let original = BookEdit(layout: layout, excludedSections: [])
         let all = try BookEditSelection(edit: original, layout: layout)
@@ -563,6 +579,66 @@ struct ArchiveChecks {
         check(restored.edit == edited && restored.audibleChapters == chapters)
         check(restored.sources.map(\.audio.url) == sources.map(\.audio.url))
         check(restored.sources.map(\.revision) == sources.map(\.revision))
+    }
+
+    private static func checkEditedSourceReplacement(in workspace: URL) async throws {
+        let manager = FileManager.default
+        let directory = workspace.appending(path: "Replaced edit source", directoryHint: .isDirectory)
+        try manager.createDirectory(at: directory, withIntermediateDirectories: false)
+        let probe = #"""
+            #!/bin/sh
+            printf '%s\n' '{"streams":[{"index":0,"codec_type":"audio","codec_name":"aac","duration":"6"}],"chapters":[],"format":{}}'
+            """#
+        let encode = #"""
+            #!/bin/sh
+            set -eu
+            input=''
+            while [ "$#" -gt 1 ]; do
+                if [ "$1" = -i ]; then
+                    input=$2
+                    shift
+                fi
+                shift
+            done
+            output=$1
+            printf 'encoded audio fixture' > "$output"
+            case "$output" in
+                */section-0.flac)
+                    printf 'replacement source' > "$input.replacement"
+                    mv "$input.replacement" "$input"
+                    ;;
+                */section-1.flac) ;;
+                *.m4b) touch "${output%/*}/../rendered" ;;
+                *) exit 1 ;;
+            esac
+            """#
+        for (name, script) in [("ffprobe", probe), ("ffmpeg", encode)] {
+            let tool = directory.appending(path: name)
+            try script.write(to: tool, atomically: true, encoding: .utf8)
+            try manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: tool.path)
+        }
+
+        let source = directory.appending(path: "Original.m4a")
+        try Data("first source".utf8).write(to: source)
+        guard let revision = FileRevision(source) else { fatalError("Source has no file revision") }
+        let input = MediaInput(url: source, expectedRevision: revision)
+        let media = MediaTools(toolDirectory: directory)
+        let metadata = MediaMetadata(chapters: [
+            MediaChapter(startMilliseconds: 0, durationMilliseconds: 2_000, title: "Opening"),
+            MediaChapter(startMilliseconds: 2_000, durationMilliseconds: 2_000, title: "Omit"),
+            MediaChapter(startMilliseconds: 4_000, durationMilliseconds: 2_000, title: "Closing")
+        ])
+        let layout = try await media.bookEditingLayout([input], metadata: metadata)
+        let edit = BookEdit(layout: layout, excludedSections: [layout.sections[1].id])
+        let outputDirectory = directory.appending(path: "Output", directoryHint: .isDirectory)
+        let destination = outputDirectory.appending(path: "Edited.m4b")
+        do {
+            _ = try await media.convert([input], preferences: .init(), metadata: metadata, bookEdit: edit) { _ in [destination] }
+            fatalError("An edit with a replaced source should not publish a result")
+        } catch BookEditError.sourceChanged {}
+        check(try Data(contentsOf: source) == Data("replacement source".utf8))
+        check(manager.fileExists(atPath: directory.appending(path: "rendered").path))
+        check(try manager.contentsOfDirectory(atPath: outputDirectory.path).isEmpty)
     }
 
     private static func checkActivationRefresh(in workspace: URL) async throws {
@@ -669,6 +745,102 @@ struct ArchiveChecks {
         func outcomes(for status: Transfer.Status) -> [TransferFeedbackEvent] {
             progress.outcomes(for: status)
         }
+    }
+
+    private static func checkBookEditorSourceTiming(in workspace: URL) async throws {
+        let manager = FileManager.default
+        let tools = workspace.appending(path: "Book Editor Timing Tools", directoryHint: .isDirectory)
+        try manager.createDirectory(at: tools, withIntermediateDirectories: false)
+        let helper = tools.appending(path: "audible-helper")
+        let helperScript = #"""
+            #!/bin/sh
+            set -eu
+            request=$(cat)
+            field() { printf '%s' "$request" | /usr/bin/plutil -extract "$1" raw -o - -; }
+            case "$(field command)" in
+                importAuthFile)
+                    printf '%s\n' '{"result":{"session":"fixture","marketplace":"uk"}}' ;;
+                chapters)
+                    printf '%s' '{"result":[' \
+                        '{"startMilliseconds":0,"durationMilliseconds":250,"title":"Catalogue Opening"},' \
+                        '{"startMilliseconds":250,"durationMilliseconds":750,"title":"Catalogue Preface"},' \
+                        '{"startMilliseconds":1000,"durationMilliseconds":1000,"title":"Catalogue Chapter"}'
+                    printf '%s\n' ']}' ;;
+                download)
+                    printf 'Original audio fixture' > "$(field directory)/Book.mp3"
+                    printf '%s\n' '{"result":{"parts":[{"file":"Book.mp3","asin":"B000000008","credentials":{}}]}}' ;;
+                *) exit 1 ;;
+            esac
+            """#
+        let probeScript = #"""
+            #!/bin/sh
+            cat <<'PROBE'
+            {"streams":[{"index":0,"codec_type":"audio","codec_name":"aac","duration":"2","sample_rate":"44100","channels":1}],
+             "chapters":[{"start_time":"0","end_time":"0.5","tags":{"title":"Opening"}},
+                         {"start_time":"0.5","end_time":"2","tags":{"title":"Chapter"}}],"format":{}}
+            PROBE
+            """#
+        let encoderScript = #"""
+            #!/bin/sh
+            for output do :; done
+            printf 'Converted audio fixture' > "$output"
+            """#
+        for (url, script) in [(helper, helperScript), (tools.appending(path: "ffprobe"), probeScript),
+                              (tools.appending(path: "ffmpeg"), encoderScript)] {
+            try script.write(to: url, atomically: true, encoding: .utf8)
+            try manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
+        }
+        let client = AudibleClient(profileID: UUID(), helperURL: helper)
+        _ = try await client.importAuthFile(tools.appending(path: "fixture.json"), password: nil)
+        defer { try? client.signOut() }
+        let defaults = UserDefaults.standard
+        let originalIndex = defaults.object(forKey: "ArchiveIndex")
+        defer { defaults.set(originalIndex, forKey: "ArchiveIndex") }
+
+        let archive = ArchiveWorker(media: MediaTools(toolDirectory: tools))
+        let book = try matchingBook("Book Editor Timing", asin: "B000000008")
+        let origin = BookEditOrigin.library(book)
+        let account = "Book editor timing fixture"
+        let root = workspace.appending(path: "Book Editor Timing Archive", directoryHint: .isDirectory)
+        let layout = ArchiveLayout(root: root, template: ArchiveLayout.defaultTemplate)
+        let matched = workspace.appending(path: "Matched book.m4a")
+        try Data("Matched audio fixture".utf8).write(to: matched)
+        let source = StoredAudio(url: matched, asin: nil)
+
+        func checkSourceTiming(_ prepared: PreparedBookEdit?) {
+            check(prepared?.audibleChapters == [])
+            check(prepared?.layout.sections.map(\.title) == ["Opening", "Chapter"])
+            check(prepared?.layout.sections.map(\.range) == [0..<500, 500..<2_000])
+        }
+
+        let matchedEdit = try await archive.prepareBookEdit(
+            origin, localAudio: [source], account: account, audible: client, layout: layout, activationBytes: nil
+        )
+        checkSourceTiming(matchedEdit)
+
+        var options = DownloadOptions()
+        options.convert = true
+        options.keepOriginal = false
+        let converted = try await archive.download(
+            book, account: account, audible: client, matches: [matched], layout: layout, options: options,
+            existingFiles: .reuse, progress: { _, _ in }
+        )
+        let savedEdit = try await archive.prepareBookEdit(
+            origin, localAudio: [], account: account, audible: client, layout: layout, activationBytes: nil
+        )
+        check(savedEdit?.sources.map(\.audio.url) == converted.converted)
+        checkSourceTiming(savedEdit)
+
+        let downloaded = try await archive.download(
+            book, account: account, audible: client, matches: [], layout: layout, options: DownloadOptions(),
+            existingFiles: .reuse, progress: { _, _ in }
+        )
+        let originalEdit = try await archive.prepareBookEdit(
+            origin, localAudio: [], account: account, audible: client, layout: layout, activationBytes: nil
+        )
+        check(originalEdit?.sources.map(\.audio.url) == downloaded.original)
+        check(originalEdit?.audibleChapters.count == 3)
+        check(originalEdit?.layout.sections.map(\.range) == [0..<250, 250..<1_000, 1_000..<2_000])
     }
 
     private static func checkDownloadAfterActivationFailure(in workspace: URL) async throws {

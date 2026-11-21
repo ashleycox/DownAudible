@@ -1,5 +1,9 @@
 import Foundation
 
+enum BookPreviewPosition: Equatable, Sendable {
+    case start, end
+}
+
 struct BookEditSection: Codable, Hashable, Identifiable, Sendable {
     let id: Int
     let sourceIndex: Int
@@ -8,6 +12,14 @@ struct BookEditSection: Codable, Hashable, Identifiable, Sendable {
     fileprivate let chapterIndex: Int?
 
     var durationMilliseconds: Int64 { range.upperBound - range.lowerBound }
+
+    func previewRange(at position: BookPreviewPosition) -> Range<Int64> {
+        let duration = min(durationMilliseconds, 10_000)
+        return switch position {
+        case .start: range.lowerBound..<(range.lowerBound + duration)
+        case .end: (range.upperBound - duration)..<range.upperBound
+        }
+    }
 
     static func partPreview(_ sections: [Self]) -> Self? {
         guard let first = sections.first, let last = sections.last, first.sourceIndex == last.sourceIndex else { return nil }

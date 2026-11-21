@@ -22,6 +22,33 @@ struct MediaCredentials: Sendable {
 struct MediaInput: Sendable {
     var url: URL
     var credentials = MediaCredentials()
+    var expectedRevision: FileRevision?
+
+    var sourceRevisionMatches: Bool {
+        guard let expectedRevision else { return true }
+        return FileRevision(url) == expectedRevision
+    }
+}
+
+struct FileRevision: Codable, Equatable, Sendable {
+    let inode: UInt64
+    let device: UInt64
+    let size: UInt64
+    let modified: Date
+
+    init?(_ url: URL) {
+        guard url.isFileURL,
+              let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              attributes[.type] as? FileAttributeType == .typeRegular,
+              let inode = attributes[.systemFileNumber] as? NSNumber,
+              let device = attributes[.systemNumber] as? NSNumber,
+              let size = attributes[.size] as? NSNumber, size.uint64Value > 0,
+              let modified = attributes[.modificationDate] as? Date else { return nil }
+        self.inode = inode.uint64Value
+        self.device = device.uint64Value
+        self.size = size.uint64Value
+        self.modified = modified
+    }
 }
 
 struct MediaMetadata: Sendable {

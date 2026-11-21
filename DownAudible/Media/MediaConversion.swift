@@ -22,7 +22,7 @@ extension MediaTools {
     }
 
     @concurrent func previewBookSection(
-        _ section: BookEditSection, input: MediaInput, to destination: URL,
+        _ section: BookEditSection, at position: BookPreviewPosition, input: MediaInput, to destination: URL,
         refreshActivation: (@Sendable () async throws -> String)? = nil
     ) async throws {
         let workspace = try Self.workspace()
@@ -37,9 +37,7 @@ extension MediaTools {
               section.range.lowerBound >= 0, !section.range.isEmpty, section.range.upperBound <= duration else {
             throw BookEditError.sourceChanged
         }
-        let end = section.range.lowerBound + min(section.durationMilliseconds, 10_000)
-        let range = section.range.lowerBound..<end
-        let arguments = Self.sectionArguments(source, range: range) + [
+        let arguments = Self.sectionArguments(source, range: section.previewRange(at: position)) + [
             "-c:a", "aac", "-ac", "2", "-ar", "44100", "-b:a", "96k", "-f", "ipod", destination.path
         ]
         try await Self.encode(ffmpeg, arguments: arguments, directory: workspace, duration: nil, progress: { _ in })
@@ -176,6 +174,8 @@ extension MediaTools {
             }
         }
 
+        try Task.checkCancellation()
+        guard inputs.allSatisfy(\.sourceRevisionMatches) else { throw BookEditError.sourceChanged }
         try Self.publish(staged)
         await progress(1)
         return output

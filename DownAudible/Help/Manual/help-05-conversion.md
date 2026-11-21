@@ -24,7 +24,9 @@ AAXC files need their saved licence or a compatible `.voucher` beside the book. 
 
 In the Library, Control-click one book and choose **Edit Book…**. If the editor needs to fetch the audio, click **Download Original**. To work with files already on your Mac, select one file or several parts of the same book in **Convert Files**, then click **Edit Book…**. DownAudible orders selected parts by filename.
 
-Click **Preview** to hear up to 10 seconds from the start of a part or chapter. Clear the checkbox beside each part or chapter you want to leave out. If a spoken announcement has its own section, you can leave it out the same way. Keep at least one section selected, then click **Convert to M4B** to save a separate copy. When you exclude audio, DownAudible adds ` - Edited` to the filename. The source files stay in place.
+For matched or previously converted files, the editor uses the chapter markers in the audio. A file without chapter markers appears as one section.
+
+Click **Preview Start** or **Preview End** to hear up to 10 seconds from either end of a part or chapter. Clear the checkbox beside each part or chapter you want to leave out. If a spoken announcement has its own section, you can leave it out the same way. Keep at least one section selected, then click **Convert to M4B** to save a separate copy. When you exclude audio, DownAudible adds ` - Edited` to the filename. The source files stay in place.
 
 The editor saves one M4B and uses your audio and book details options from **Settings > Conversion**.
 

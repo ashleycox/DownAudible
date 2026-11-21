@@ -11,6 +11,7 @@ struct BookEditorView: View {
         let id = UUID()
         let row: PreviewRow
         let section: BookEditSection
+        let position: BookPreviewPosition
     }
 
     let model: WorkspaceModel
@@ -179,7 +180,7 @@ struct BookEditorView: View {
                 Text("\(count) of \(ids.count) included").foregroundStyle(.secondary)
             }
             Spacer()
-            previewButton(.part(part.sourceIndex), section: part, label: part.title)
+            previewButtons(.part(part.sourceIndex), section: part, label: part.title)
         }
         .padding(.vertical, 8)
         .accessibilityElement(children: .contain)
@@ -196,7 +197,7 @@ struct BookEditorView: View {
             Text(duration, format: .time(pattern: section.durationMilliseconds >= 3_600_000 ? .hourMinuteSecond : .minuteSecond))
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
-            previewButton(.section(section.id), section: section, label: title)
+            previewButtons(.section(section.id), section: section, label: title)
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .contain)
@@ -214,19 +215,33 @@ struct BookEditorView: View {
         }
     }
 
-    private func previewButton(_ row: PreviewRow, section: BookEditSection, label: String) -> some View {
-        let active = preview?.row == row
-        return Button(active ? "Stop Preview" : "Preview", systemImage: active ? "stop.fill" : "play.fill") {
+    private func previewButtons(_ row: PreviewRow, section: BookEditSection, label: String) -> some View {
+        HStack(spacing: 8) {
+            previewButton(row, section: section, label: label, position: .start)
+            previewButton(row, section: section, label: label, position: .end)
+        }
+    }
+
+    private func previewButton(
+        _ row: PreviewRow, section: BookEditSection, label: String, position: BookPreviewPosition
+    ) -> some View {
+        let active = preview?.row == row && preview?.position == position
+        let title = position == .start ? "Preview Start" : "Preview End"
+        let target = position == .start ? "start of \(label)" : "end of \(label)"
+        let help = position == .start
+            ? "Play up to ten seconds from the start of this section."
+            : "Play up to ten seconds from the end of this section."
+        return Button(active ? "Stop Preview" : title, systemImage: active ? "stop.fill" : "play.fill") {
             previewIsPlaying = false
             previewError = nil
-            preview = active ? nil : PreviewRequest(row: row, section: section)
+            preview = active ? nil : PreviewRequest(row: row, section: section, position: position)
         }
         .buttonStyle(.bordered)
         .controlSize(.small)
-        .accessibilityLabel(active ? "Stop preview of \(label)" : "Preview \(label)")
+        .accessibilityLabel(active ? "Stop preview of the \(target)" : "Preview \(target)")
         .accessibilityValue(active && !previewIsPlaying ? "Preparing audio" : "")
-        .appHelp(active ? "Stop this preview." : "Play up to ten seconds from the start of this section.")
-        .frame(minWidth: 88, alignment: .trailing)
+        .appHelp(active ? "Stop this preview." : help)
+        .frame(minWidth: 104, alignment: .trailing)
     }
 
     private func readAudio() async {
@@ -255,9 +270,11 @@ struct BookEditorView: View {
             defer { try? FileManager.default.removeItem(at: directory) }
             let url = directory.appending(path: "Preview.m4a")
             try await model.previewBookSection(
-                preview.section, source: prepared.sources[preview.section.sourceIndex], request: request, to: url
+                preview.section, at: preview.position, source: prepared.sources[preview.section.sourceIndex],
+                request: request, to: url
             )
             try Task.checkCancellation()
+            guard self.preview?.id == preview.id else { return }
             let player = try AVAudioPlayer(contentsOf: url)
             guard player.play() else { throw MediaError.unreadableAudio }
             previewIsPlaying = true
