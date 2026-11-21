@@ -18,44 +18,49 @@ DownAudible runs on Apple silicon and Intel Macs, running MacOS 15 Catalina or l
 
 Choose **DownAudible → Check for Updates…** to check for a new release. Enable automatic updates in **Settings → General** or on the General page during setup.
 
-## Getting Started
-
-The setup wizard opens the first time you run DownAudible. Use it to connect an account, choose the destination, and set your download and conversion defaults. On the Accounts page, choose **Continue Without an Account** to work with local files. **Help → Set Up DownAudible…** opens setup again with your saved settings.
-
-1. On the Accounts page in setup or in **Settings → Accounts**, click **Add Account…**. Sign in through your browser, then paste the resulting address into DownAudible. You can also choose **Import from Audible CLI…**. Each account has a separate session in Keychain.
-2. If you already have files, use **Match Existing Folder…** to scan your archive or a folder from another app. You can fix an individual match from its contextual menu.
-3. In **Audiobooks → Download**, choose **Download Missing** to fetch eligible titles without a complete audio copy, or select books and choose **Download Selected**. Use the corresponding **As…** command to review the destination, audio, conversion, and optional PDFs, cover images, chapters, and notes.
-4. If a batch is interrupted, open **Downloads** and choose **Retry Incomplete**. DownAudible resumes partial audio when Audible can confirm it is the same file. Choose **Restart Download…** from a job’s contextual menu to discard its temporary bytes and download it from the start.
-
-In **Downloads**, use **Download Actions → Remove from List** or press Backspace or Forward Delete with the list focused to remove selected jobs. You can also click a row’s **Remove from List** button. These actions are available when no batch is running and keep the saved files.
-
-In **Settings → Notifications**, choose sounds and alerts, check macOS permissions, or send a silent test. Click a transfer alert to open its jobs in **Downloads**.
-
-**Audiobooks → Audible Tools** opens the wish list, catalogue search, activation bytes, and encrypted Audible CLI account export for the current account. Use **Audiobooks → Library → Export Library** to save the loaded library as JSON, CSV, or TSV.
-
-Use **Sort Library** and **Filter Library** in the library toolbar or the **View** menu to organise the table. Each account remembers its sort order. Filters clear when you switch accounts or quit. **Settings → Library** controls suggestions as you type a filter. **View → Library Status** shows which books need audio, which are downloaded or matched, and which Audible lists as unavailable. The **View** menu also controls the sidebar and the library status bar.
-
-## Conversion and file names
-
-To convert existing files, drag them into **Convert Files** or choose **Add Files…** or **Add Folder…**. Click a row’s **Remove from List** button to take that file out of the list. With the list focused, Backspace or Forward Delete removes selected entries. The source files stay on disk. **Audiobooks → Conversion Options…** controls the format, chapters, audio encoding, artwork, and metadata. In **Settings → Downloads**, you can send new original downloads or M4Bs to Apple Books.
-
-**Prefer whole-book downloads** is on by default in **Settings → Downloads**. With it on, DownAudible requests the whole audiobook first and falls back to individual parts when needed. If Audible supplies parts, **Settings → Conversion → Chapters → One file** joins them when you convert a download from the Library.
-
-To leave out parts or chapters, choose **Edit Book…** from a Library book’s contextual menu or select one book’s files in **Convert Files** and click **Edit Book…**. Preview the audio, clear the checkboxes for the parts or chapters you want to leave out, then click **Convert to M4B** to save a separate copy. [Editing a book before conversion](DownAudible/Help/Manual/help-05-conversion.md#edit-a-book-before-conversion)
-
-With **Separate chapter files** and **Keep book metadata** selected, each chapter is tagged with its track number and a title such as `Chapter 3 - The Garden`. For separate M4B or M4A files, turn on **Copy chapter audio when possible** to keep the original audio for compatible AAC chapters.
-
-When exporting MP3, turn on **Move converted AAX files to Trash** to remove eligible AAX sources after the complete export is saved.
-
-When DownAudible can’t unlock an AAX download for conversion, it tries to refresh the account’s activation code. With **AAX with fallback**, it requests AAXC for conversion if it still can’t unlock the AAX. Any originals already saved are kept. AAX files opened in **Convert Files** need the activation code for the account that downloaded them.
-
-Folder and filename templates are independent. The default folder template, `{format}/{author}/{title}`, groups original and converted formats separately. For chapter filenames you might use `{title} - {chapterNumber} - {chapter}`. Settings shows a preview as you edit.
-
-Turn on **Keep Audible’s AAX filename** in **Settings → Files** to save new AAX downloads under the name Audible supplies when available.
-
 ## Manual and keyboard shortcuts
 
-Open **Help → DownAudible Help** for the manual or choose **Settings Reference** or **Keyboard Shortcuts** to go straight to that chapter. **Settings → General → Show Help Tags** controls the tips shown when you point to DownAudible controls. [Manual contents](DownAudible/Help/Manual/README.md) · [Settings reference](DownAudible/Help/Manual/help-12-settings.md) · [Keyboard shortcuts](DownAudible/Help/Manual/help-10-keyboard-shortcuts.md)
+Start with the [DownAudible manual](DownAudible/Help/Manual/README.md).
+
+Open **Help → DownAudible Help** for the manual or choose **Settings Reference** or **Keyboard Shortcuts** to go straight to that chapter. **Settings → General → Show Help Tags** controls the tips shown when you point to DownAudible controls. [Settings reference](DownAudible/Help/Manual/help-12-settings.md) · [Keyboard shortcuts](DownAudible/Help/Manual/help-10-keyboard-shortcuts.md)
+
+## Features
+
+### Library and accounts
+
+- Multiple Audible accounts and marketplaces
+- Audible CLI account import and password-protected account export
+- Look up and copy Audible activation bytes
+- Library search, sorting and filters
+- Automatic and manual matching for audio files you already have
+- Library and wish list export as JSON, CSV or TSV
+- Audible catalogue search and wish list management
+
+### Downloads
+
+- Download selected books, missing books or the entire library
+- Save original AAX or AAXC files
+- Request whole-book downloads first, with a fallback to individual parts
+- Save companion PDFs, covers, chapter lists and annotations where available
+- Resume interrupted downloads and revisit earlier batches
+- Set limits for simultaneous downloads, conversions and bandwidth per download
+- Transfer sounds and macOS notifications
+
+### Conversion and editing
+
+- Convert downloads or local audio to M4B, M4A or MP3
+- Convert local audio without signing in to Audible
+- Save one file with chapter markers or separate files with chapter titles and track numbers
+- Join multipart books into one file
+- Copy compatible AAC audio without re-encoding, including separate M4A or M4B chapter files
+- Preview parts and chapters and choose which sections to include in a new M4B while keeping the source files intact
+- Keep available book metadata and cover art
+
+### Files and playback
+
+- Custom folder and filename templates
+- Find missing or damaged files and repair the archive
+- Import original Audible files or M4Bs into Apple Books
 
 ## Build and run
 

@@ -23,11 +23,15 @@ Use synthetic media and account fixtures for verification. Check changes to macO
 
 ## Settings and the in-app manual
 
-The bundled manual lives in `DownAudible/Help/Manual` and opens from **Help > DownAudible Help**. Update the relevant chapters whenever a feature, control label, default, or workflow changes. Write the instructions for someone using the app as it is. Document actions available in the current app using present tense and the labels shown in the app. Leave previous versions, comparisons across releases, and change summaries out of the manual. Keep the setup instructions and README in step with the same controls.
+The bundled manual lives in `DownAudible/Help/Manual` and opens from **Help > DownAudible Help**. Update the relevant chapters whenever a feature, control label, default, or workflow changes. Write the instructions for someone using the app as it is. Document actions available in the current app using present tense and the labels shown in the app. Leave previous versions, comparisons across releases, and change summaries out of the manual. Keep the setup instructions in step with the same controls.
 
 Name chapters `help-NN-topic.md` and use a first-level title followed by second-level section headings. The build turns the Markdown chapters into a macOS Help book. Use plain paragraphs, short steps, and standard Markdown links and tables.
 
 Register each settings page once in `SettingsPane` in `DownAudible/Views/PreferencesView.swift`. Setup and Settings use that list and share the pane views. Put new controls in the shared view so they are available in both places.
+
+## README
+
+Do not edit `README.md` without Ashley’s explicit permission. When reviewing it, suggest only additions to the existing feature lists or corrections to existing content. Apply a suggestion only when Ashley asks for that edit. Add other content or remove existing content only at Ashley’s explicit request.
 
 ## Signing and Git
 

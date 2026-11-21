@@ -4,7 +4,7 @@
 
 On the Accounts page in setup or in **Settings > Accounts**, click **Add Account…**. Choose your Audible marketplace. If you use separate accounts, give this one a name you will recognise in the account menu.
 
-Click **Continue**, then **Open Sign-In Page**. Complete the Amazon sign-in in your browser, including any verification it asks for. Copy the full address of the final page from your browser’s address bar. Paste it into DownAudible and click **Sign In**. Even if the final page itself is blank, DownAudible needs the full address.
+Click **Continue**, then **Open Sign-In Page**. Complete the Amazon sign-in in your browser, including any verification it asks for. The final page may be blank or show a “Page not found” error. Copy its full address from your browser’s address bar, paste it into DownAudible, and click **Sign In**.
 
 If you use an Audible username, turn on **Sign in with a legacy Audible username**. This option is available for the UK, US, and German marketplaces.
 
