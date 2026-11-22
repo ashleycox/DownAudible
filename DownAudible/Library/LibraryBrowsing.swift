@@ -224,7 +224,7 @@ struct LibraryRow: Identifiable {
     var narrators: String { book.narrators.isEmpty ? "—" : book.narrators.formatted(.list(type: .and)) }
     var statusLabel: String { status.displayName }
     var statusSymbol: String { missingFiles.isEmpty ? status.systemImage : "exclamationmark.triangle" }
-    var missingFilesDescription: String {
+    private var missingFilesDescription: String {
         switch missingFiles.count {
         case 0: ""
         case 1: "1 saved file missing"
@@ -234,6 +234,9 @@ struct LibraryRow: Identifiable {
     var statusDetails: String {
         guard !missingFiles.isEmpty else { return statusLabel }
         return "\(missingFilesDescription). \(missingFiles.map(\.lastPathComponent).formatted(.list(type: .and)))"
+    }
+    var spokenStatus: String {
+        missingFiles.isEmpty ? statusLabel : "\(statusLabel). \(statusDetails)"
     }
 
     func matches(_ query: String) -> Bool {

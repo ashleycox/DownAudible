@@ -206,7 +206,9 @@ struct LibraryView: View {
                         .lineLimit(1)
                         .foregroundStyle(.secondary)
                         .appHelp(row.statusDetails)
-                        .accessibilityValue(row.missingFilesDescription)
+                        .accessibilityRepresentation {
+                            Text(row.spokenStatus)
+                        }
                 }
                 .width(min: 124, ideal: 144, max: 180)
             }

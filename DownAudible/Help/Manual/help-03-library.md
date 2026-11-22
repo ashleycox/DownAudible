@@ -40,7 +40,7 @@ Control-click one book and choose **Edit Book…** to preview its audio and choo
 
 The **Download Status** column shows six states. **Downloaded** means at least one complete audio copy is in the archive. **Matched** means DownAudible can read the source you linked. **Incomplete** means part of the transfer is saved. **Files missing** means a recorded copy went away. **Not downloaded** means the book has yet to be saved. **Unavailable** means Audible is withholding the download.
 
-After moving or deleting a file, choose **Audiobooks > Library > Recheck Saved Files** to refresh the status straight away. A warning beside a downloaded book can mean there is a missing companion file or another saved audio copy. Hover over the warning or read the row with VoiceOver to find out which file. Use **Download Selected As…** with the corresponding option to get that file back.
+After moving or deleting a file, choose **Audiobooks > Library > Recheck Saved Files** to refresh the status straight away. A warning beside a downloaded book can mean there is a missing companion file or another saved audio copy. To find out which files are missing, hover over the warning or navigate to the **Download Status** cell with VoiceOver. Use **Download Selected As…** with the corresponding option to get that file back.
 
 Choose **Verify and Repair Archive…** from **Audiobooks > Library** for a deeper check of saved books. See [Naming and Folders](help-06-files.md) for how to check and repair the archive.
 
