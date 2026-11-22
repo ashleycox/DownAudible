@@ -47,8 +47,8 @@ final class WorkspaceModel {
 
     var page: WorkspacePage? = .library
     var marketplace: AudibleMarketplace
-    var signIn: AudibleSignIn?
-    var signInBusy = false
+    private(set) var signIn: AudibleSignIn?
+    private(set) var signInBusy = false
     var accountBusy = false
     var signedIn = false
     var isRefreshing = false
@@ -295,11 +295,7 @@ final class WorkspaceModel {
         guard canSwitchAccounts else { return }
         signInBusy = true
         defer { signInBusy = false }
-        let account = if !addingAccount, let activeAccount, activeAccount.marketplace == marketplace {
-            activeAccount
-        } else {
-            SavedAudibleAccount(id: UUID(), name: Self.accountName(name, marketplace), marketplace: marketplace)
-        }
+        let account = accountForSignIn(marketplace: marketplace, name: name, addingAccount: addingAccount)
         do {
             signIn = try await client(for: account).beginSignIn(marketplace: marketplace, legacyUsername: legacyUsername)
             pendingAccount = account
@@ -310,10 +306,10 @@ final class WorkspaceModel {
 
     @discardableResult
     func finishSignIn(_ attempt: AudibleSignIn, redirect: String) async -> Bool {
-        guard !signInBusy, let account = pendingAccount else { return false }
+        guard !signInBusy, signIn?.url == attempt.url, let account = pendingAccount else { return false }
         guard let url = URL(string: redirect.trimmingCharacters(in: .whitespacesAndNewlines)),
               url.scheme?.lowercased() == "https", url.host() != nil else {
-            notice = Notice(title: "Check the address", message: "Paste the full address from your browser after signing in.")
+            show("Check the address", error: AudibleError.invalidRedirect)
             return false
         }
         signInBusy = true
@@ -321,14 +317,47 @@ final class WorkspaceModel {
         do {
             try await client(for: account).completeSignIn(attempt, redirectURL: url)
             store(account)
-            pendingAccount = nil
-            signIn = nil
+            cancelBrowserSignIn(attempt)
             try await activate(account)
             return true
         } catch {
             show("Couldn’t sign in", error: error)
             return false
         }
+    }
+
+    func cancelBrowserSignIn(_ attempt: AudibleSignIn) {
+        guard signIn?.url == attempt.url else { return }
+        signIn = nil
+        pendingAccount = nil
+    }
+
+    func signInWithCredentials(
+        marketplace: AudibleMarketplace,
+        name: String,
+        legacyUsername: Bool,
+        addingAccount: Bool,
+        username: String,
+        password: String,
+        respond: @escaping @Sendable (AudibleSignInChallenge) async throws -> String
+    ) async throws {
+        guard canSwitchAccounts, signIn == nil else { throw AccountError.busy }
+        signInBusy = true
+        defer { signInBusy = false }
+        let account = accountForSignIn(marketplace: marketplace, name: name, addingAccount: addingAccount)
+        try await client(for: account).signInWithCredentials(
+            marketplace: marketplace, legacyUsername: legacyUsername,
+            username: username, password: password, respond: respond
+        )
+        store(account)
+        try await activate(account)
+    }
+
+    private func accountForSignIn(
+        marketplace: AudibleMarketplace, name: String, addingAccount: Bool
+    ) -> SavedAudibleAccount {
+        if !addingAccount, let activeAccount, activeAccount.marketplace == marketplace { return activeAccount }
+        return SavedAudibleAccount(id: UUID(), name: Self.accountName(name, marketplace), marketplace: marketplace)
     }
 
     func switchAccount(to account: SavedAudibleAccount) async {

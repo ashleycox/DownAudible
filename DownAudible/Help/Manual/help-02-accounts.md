@@ -1,12 +1,22 @@
 # Accounts and Sign-In
 
-## Sign in with your browser
+## Choose a sign-in method
 
 On the Accounts page in setup or in **Settings > Accounts**, click **Add Account…**. Choose your Audible marketplace. If you use separate accounts, give this one a name you will recognise in the account menu.
 
-Click **Continue**, then **Open Sign-In Page**. Complete the Amazon sign-in in your browser, including any verification it asks for. The final page may be blank or show a “Page not found” error. Copy its full address from your browser’s address bar, paste it into DownAudible, and click **Sign In**.
-
 If you use an Audible username, turn on **Sign in with a legacy Audible username**. This option is available for the UK, US, and German marketplaces.
+
+## Sign in with your browser
+
+Choose **Web Browser** in **Sign-in method**, then click **Continue** and **Open Sign-In Page**. Complete the sign-in in your browser, including any verification it asks for.
+
+A blank page or a “Page Not Found” message at the end is expected. Copy the full address of that page from your browser’s address bar, paste it into **Browser address** in DownAudible, then click **Sign In**.
+
+## Enter your credentials in DownAudible
+
+Choose **Enter Credentials** in **Sign-in method**. Enter your Amazon email address or phone number and password, then click **Sign In**. If you turned on legacy username sign-in, enter your Audible username and password.
+
+Follow any verification prompts that appear. If Amazon asks you to approve the sign-in in a notification, approve it before you click **Continue**. If you need another verification method, use **Web Browser**. DownAudible saves the resulting sign-in session in your Mac’s Keychain and discards the password.
 
 ## Import from Audible CLI
 

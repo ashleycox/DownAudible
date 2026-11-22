@@ -16,7 +16,7 @@ Choose **DownAudible > Settings…** or press Command–Comma. Open this chapter
 | Setting | What it does |
 | --- | --- |
 | Audible Accounts | Lists your saved accounts, their marketplaces and the status of the active account. Select an account to see its available actions. |
-| Add Account… | Adds an Audible account using browser sign-in. Choose its marketplace and, if you want, give the profile a name. |
+| Add Account… | Adds an Audible account. Choose its marketplace and sign-in method (**Web Browser** or **Enter Credentials**). You can also give the profile a name. |
 | Import from Audible CLI… | Adds a profile from an Audible CLI configuration or authentication file. Enter the file’s password if it is encrypted. |
 | Sign In… | Reconnects the active profile after signing out. |
 | Sign Out | Clears the saved sign-in for the active profile. You can sign in to the profile again later. |
@@ -24,7 +24,7 @@ Choose **DownAudible > Settings…** or press Command–Comma. Open this chapter
 | Rename… | Changes how the selected account is named within DownAudible. |
 | Remove Account… | Removes the selected profile and its saved sign-in and file matches from DownAudible. The app asks for confirmation. |
 
-See [Accounts and Sign-In](help-02-accounts.md) for the browser flow, legacy usernames and Audible CLI imports.
+See [Accounts and Sign-In](help-02-accounts.md) for sign-in methods, legacy usernames and Audible CLI imports.
 
 ## Library
 

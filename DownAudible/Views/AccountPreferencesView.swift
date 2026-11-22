@@ -126,7 +126,7 @@ struct AccountPreferencesView: View {
                 Button("Sign In…") { sheet = .reconnect }
                     .keyboardShortcut("s", modifiers: [.control, .shift])
                     .disabled(!model.canSwitchAccounts)
-                    .appHelp("Open the browser sign-in steps for this account.")
+                    .appHelp("Choose a sign-in method for this account.")
             } else {
                 Button("Sign Out", action: model.signOut)
                     .keyboardShortcut("q", modifiers: [.control, .shift])

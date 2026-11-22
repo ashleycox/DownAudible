@@ -2,7 +2,9 @@
 
 ## Sign-in or account trouble
 
-If the address is rejected, open the sign-in page again, finish in your browser, and copy the full address of the final page. Check that the selected marketplace is the one where you bought the books. If you recently changed your Amazon credentials, sign out of the saved session and sign in again.
+If the browser address is rejected, click **Start Again** and repeat the browser sign-in. Copy the full address of the final page even if it is blank or says “Page Not Found”. If you have trouble with **Enter Credentials**, check your credentials or sign in using **Web Browser** for more verification options.
+
+Check that the selected marketplace is the one where you bought the books. If you recently changed your Amazon credentials, sign out of the saved session and sign in again.
 
 ## A book is unavailable
 

@@ -48,6 +48,15 @@ nonisolated struct AudibleSignIn: Sendable {
     fileprivate let legacyUsername: Bool
 }
 
+nonisolated struct AudibleSignInChallenge: Decodable, Sendable {
+    enum Kind: String, Decodable, Sendable {
+        case otp, cvf, captcha, approval
+    }
+
+    let kind: Kind
+    let imageURL: URL?
+}
+
 nonisolated enum AudibleQuality: String, Codable, CaseIterable, Identifiable, Sendable {
     case best, high, normal
 
@@ -199,7 +208,7 @@ nonisolated struct AudibleJSONExtras: Sendable {
 
 nonisolated enum AudibleError: String, Decodable, LocalizedError {
     case activation, activationRequired, authorization, fileAccess, invalidRedirect, keychain, network
-    case notSignedIn, service, signInFailed, unavailable, voucherMissing, helperMissing
+    case notSignedIn, service, signInFailed, credentialSignInFailed, unavailable, voucherMissing, helperMissing
     case authImport, cliConfig, importPassword, importPasswordIncorrect, importMarketplace, unsupportedLegacySignIn
     case exportPassword, exportFileAccess, helperStart
     case aaxUnavailable, aaxcUnavailable, licenseDenied, licenseEntitlement, licenseThrottled, licenseResponse
@@ -213,12 +222,13 @@ nonisolated enum AudibleError: String, Decodable, LocalizedError {
         case .activationRequired: "Sign in to Audible or enter your activation bytes in Convert Files."
         case .authorization: "Audible did not accept your saved sign-in. Sign out of this account in Settings > Accounts, then sign in again."
         case .fileAccess: "DownAudible could not open the selected file. Check that it still exists and that you can open it in Finder."
-        case .invalidRedirect: "Copy the full address from your browser after signing in to Amazon."
+        case .invalidRedirect: "Copy the full address of the final browser page, even if it says “Page Not Found”."
         case .keychain: "DownAudible could not access your credentials in Keychain."
         case .network: "DownAudible lost its connection while contacting Audible. Check your internet connection and retry."
         case .notSignedIn: "Sign in to Audible to continue."
         case .service: "DownAudible could not complete the request. Try again."
         case .signInFailed: "Amazon could not finish signing you in. Start again with a new sign-in link."
+        case .credentialSignInFailed: "Check your credentials and marketplace, then try again. If Amazon asks for a different verification step, choose Web Browser."
         case .unavailable: "Audible did not provide a download for this title."
         case .voucherMissing: "DownAudible could not find a license for this AAXC file. Keep its .voucher file beside it or match it to your Audible library."
         case .helperMissing: "DownAudible’s Audible helper is missing. Reinstall DownAudible and try again."
@@ -312,6 +322,19 @@ nonisolated struct AudibleClient: Sendable {
             verifier: attempt.verifier,
             legacyUsername: attempt.legacyUsername
         ))
+        try Task.checkCancellation()
+        try vault.save(Data(result.session.utf8), for: sessionAccount)
+    }
+
+    @concurrent func signInWithCredentials(
+        marketplace: AudibleMarketplace, legacyUsername: Bool, username: String, password: String,
+        respond: @escaping @Sendable (AudibleSignInChallenge) async throws -> String
+    ) async throws {
+        guard !legacyUsername || marketplace.supportsLegacySignIn else { throw AudibleError.unsupportedLegacySignIn }
+        let result: Session = try await run(.init(
+            command: .credentialSignIn, marketplace: marketplace.rawValue, legacyUsername: legacyUsername,
+            username: username, password: password
+        ), respond: respond)
         try Task.checkCancellation()
         try vault.save(Data(result.session.utf8), for: sessionAccount)
     }
@@ -536,6 +559,7 @@ nonisolated struct AudibleClient: Sendable {
 
     @concurrent private func run<Result: Decodable & Sendable>(
         _ request: Request,
+        respond: (@Sendable (AudibleSignInChallenge) async throws -> String)? = nil,
         progress: @escaping @Sendable (Double) async -> Void = { _ in }
     ) async throws -> Result {
         #if arch(x86_64)
@@ -550,7 +574,7 @@ nonisolated struct AudibleClient: Sendable {
         }
         var request = request
         request.options = request.options ?? options
-        return try await AudibleProcess().run(executable, request: request, progress: progress)
+        return try await AudibleProcess().run(executable, request: request, respond: respond, progress: progress)
     }
 }
 
@@ -560,7 +584,7 @@ private extension String {
 
 private nonisolated struct Request: Encodable, Sendable {
     enum Command: String, Encodable, Sendable {
-        case beginSignIn, completeSignIn, library, download, chapters, extras, jsonExtras, activation, voucher
+        case beginSignIn, completeSignIn, credentialSignIn, library, download, chapters, extras, jsonExtras, activation, voucher
         case cliProfiles, inspectAuthFile, importAuthFile
         case wishlist, catalog, wishlistAdd, wishlistRemove, exportAuthFile
     }
@@ -576,6 +600,7 @@ private nonisolated struct Request: Encodable, Sendable {
     var verifier: String?
     var legacyUsername: Bool?
     var file: String?
+    var username: String?
     var password: String?
     var asin: String?
     var directory: String?
@@ -665,6 +690,7 @@ private nonisolated final class AudibleProcess: Sendable {
     @concurrent func run<Result: Decodable & Sendable>(
         _ executable: URL,
         request: Request,
+        respond: (@Sendable (AudibleSignInChallenge) async throws -> String)?,
         progress: @escaping @Sendable (Double) async -> Void
     ) async throws -> Result {
         try await withTaskCancellationHandler {
@@ -717,16 +743,8 @@ private nonisolated final class AudibleProcess: Sendable {
                 try Task.checkCancellation()
                 throw AudibleError.helperStart
             }
-            let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .secondsSince1970
-            do {
-                try Task.checkCancellation()
-                try writer.write(contentsOf: encoder.encode(request))
-                try writer.close()
-            } catch {
-                try Task.checkCancellation()
-                throw AudibleError.service
-            }
+            try writeLine(request, to: writer)
+            if respond == nil { try? writer.close() }
 
             let decoder = JSONDecoder()
             var pending = Data()
@@ -742,6 +760,11 @@ private nonisolated final class AudibleProcess: Sendable {
                     if let error = message.error { throw error }
                     if let result = message.result { return result }
                     if let fraction = message.progress { await progress(fraction) }
+                    if let challenge = message.signInChallenge {
+                        guard let respond else { throw AudibleError.service }
+                        let answer = try await respond(challenge)
+                        try writeLine(SignInAnswer(answer: answer), to: writer)
+                    }
                     pending.removeSubrange(...lineEnd)
                 }
             }
@@ -754,10 +777,29 @@ private nonisolated final class AudibleProcess: Sendable {
         }
     }
 
+    private func writeLine(_ message: some Encodable, to writer: FileHandle) throws {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .secondsSince1970
+        do {
+            try Task.checkCancellation()
+            var line = try encoder.encode(message)
+            line.append(0x0A)
+            try writer.write(contentsOf: line)
+        } catch {
+            try Task.checkCancellation()
+            throw AudibleError.service
+        }
+    }
+
+    private struct SignInAnswer: Encodable {
+        let answer: String
+    }
+
     private struct WireMessage<Result: Decodable>: Decodable {
         let progress: Double?
         let result: Result?
         let error: AudibleError?
+        let signInChallenge: AudibleSignInChallenge?
     }
 }
 

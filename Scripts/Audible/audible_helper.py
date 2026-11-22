@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from http.client import HTTPException
 from pathlib import Path
 from urllib.error import HTTPError
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, urljoin, urlsplit
 from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_opener
 
 import audible
@@ -63,6 +63,10 @@ CATALOG_FIELDS = (
     "contributors, media, product_attrs, product_desc, product_extended_attrs, "
     "series, rating, categories, category_ladders, relationships"
 )
+
+
+class SignInCancelled(Exception):
+    pass
 
 
 def emit(**message):
@@ -115,6 +119,55 @@ def complete_sign_in(request):
     credentials["with_username"] = legacy
     auth = audible.Authenticator.from_dict(credentials)
     return {"session": session_json(auth)}
+
+
+def sign_in_answer(kind, image_url=None):
+    challenge = {"kind": kind}
+    if image_url is not None:
+        challenge["imageURL"] = image_url
+    emit(signInChallenge=challenge)
+
+    line = sys.stdin.readline()
+    if not line:
+        raise SignInCancelled
+    reply = json.loads(line)
+    if not isinstance(reply, dict) or not isinstance(reply.get("answer"), str):
+        raise OperationError("credentialSignInFailed")
+    return reply["answer"].strip()
+
+
+def credential_sign_in(request):
+    try:
+        locale = Locale(country_code=request["marketplace"])
+        legacy = request.get("legacyUsername", False)
+
+        def captcha_answer(image_url):
+            host = "audible" if legacy else "amazon"
+            url = urljoin(f"https://www.{host}.{locale.domain}/", image_url)
+            image = urlsplit(url)
+            if (
+                image.scheme != "https"
+                or not image.hostname
+                or image.username is not None
+            ):
+                raise OperationError("credentialSignInFailed")
+            return sign_in_answer("captcha", url).lower()
+
+        auth = audible.Authenticator.from_login(
+            username=request["username"],
+            password=request["password"],
+            locale=locale,
+            with_username=legacy,
+            captcha_callback=captcha_answer,
+            otp_callback=lambda: sign_in_answer("otp"),
+            cvf_callback=lambda: sign_in_answer("cvf"),
+            approval_callback=lambda: sign_in_answer("approval"),
+        )
+        return {"session": session_json(auth)}
+    except (SignInCancelled, httpx.RequestError, OperationError):
+        raise
+    except Exception as error:
+        raise OperationError("credentialSignInFailed") from error
 
 
 def session_json(auth):
@@ -834,6 +887,8 @@ async def execute(request):
         return begin_sign_in(request)
     if command == "completeSignIn":
         return complete_sign_in(request)
+    if command == "credentialSignIn":
+        return credential_sign_in(request)
     if command == "cliProfiles":
         return cli_profiles(request)
     if command == "inspectAuthFile":
@@ -945,8 +1000,11 @@ def main():
     ):
         request = {}
         try:
-            request = json.load(sys.stdin)
+            request = json.loads(sys.stdin.readline())
             emit(result=asyncio.run(execute(request)))
+        except SignInCancelled:
+            # The app can close the pipe while a verification prompt is open.
+            return
         except Exception as error:  # noqa: BLE001 - upstream exceptions can contain authentication data
             command = request.get("command") if isinstance(request, dict) else None
             emit(error=failure_code(error, command))

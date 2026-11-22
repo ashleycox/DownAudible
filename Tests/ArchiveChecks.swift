@@ -38,6 +38,7 @@ struct ArchiveChecks {
         try checkOutputNaming(root: root)
         try checkIncompleteStaging(in: workspace)
         try await checkAudibleHelperExit(in: workspace)
+        try await checkCredentialSignIn(in: workspace)
         try await checkMediaErrors(in: workspace)
 
         let previous = Data(#"{"convert":false,"keepOriginal":true,"downloadPDF":false,"downloadCover":true}"#.utf8)
@@ -1036,6 +1037,54 @@ struct ArchiveChecks {
             _ = try await client.cliProfiles(config: config)
             fatalError("An early Audible helper exit should fail the request.")
         } catch AudibleError.service {}
+    }
+
+    private static func checkCredentialSignIn(in workspace: URL) async throws {
+        let helper = workspace.appending(path: "credential-sign-in-helper")
+        let script = #"""
+        #!/bin/bash
+        [[ $# == 0 ]] || exit 1
+        IFS= read -r -t 10 request || exit 1
+        [[ $request == *'"command":"credentialSignIn"'* &&
+           $request == *'"username":"tester@example.test"'* &&
+           $request == *'"password":"synthetic-password"'* ]] || exit 1
+        printf '%s\n' '{"signInChallenge":{"kind":"otp"}}'
+        IFS= read -r -t 10 answer || exit 1
+        [[ $answer == '{"answer":"123456"}' ]] || exit 1
+        printf '%s\n' '{"signInChallenge":{"kind":"approval"}}'
+        IFS= read -r -t 10 answer || exit 1
+        [[ $answer == '{"answer":""}' ]] || exit 1
+        printf '%s\n' '{"result":{"session":"synthetic-session"}}'
+        """#
+        try script.write(to: helper, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: helper.path)
+
+        let client = AudibleClient(profileID: UUID(), helperURL: helper)
+        defer { try? client.signOut() }
+        try await client.signInWithCredentials(
+            marketplace: .unitedKingdom, legacyUsername: false, username: "tester@example.test",
+            password: "synthetic-password"
+        ) { challenge in
+            switch challenge.kind {
+            case .otp: return "123456"
+            case .approval: return ""
+            default: throw AudibleError.service
+            }
+        }
+        check(try client.hasSession())
+        try client.signOut()
+
+        do {
+            try await client.signInWithCredentials(
+                marketplace: .unitedKingdom, legacyUsername: false, username: "tester@example.test",
+                password: "synthetic-password"
+            ) { challenge in
+                check(challenge.kind == .otp)
+                throw CancellationError()
+            }
+            fatalError("Cancelling a verification prompt should cancel sign-in.")
+        } catch is CancellationError {}
+        check(try !client.hasSession())
     }
 
     private static func checkLibraryBrowsing() throws {
