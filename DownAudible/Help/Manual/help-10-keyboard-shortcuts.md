@@ -159,7 +159,7 @@ The **Audiobooks** menu groups download commands under **Download** and library 
 | Skip Setup / Skip Configuration | Control–Shift–P |
 | Continue / Continue Without an Account | Return |
 | Open DownAudible at the end of setup | Return |
-| Open Manual at the end of setup | Control–Shift–M |
+| View DownAudible Help at the end of setup | Control–Shift–M |
 
 ## macOS menu commands
 

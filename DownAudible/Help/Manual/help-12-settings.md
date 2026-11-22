@@ -31,11 +31,13 @@ See [Accounts and Sign-In](help-02-accounts.md) for the browser flow, legacy use
 | Setting | What it does |
 | --- | --- |
 | Podcasts | **Hide podcasts** is the default. Choose **Show podcast series** to list series or **Show individual episodes** to list the episodes. |
-| Books per request | Sets the number of results requested from Audible at a time when loading your library. The default is 100. Enter a value from 10 through 1,000. |
+| Library titles per request | Sets the maximum number of titles DownAudible asks Audible for in one library request. The default is 100. Enter a value from 10 through 1,000. |
 | Purchased on or after | Enables an inclusive start date for loading the library. Turn it off to omit the start date. Off by default. |
 | Purchased on or before | Enables an inclusive end date for loading the library. Turn it off to omit the end date. Off by default. |
 | Refresh Library | Reloads the active library after you change the podcast, request size or date settings. |
 | Suggest filter values as you type | Uses the active library to suggest matches when you enter a table filter. On by default. |
+
+DownAudible requests more batches automatically until it has loaded all titles that match the library settings. For example, DownAudible loads a library of 304 titles in two batches when the request size is 250. To control how many downloads run at once, use **Simultaneous downloads** in **Settings > Jobs**.
 
 The purchase date settings affect which titles the library loads. Use **Filter Library** in the toolbar or **View** menu to narrow the loaded table. See [Library and File Matching](help-03-library.md).
 

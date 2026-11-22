@@ -32,7 +32,7 @@ struct OnboardingView: View {
                 settings(pane)
             case .finish:
                 overview("You’re Ready to Go") {
-                    Text("Open DownAudible to get started, or open the manual for steps and examples.")
+                    Text("Choose **View DownAudible Help** to read the guide now. You can open it later from **Help > DownAudible Help** in the menu bar.")
                 }
             }
 
@@ -122,7 +122,7 @@ struct OnboardingView: View {
                 .keyboardShortcut(.defaultAction)
                 .appHelp("Continue to the next setup step.")
             case .finish:
-                Button("Open Manual") { finish(.manual) }
+                Button("View DownAudible Help") { finish(.manual) }
                     .keyboardShortcut("m", modifiers: [.control, .shift])
                     .appHelp("Finish setup and open DownAudible Help.")
                 Button("Open DownAudible") { finish(.app) }

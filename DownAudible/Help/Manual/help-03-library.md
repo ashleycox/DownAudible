@@ -12,7 +12,7 @@ When you type a filter, DownAudible suggests values from books that match your s
 
 Press Command–F to search by title, author, narrator, series, or ASIN. Search works within your active filters. Click one book, then Command-click to add individual books to the selection. Shift-click selects a range.
 
-Use **Audiobooks > Library > Refresh Library** to fetch changes. If the library can’t load, read the error in the library and choose **Retry**. In **Settings > Library**, choose whether to show podcast series or individual episodes, set a purchase date range, and change the number of results per request. Refresh after changing these options.
+Use **Audiobooks > Library > Refresh Library** to fetch changes. If the library can’t load, read the error in the library and choose **Retry**. In **Settings > Library**, choose whether to show podcast series or individual episodes, set a purchase date range, and set **Library titles per request**. DownAudible loads all matching titles in batches. Refresh after changing these options. [Library settings](help-12-settings.md#library)
 
 **Audiobooks > Library > Export Library** saves the loaded library as JSON, CSV, or TSV. Choose **Export Visible Results** there or in the **Library Actions** toolbar menu to export the books shown by your search and filters in their current order.
 

@@ -104,8 +104,10 @@ private struct LibraryPreferencesView: View {
                     }
                 }
                 .appHelp("Hide podcasts or include podcast series or individual episodes when loading the library.")
-                NumberPreference("Books per request", value: $model.apiOptions.pageSize, range: 10...1_000,
-                                 help: "Set the number of library entries Audible returns in one request.")
+                NumberPreference("Library titles per request", value: $model.apiOptions.pageSize, range: 10...1_000,
+                                 help: "Set the maximum number of library titles requested from Audible at a time.")
+                Text("DownAudible requests more batches automatically until it has loaded all titles that match your library settings.")
+                    .foregroundStyle(.secondary)
             }
 
             Section("Purchase date") {
