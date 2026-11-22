@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 
+#if !HELP_SCREENSHOTS
 @main
 struct DownAudibleApp: App {
     @Environment(\.openWindow) private var openWindow
@@ -277,8 +278,9 @@ struct DownAudibleApp: App {
         Task { await model.addFiles(at: files) }
     }
 }
+#endif
 
-private struct WorkspaceView: View {
+struct WorkspaceView: View {
     @AppStorage("HasFinishedOnboarding") private var hasFinishedOnboarding = false
     @Bindable var model: WorkspaceModel
     let softwareUpdater: SoftwareUpdater

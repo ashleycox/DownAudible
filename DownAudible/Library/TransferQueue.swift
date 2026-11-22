@@ -131,6 +131,10 @@ actor TransferQueueStore {
         }
     }
 
+    #if HELP_SCREENSHOTS
+    static var helpScreenshotSaveError: any Error { QueueError.noSpace }
+    #endif
+
     private let path: URL
     private var lastRevision = 0
 

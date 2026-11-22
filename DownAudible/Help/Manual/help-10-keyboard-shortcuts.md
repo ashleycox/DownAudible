@@ -4,6 +4,8 @@ Menu shortcuts work when their commands are available. Open the named page, wind
 
 ## Windows, views, and help
 
+![View menu showing sidebar and status bar controls and shortcuts for the main workspaces.](images/view-menu.png)
+
 | Command | Shortcut |
 | --- | --- |
 | About DownAudible | Control–Shift–Command–A |
@@ -28,6 +30,8 @@ Menu shortcuts work when their commands are available. Open the named page, wind
 ## Library and downloads
 
 The **Audiobooks** menu groups download commands under **Download** and library actions under **Library**. **Download** commands use your saved settings and start immediately. **Download As…** commands open settings for that batch.
+
+![Library Download menu with commands for selected books, missing books, and the entire library.](images/download-menu.png)
 
 | Command | Shortcut |
 | --- | --- |
@@ -55,6 +59,8 @@ The **Audiobooks** menu groups download commands under **Download** and library 
 
 ## Library file matching and selected books
 
+![Demo book contextual menu highlighting Edit Book and Match to Audio Files.](images/library-book-menu.png)
+
 | Command | Shortcut |
 | --- | --- |
 | Match Existing Folder… | Control–Shift–F |
@@ -71,6 +77,8 @@ The **Audiobooks** menu groups download commands under **Download** and library 
 | Add Other Audio to Apple Books | Control–Shift–3 |
 
 ## Downloads
+
+![Contextual menu for a failed demo transfer with Retry, Restart Download, Show Partial Files, and Copy Error.](images/transfer-recovery-menu.png)
 
 | Command | Shortcut |
 | --- | --- |
@@ -91,6 +99,8 @@ The **Audiobooks** menu groups download commands under **Download** and library 
 
 ## Convert Files
 
+![Contextual menu for a demo audio file with conversion, Finder, and Apple Books commands.](images/converter-file-menu.png)
+
 | Command | Shortcut |
 | --- | --- |
 | Add Files… | Command–O |
@@ -107,6 +117,8 @@ The **Audiobooks** menu groups download commands under **Download** and library 
 | Clear List | Control–Shift–K |
 
 ## Audible Tools
+
+![Add Titles search with demo catalogue results and Add to Wish List.](images/audible-catalogue.png)
 
 | Command | Shortcut |
 | --- | --- |
@@ -128,6 +140,8 @@ The **Audiobooks** menu groups download commands under **Download** and library 
 
 ## Audible accounts and sign-in
 
+![Browser sign-in sheet with Open Sign-In Page and the Browser address field.](images/sign-in-browser.png)
+
 | Command | Shortcut |
 | --- | --- |
 | Sign In… / Add Account… in Library | Control–Shift–A |
@@ -146,6 +160,8 @@ The **Audiobooks** menu groups download commands under **Download** and library 
 | Cancel a sign-in, import, or rename sheet | Escape |
 
 ## Settings and setup
+
+![Help menu with DownAudible Help, Keyboard Shortcuts, Settings Reference, and Set Up DownAudible.](images/help-menu.png)
 
 | Command | Shortcut |
 | --- | --- |

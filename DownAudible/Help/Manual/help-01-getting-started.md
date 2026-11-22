@@ -4,11 +4,19 @@ DownAudible keeps a copy of your Audible books on your Mac. You can save the aud
 
 ## Set up DownAudible
 
+![Setup welcome page with Continue and Skip Setup.](images/setup-welcome.png)
+
 DownAudible opens setup on first launch. Click **Continue** to step through General, Accounts, Library, Downloads, Conversion, Files, Jobs, and Notifications. On the Accounts page, choose **Add Account…**, then choose **Web Browser** or **Enter Credentials** to sign in. Choose **Import from Audible CLI…** to use a saved profile or authentication file. For local conversion, choose **Continue Without an Account**.
+
+![Accounts page in setup with Add Account, Import from Audible CLI, and Continue Without an Account.](images/setup-accounts.png)
 
 Use **Continue** to move to the next page or **Back** to return to a setting. Setup saves your choices as you edit them. **Skip Setup** on the welcome page and **Skip Configuration** on a settings page take you to the finish with your current settings. At the end, choose **Open DownAudible** to return to the app or **View DownAudible Help** to finish with this guide open.
 
+![Setup finish page with Open DownAudible and View DownAudible Help.](images/setup-finish.png)
+
 From the menu bar, choose **Help > DownAudible Help** to read this guide any time, or **Help > Set Up DownAudible…** to run setup again with your saved settings.
+
+![Help menu with DownAudible Help, Keyboard Shortcuts, Settings Reference, and Set Up DownAudible.](images/help-menu.png)
 
 ## Software updates
 
@@ -16,18 +24,35 @@ Choose **DownAudible > Check for Updates…** to check GitHub for a new release.
 
 Turn on **Check for updates automatically** in General to let DownAudible check while it’s open. If you haven’t chosen a setting, DownAudible asks the next time you launch it after setup. Turn on **Install updates automatically** to download updates in the background and install them when you quit.
 
+![General settings with automatic update options, Check for Updates, and Show Help Tags.](images/settings-general.png)
+
 ## Your first download
 
 1. Open **Library**. If you need to connect an account, click **Sign In…** and choose the marketplace where you bought your books. You can also choose **Import from Audible CLI…**.
+
+   ![Signed-out Library with Sign In and Import from Audible CLI.](images/library-signed-out.png)
+
 2. Select a book in the table. From the **Download** toolbar menu, choose **Download Selected As…**.
+
+   ![Library Download menu with commands for selected books, missing books, and the entire library.](images/download-menu.png)
+
 3. Choose a destination folder. Keep **Download audio** on and choose whether to convert it. To save the original and a converted copy, turn on **Keep the original after conversion**.
+
+   ![Download sheet for a demo book with audio, companion file, and destination options.](images/download-options.png)
+
 4. Click **Download**. Follow the job in **Downloads**. When it finishes, use **Show Output in Finder** to see the file. Use **Download Selected** for the next book to start with the saved settings.
+
+   ![Finished demo transfer with its Show Output in Finder button.](images/transfer-result.png)
 
 ## The sidebar
 
 **Library** shows the current Audible account. **Convert Files** works on files you already have. **Downloads** shows work in progress, results, and errors. The number next to **Downloads** is the number of jobs still running or queued. The **View** menu opens any of these pages even when the sidebar is hidden.
 
+![DownAudible sidebar with Library, Convert Files, and Downloads.](images/sidebar.png)
+
 Use **View > Hide Sidebar** or **Show Sidebar** to change the layout. The **View** menu also opens **Library Status** and controls the status bar at the bottom of the library window.
+
+![View menu showing sidebar and status bar controls and shortcuts for the main workspaces.](images/view-menu.png)
 
 Choose **DownAudible > Settings** to change the app’s defaults.
 

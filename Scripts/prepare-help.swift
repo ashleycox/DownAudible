@@ -21,6 +21,9 @@ struct Chapter {
 enum HelpBuildError: LocalizedError {
     case missingTitle(String)
     case missingChapters
+    case invalidScreenshot(URL)
+    case missingScreenshot(URL)
+    case missingScreenshotDescription(URL)
     case indexFailed(Int32)
     case missingAnchors([String])
 
@@ -28,9 +31,49 @@ enum HelpBuildError: LocalizedError {
         switch self {
         case .missingTitle(let file): "Missing a top-level heading in \(file)."
         case .missingChapters: "No help chapters found."
+        case .invalidScreenshot(let url): "Use a local PNG in the manual’s images folder for \(url)."
+        case .missingScreenshot(let url): "Missing help screenshot \(url)."
+        case .missingScreenshotDescription(let url): "Add alternative text for help screenshot \(url)."
         case .indexFailed(let status): "Help indexing failed with status \(status)."
         case .missingAnchors(let anchors): "The Help index is missing these anchors: \(anchors.joined(separator: ", "))."
         }
+    }
+}
+
+struct HelpScreenshots {
+    let manual: URL
+    let pages: URL
+
+    func image(for url: URL, description: String) throws -> String {
+        let filename = url.lastPathComponent
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              components.scheme == nil, components.host == nil,
+              components.query == nil, components.fragment == nil,
+              components.path == "images/\(filename)", !filename.contains("/"),
+              url.pathExtension.lowercased() == "png" else {
+            throw HelpBuildError.invalidScreenshot(url)
+        }
+
+        let alternativeText = description.replacingOccurrences(of: "\u{FFFC}", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !alternativeText.isEmpty else { throw HelpBuildError.missingScreenshotDescription(url) }
+
+        let sources = manual.resolvingSymlinksInPath().appendingPathComponent("images", isDirectory: true)
+        let original = sources.appendingPathComponent(filename)
+        guard original.resolvingSymlinksInPath().deletingLastPathComponent().standardizedFileURL ==
+                sources.standardizedFileURL,
+              (try? original.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else {
+            throw HelpBuildError.missingScreenshot(url)
+        }
+
+        let images = pages.appendingPathComponent("images", isDirectory: true)
+        let bundled = images.appendingPathComponent(original.lastPathComponent)
+        let manager = FileManager.default
+        if !manager.fileExists(atPath: bundled.path) {
+            try manager.createDirectory(at: images, withIntermediateDirectories: true)
+            try manager.copyItem(at: original, to: bundled)
+        }
+        return "<img class=\"help-screenshot\" src=\"\(escaped(components.percentEncodedPath))\" alt=\"\(escaped(alternativeText))\">"
     }
 }
 
@@ -93,7 +136,7 @@ func tag(for kind: PresentationIntent.Kind, parent: PresentationIntent.Kind?, se
     }
 }
 
-func html(for markdown: AttributedString) -> String {
+func html(for markdown: AttributedString, screenshots: HelpScreenshots) throws -> String {
     var html = ""
     var open: [(identity: Int, tag: HTMLTag)] = []
     var section: String?
@@ -136,7 +179,12 @@ func html(for markdown: AttributedString) -> String {
             open.append((node.identity, tag))
         }
         if path.last?.kind == .thematicBreak { continue }
-        var text = escaped(String(markdown[run.range].characters))
+        let characters = String(markdown[run.range].characters)
+        if let url = run.imageURL {
+            html += try screenshots.image(for: url, description: characters)
+            continue
+        }
+        var text = escaped(characters)
         if let style = run.inlinePresentationIntent {
             if style.contains(.code) { text = "<code>\(text)</code>" }
             if style.contains(.stronglyEmphasized) { text = "<strong>\(text)</strong>" }
@@ -224,15 +272,18 @@ func buildHelp(in destination: URL, source: URL, bookID: String) throws {
     let style = source.deletingLastPathComponent().appendingPathComponent("help.css")
     try manager.copyItem(at: style, to: pages.appendingPathComponent("help.css"))
 
+    let screenshots = HelpScreenshots(manual: source, pages: pages)
     for chapter in chapters {
         let anchor = "<a name=\"\(escaped(chapter.name))\" id=\"\(escaped(chapter.name))\"></a>"
-        try page(title: chapter.title, content: anchor + html(for: chapter.markdown))
+        try page(title: chapter.title, content: anchor + html(for: chapter.markdown, screenshots: screenshots))
             .write(to: pages.appendingPathComponent(chapter.name + ".html"), atomically: true, encoding: .utf8)
     }
     let links = chapters.map { chapter in
         "<li><a href=\"\(escaped(chapter.name)).html\">\(escaped(chapter.title))</a></li>"
     }.joined(separator: "\n")
-    let support = try chapters.first?.support.map { "<hr>" + html(for: try AttributedString(markdown: String($0))) } ?? ""
+    let support = try chapters.first?.support.map {
+        "<hr>" + (try html(for: AttributedString(markdown: String($0)), screenshots: screenshots))
+    } ?? ""
     let contentsPage = """
         <a name="index" id="index"></a><h1>DownAudible Help</h1>
         <nav aria-label="Chapters"><ul>\(links)</ul></nav>\(support)

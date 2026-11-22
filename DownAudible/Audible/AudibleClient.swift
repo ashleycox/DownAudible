@@ -48,6 +48,13 @@ nonisolated struct AudibleSignIn: Sendable {
     fileprivate let legacyUsername: Bool
 }
 
+#if HELP_SCREENSHOTS
+extension AudibleSignIn {
+    static let helpScreenshot = Self(url: URL(string: "https://example.com/sign-in")!,
+                                     marketplace: .unitedKingdom, serial: "", verifier: "", legacyUsername: false)
+}
+#endif
+
 nonisolated struct AudibleSignInChallenge: Decodable, Sendable {
     enum Kind: String, Decodable, Sendable {
         case otp, cvf, captcha, approval
@@ -531,10 +538,14 @@ nonisolated struct AudibleClient: Sendable {
     private var sessionAccount: AudibleKeychain.Account { .session(profileID) }
 
     private func session() throws -> String {
+        #if HELP_SCREENSHOTS
+        return "demo-session"
+        #else
         guard let data = try vault.load(sessionAccount), let session = String(data: data, encoding: .utf8) else {
             throw AudibleError.notSignedIn
         }
         return session
+        #endif
     }
 
     private func stagedFile(_ name: String, in directory: URL) throws -> URL {

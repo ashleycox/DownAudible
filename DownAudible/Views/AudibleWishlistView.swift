@@ -230,6 +230,18 @@ private struct AudibleCatalogSearchView: View {
     @State private var hasSearched = false
     @State private var work: Task<Void, Never>?
 
+    #if HELP_SCREENSHOTS
+    init(client: AudibleClient, existing: Set<String>, demoResults: [AudibleBook] = [], add: @escaping (Set<String>) -> Void) {
+        self.client = client
+        self.existing = existing
+        self.add = add
+        _query = State(initialValue: "Demo Book")
+        _books = State(initialValue: demoResults)
+        _selection = State(initialValue: Set(demoResults.prefix(1).map(\.id)))
+        _hasSearched = State(initialValue: true)
+    }
+    #endif
+
     var body: some View {
         VStack(spacing: 12) {
             HStack {
@@ -301,6 +313,12 @@ private struct AudibleCatalogSearchView: View {
         }
     }
 }
+
+#if HELP_SCREENSHOTS
+@MainActor func demoAudibleCatalogue(client: AudibleClient, books: [AudibleBook]) -> some View {
+    AudibleCatalogSearchView(client: client, existing: [], demoResults: books) { _ in }
+}
+#endif
 
 private struct AudibleCatalogTable: View {
     let books: [AudibleBook]

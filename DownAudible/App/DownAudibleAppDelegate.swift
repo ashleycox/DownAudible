@@ -56,12 +56,7 @@ final class DownAudibleAppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterD
         guard let model, model.isTransferring || model.hasPendingQueueWrite else { return .terminateNow }
 
         if model.isTransferring {
-            let alert = NSAlert()
-            alert.messageText = "Quit DownAudible?"
-            alert.informativeText = "Transfers are in progress. Quitting stops the batch and keeps any partial downloads for next time."
-            alert.addButton(withTitle: "Keep DownAudible Open")
-            alert.addButton(withTitle: "Quit and Save Progress")
-            guard alert.runModal() == .alertSecondButtonReturn else { return .terminateCancel }
+            guard Self.transferQuitAlert().runModal() == .alertSecondButtonReturn else { return .terminateCancel }
         }
 
         awaitingTransfers = true
@@ -74,13 +69,22 @@ final class DownAudibleAppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterD
         return .terminateLater
     }
 
+    static func transferQuitAlert() -> NSAlert {
+        let alert = NSAlert()
+        alert.messageText = "Quit DownAudible?"
+        alert.informativeText = "Transfers are in progress. Quitting stops the batch and keeps any partial downloads for next time."
+        alert.addButton(withTitle: "Keep DownAudible Open")
+        alert.addButton(withTitle: "Quit and Save Progress")
+        return alert
+    }
+
     private func saveQueueBeforeQuit(_ model: WorkspaceModel) async -> Bool {
         while true {
             do {
                 try await model.cancelAndSaveTransfersForQuit()
                 return true
             } catch {
-                switch queueSaveFailureAlert(error, quitting: true) {
+                switch Self.queueSaveFailureAlert(error, quitting: true).runModal() {
                 case .alertSecondButtonReturn: continue
                 case .alertThirdButtonReturn: return true
                 default: return false
@@ -95,12 +99,12 @@ final class DownAudibleAppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterD
                 try await model.waitForTransfersBeforeUpdating()
                 return true
             } catch {
-                guard queueSaveFailureAlert(error, quitting: false) == .alertSecondButtonReturn else { return false }
+                guard Self.queueSaveFailureAlert(error, quitting: false).runModal() == .alertSecondButtonReturn else { return false }
             }
         }
     }
 
-    private func queueSaveFailureAlert(_ error: any Error, quitting: Bool) -> NSApplication.ModalResponse {
+    static func queueSaveFailureAlert(_ error: any Error, quitting: Bool) -> NSAlert {
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "Couldn’t save the transfer queue"
@@ -112,6 +116,6 @@ final class DownAudibleAppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterD
         alert.addButton(withTitle: "Keep DownAudible Open")
         alert.addButton(withTitle: "Try Saving Again")
         if quitting { alert.addButton(withTitle: "Quit Without Saving").hasDestructiveAction = true }
-        return alert.runModal()
+        return alert
     }
 }

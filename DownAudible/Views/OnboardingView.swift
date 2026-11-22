@@ -20,6 +20,17 @@ struct OnboardingView: View {
 
     @State private var history: [Page] = [.welcome]
 
+    #if HELP_SCREENSHOTS
+    init(model: WorkspaceModel, softwareUpdater: SoftwareUpdater, pane: SettingsPane? = nil,
+         finished: Bool = false, finish: @escaping (Destination) -> Void) {
+        self.model = model
+        self.softwareUpdater = softwareUpdater
+        self.finish = finish
+        if let pane { _history = State(initialValue: [.welcome, .settings(pane)]) }
+        if finished { _history = State(initialValue: [.welcome, .finish]) }
+    }
+    #endif
+
     var body: some View {
         VStack(spacing: 0) {
             switch page {

@@ -41,6 +41,14 @@ struct LibraryView: View {
                 }
             }
         }
+        #if HELP_SCREENSHOTS
+        .onAppear {
+            if let query = model.helpScreenshotSearch {
+                search = query
+                showingSearch = true
+            }
+        }
+        #endif
         .sheet(isPresented: $showingSignIn) {
             AudibleSignInView(model: model, addingAccount: addingAccount)
         }

@@ -3,21 +3,32 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct AudibleToolsView: View {
+    private enum Pane: Hashable { case wishList, account }
+
     let client: AudibleClient
     let accountName: String
 
     @Environment(\.dismiss) private var dismiss
+    @State private var pane = Pane.wishList
+
+    #if HELP_SCREENSHOTS
+    init(client: AudibleClient, accountName: String, showAccount: Bool = false) {
+        self.client = client
+        self.accountName = accountName
+        _pane = State(initialValue: showAccount ? .account : .wishList)
+    }
+    #endif
 
     var body: some View {
         VStack(spacing: 12) {
-            TabView {
-                Tab {
+            TabView(selection: $pane) {
+                Tab(value: Pane.wishList) {
                     AudibleWishlistView(client: client)
                 } label: {
                     Label("Wish List", systemImage: "bookmark")
                         .appHelp("Browse and manage this account’s Audible wish list.")
                 }
-                Tab {
+                Tab(value: Pane.account) {
                     AudibleAccountToolsView(client: client)
                 } label: {
                     Label("Account", systemImage: "person.crop.circle")
@@ -49,6 +60,13 @@ private struct AudibleAccountToolsView: View {
     @State private var issue: String?
     @State private var showingExport = false
     @State private var didExport = false
+
+    #if HELP_SCREENSHOTS
+    init(client: AudibleClient) {
+        self.client = client
+        _bytes = State(initialValue: "00000000")
+    }
+    #endif
 
     var body: some View {
         Form {
@@ -161,6 +179,15 @@ private struct AudibleAuthExportView: View {
     @State private var work: Task<Void, Never>?
     @State private var issue: String?
 
+    #if HELP_SCREENSHOTS
+    init(client: AudibleClient, demoPassword: String = "", didSave: @escaping () -> Void) {
+        self.client = client
+        self.didSave = didSave
+        _password = State(initialValue: demoPassword)
+        _confirmation = State(initialValue: demoPassword)
+    }
+    #endif
+
     var body: some View {
         VStack(alignment: .trailing, spacing: 12) {
             Form {
@@ -233,3 +260,9 @@ private struct AudibleAuthExportView: View {
         }
     }
 }
+
+#if HELP_SCREENSHOTS
+@MainActor func demoAudibleAuthExport(client: AudibleClient) -> some View {
+    AudibleAuthExportView(client: client, demoPassword: "password12345") {}
+}
+#endif

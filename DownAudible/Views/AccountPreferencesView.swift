@@ -8,6 +8,15 @@ struct AccountPreferencesView: View {
     @State private var accountToRemove: SavedAudibleAccount?
     @State private var issue: WorkspaceModel.Notice?
 
+    #if HELP_SCREENSHOTS
+    private let demoAccountID: SavedAudibleAccount.ID?
+
+    init(model: WorkspaceModel, demoAccountID: SavedAudibleAccount.ID? = nil) {
+        self.model = model
+        self.demoAccountID = demoAccountID
+    }
+    #endif
+
     private enum Sheet: Identifiable {
         case add
         case reconnect
@@ -91,7 +100,13 @@ struct AccountPreferencesView: View {
             }
         }
         .formStyle(.grouped)
-        .onAppear { selectedAccount = model.activeAccount?.id }
+        .onAppear {
+            #if HELP_SCREENSHOTS
+            selectedAccount = demoAccountID ?? model.activeAccount?.id
+            #else
+            selectedAccount = model.activeAccount?.id
+            #endif
+        }
         .onChange(of: model.activeAccount?.id) { _, accountID in selectedAccount = accountID }
         .sheet(item: $sheet) { sheet in
             switch sheet {

@@ -135,8 +135,8 @@ final class WorkspaceModel {
 
     private static let legacyBooksImportError = "The files were saved. Books couldn’t open them."
 
-    private let defaults = UserDefaults.standard
-    private let audible = AudibleClient()
+    private let defaults: UserDefaults
+    private let audible: AudibleClient
     private let media = MediaTools()
     private let archive: ArchiveWorker
     private let transferLog = TransferLog()
@@ -162,8 +162,10 @@ final class WorkspaceModel {
     @ObservationIgnored private var pendingAccount: SavedAudibleAccount?
     @ObservationIgnored private var matchesByAccount: [UUID: LocalMatches]
 
-    init() {
-        archive = ArchiveWorker(media: media)
+    init(defaultsSuite: String? = nil, audible: AudibleClient = AudibleClient()) {
+        defaults = defaultsSuite.flatMap(UserDefaults.init(suiteName:)) ?? .standard
+        self.audible = audible
+        archive = ArchiveWorker(media: media, defaultsSuite: defaultsSuite)
         marketplace = defaults.string(forKey: "Marketplace")
             .flatMap(AudibleMarketplace.init(rawValue:)) ?? .unitedKingdom
         if let path = defaults.string(forKey: "OutputDirectory") {
@@ -186,6 +188,35 @@ final class WorkspaceModel {
         matchesByAccount = Self.load("AccountMatches", from: defaults) ?? [:]
         localMatches = Self.load("LocalMatches", from: defaults) ?? LocalMatches()
     }
+
+    #if HELP_SCREENSHOTS
+    @ObservationIgnored private var helpScreenshotArchive: [String: URL]?
+    @ObservationIgnored var helpScreenshotSearch: String?
+
+    func seedHelpScreenshots(
+        accounts: [SavedAudibleAccount], inventory: [String: ArchiveInventoryItem],
+        matchedFiles: [String: [URL]], matchDirectory: URL,
+        currentBatch: TransferBatch?, history: [TransferHistoryBatch], active: Bool = false
+    ) {
+        initialLoad = true
+        didRestoreTransfers = true
+        self.accounts = accounts
+        activeAccountID = accounts.first?.id
+        signedIn = !accounts.isEmpty
+        self.inventory = inventory
+        validLocalMatches = matchedFiles
+        localMatches = LocalMatches(directory: matchDirectory, automatic: matchedFiles)
+        exportedFiles = inventory.mapValues(\.files)
+        lastBatch = currentBatch
+        transferHistory = history
+        isTransferring = active
+        acceptingDownloadRunID = active ? UUID() : nil
+    }
+
+    func seedHelpScreenshotArchive(_ files: [String: URL]) {
+        helpScreenshotArchive = files
+    }
+    #endif
 
     var layout: ArchiveLayout {
         ArchiveLayout(
@@ -1484,11 +1515,17 @@ final class WorkspaceModel {
             throw isTransferring ? ArchiveVerificationError.transfersRunning : ArchiveVerificationError.archiveChanged
         }
         let layout = layout
+        let archiveAccount = archiveID(for: account)
+        #if HELP_SCREENSHOTS
+        if let helpScreenshotArchive {
+            await archive.seedHelpScreenshotAudio(helpScreenshotArchive, account: archiveAccount, layout: layout)
+        }
+        #endif
         let books = books.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
         var matches: [String: [URL]] = [:]
         for book in books { matches[book.id] = localMatches.files(for: book.id) }
         let issues = try await archive.verifyArchive(
-            books: books, account: archiveID(for: account), layout: layout, matches: matches
+            books: books, account: archiveAccount, layout: layout, matches: matches
         ) { checked, total in
             await progress(checked, total)
         }

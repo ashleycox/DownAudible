@@ -4,6 +4,8 @@ Choose **DownAudible > Settings…** or press Command–Comma. Open this chapter
 
 ## General
 
+![General settings with automatic update options, Check for Updates, and Show Help Tags.](images/settings-general.png)
+
 | Setting | What it does |
 | --- | --- |
 | Check for updates automatically | Checks for new DownAudible releases in the background. Your choice at the update prompt sets the initial value. |
@@ -12,6 +14,8 @@ Choose **DownAudible > Settings…** or press Command–Comma. Open this chapter
 | Show Help Tags | Shows short descriptions when you point to supported controls. On by default. |
 
 ## Accounts
+
+![Accounts settings with demo accounts and actions for the selected profile.](images/settings-accounts.png)
 
 | Setting | What it does |
 | --- | --- |
@@ -28,6 +32,8 @@ See [Accounts and Sign-In](help-02-accounts.md) for sign-in methods, legacy user
 
 ## Library
 
+![Library settings showing podcast, request size, date range, and filter suggestion controls.](images/settings-library.png)
+
 | Setting | What it does |
 | --- | --- |
 | Podcasts | **Hide podcasts** is the default. Choose **Show podcast series** to list series or **Show individual episodes** to list the episodes. |
@@ -42,6 +48,10 @@ DownAudible requests more batches automatically until it has loaded all titles t
 The purchase date settings affect which titles the library loads. Use **Filter Library** in the toolbar or **View** menu to narrow the loaded table. See [Library and File Matching](help-03-library.md).
 
 ## Downloads
+
+![Downloads settings with audio, companion files, conversion, and Apple Books options.](images/settings-downloads.png)
+
+![Downloads settings showing companion file options and cover sizes.](images/download-extras.png)
 
 | Setting | What it does |
 | --- | --- |
@@ -63,6 +73,8 @@ See [Downloading Books](help-04-downloads.md) and [Naming and Folders](help-06-f
 
 ## Conversion
 
+![Conversion settings showing format, chapters, encoding, and audio options.](images/settings-conversion.png)
+
 | Setting | What it does |
 | --- | --- |
 | File format | **M4B** is the default audiobook format. Choose **M4A** for AAC audio or **MP3** for players that require it. |
@@ -83,6 +95,10 @@ See [Converting Audio](help-05-conversion.md) for chapter layouts, source creden
 
 ## Files
 
+![Files settings showing the demo archive destination, folder template, and filename controls.](images/settings-files.png)
+
+![Template preview showing the example path and available tokens.](images/files-template-preview.png)
+
 | Setting | What it does |
 | --- | --- |
 | Save to | Shows the archive’s destination. Use **Choose…** to change it. The default is the **Audiobooks** folder in your Documents folder. |
@@ -102,6 +118,8 @@ See [Naming and Folders](help-06-files.md) for the full list of tokens and file 
 
 ## Jobs
 
+![Jobs settings for transfer limits, progress, and logging.](images/settings-jobs.png)
+
 | Setting | What it does |
 | --- | --- |
 | Simultaneous downloads | Sets how many downloads can run at once, from 1 through 12. The default is 3. |
@@ -116,6 +134,8 @@ See [Naming and Folders](help-06-files.md) for the full list of tokens and file 
 See [Downloads and Recovery](help-07-transfers.md) for queue controls.
 
 ## Notifications
+
+![Notifications settings with macOS permission status, transfer events, and delivery controls.](images/settings-notifications.png)
 
 | Setting | What it does |
 | --- | --- |

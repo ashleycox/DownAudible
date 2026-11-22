@@ -19,6 +19,17 @@ struct AudibleCLIImportView: View {
     @State private var isImporting = false
     @State private var problem: String?
 
+    #if HELP_SCREENSHOTS
+    init(model: WorkspaceModel, demoAuthFile: URL? = nil) {
+        self.model = model
+        if let demoAuthFile {
+            _source = State(initialValue: .authFile)
+            _authFile = State(initialValue: demoAuthFile)
+            _password = State(initialValue: "password12345")
+        }
+    }
+    #endif
+
     private enum Source: String, Identifiable, CaseIterable {
         case profile = "CLI profile"
         case authFile = "Auth file"

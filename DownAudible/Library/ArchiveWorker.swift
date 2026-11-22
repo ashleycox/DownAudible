@@ -201,7 +201,7 @@ actor ArchiveWorker {
     }
 
     private static let indexKey = "ArchiveIndex"
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
     private let media: MediaTools
     private let trashItem: @Sendable (URL) throws -> Void
     private var records: [String: Record] = [:]
@@ -212,13 +212,24 @@ actor ArchiveWorker {
 
     init(
         media: MediaTools,
+        defaultsSuite: String? = nil,
         trashItem: @escaping @Sendable (URL) throws -> Void = {
             try FileManager.default.trashItem(at: $0, resultingItemURL: nil)
         }
     ) {
         self.media = media
+        defaults = defaultsSuite.flatMap(UserDefaults.init(suiteName:)) ?? .standard
         self.trashItem = trashItem
     }
+
+    #if HELP_SCREENSHOTS
+    func seedHelpScreenshotAudio(_ files: [String: URL], account: String, layout: ArchiveLayout) {
+        loaded = true
+        records = Dictionary(uniqueKeysWithValues: files.map { identifier, file in
+            (recordKey(layout, account, identifier), Record(converted: file))
+        })
+    }
+    #endif
 
     enum FeedbackMilestone: Sendable {
         case downloading

@@ -4,6 +4,8 @@
 
 Ashley Cox develops DownAudible. The source is available under version 3 of the GNU Affero General Public License.
 
+![About DownAudible window with the version and links to the developer and GitHub.](images/about.png)
+
 [Ashley Cox](https://ashleycox.co.uk/)
 
 [DownAudible source](https://github.com/ashleycox/DownAudible)
@@ -13,6 +15,8 @@ Ashley Cox develops DownAudible. The source is available under version 3 of the 
 ## Software updates
 
 DownAudible uses Sparkle to check for and install updates. Sparkle is available under the MIT licence. The app includes Sparkle’s licence and third-party notices.
+
+![General settings with automatic update options, Check for Updates, and Show Help Tags.](images/settings-general.png)
 
 [Sparkle project](https://sparkle-project.org/)
 

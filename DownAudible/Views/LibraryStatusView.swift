@@ -5,6 +5,13 @@ struct LibraryStatusView: View {
     @State private var selection: Scope? = .all
     @State private var sortOrder = [KeyPathComparator(\Row.title, comparator: .localizedStandard)]
 
+    #if HELP_SCREENSHOTS
+    init(model: WorkspaceModel, unavailableOnly: Bool = false) {
+        self.model = model
+        _selection = State(initialValue: unavailableOnly ? .category(.unavailable) : .all)
+    }
+    #endif
+
     var body: some View {
         Group {
             if model.signedIn {

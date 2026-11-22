@@ -75,11 +75,18 @@ enum SettingsPane: CaseIterable, Identifiable {
 struct PreferencesView: View {
     let model: WorkspaceModel
     let softwareUpdater: SoftwareUpdater
+    @State private var selection: SettingsPane
+
+    init(model: WorkspaceModel, softwareUpdater: SoftwareUpdater, selection: SettingsPane = .general) {
+        self.model = model
+        self.softwareUpdater = softwareUpdater
+        _selection = State(initialValue: selection)
+    }
 
     var body: some View {
-        TabView {
+        TabView(selection: $selection) {
             ForEach(SettingsPane.allCases) { pane in
-                Tab {
+                Tab(value: pane) {
                     pane.content(for: model, softwareUpdater: softwareUpdater)
                 } label: {
                     Label(pane.title, systemImage: pane.systemImage)

@@ -27,6 +27,12 @@ The bundled manual lives in `DownAudible/Help/Manual` and opens from **Help > Do
 
 Name chapters `help-NN-topic.md` and use a first-level title followed by second-level section headings. The build turns the Markdown chapters into a macOS Help book. Use plain paragraphs, short steps, and standard Markdown links and tables.
 
+Keep the manual’s screenshots current as part of every interface change. Review the affected chapters and images when changing a view, menu, label, layout, or workflow. Refresh each affected capture in the same change. Add captures for new topics, subtopics, and steps whenever seeing the relevant controls or result helps the reader.
+
+Run `Scripts/capture-help.sh <temporary-output-directory>` to render the app’s views with synthetic data. Pass screenshot names without `.png` after the output directory to regenerate specific views. Use an isolated demo session for any interactive capture, with fictitious books, profiles and files. Use example credentials such as `email@example.com` and `password12345` in offline fixtures, and keep passwords masked in the image. Keep personal accounts, library data, paths, credentials, browser addresses with sign-in tokens and unrelated windows out of the captures.
+
+Store the approved PNGs in `DownAudible/Help/Manual/images` and reference them beside the steps they illustrate, using descriptive alternative text. Crop to the relevant area and highlight the control or result when it helps explain the step. Keep visible labels legible and the instructions complete for readers using VoiceOver. Inspect every new or refreshed image at readable size and in the rendered help chapter. Verify the state, demo data, crop and highlights before committing, and check that the Help book displays the images from its bundled resources offline.
+
 Register each settings page once in `SettingsPane` in `DownAudible/Views/PreferencesView.swift`. Setup and Settings use that list and share the pane views. Put new controls in the shared view so they are available in both places.
 
 ## README

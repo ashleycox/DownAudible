@@ -62,6 +62,19 @@ struct AudibleSignInView: View {
         _accountName = State(initialValue: addingAccount ? "" : (model.activeAccount?.name ?? ""))
     }
 
+    #if HELP_SCREENSHOTS
+    init(model: WorkspaceModel, demoCredentials: Bool, attempt: AudibleSignIn? = nil) {
+        self.init(model: model, addingAccount: true)
+        _attempt = State(initialValue: attempt)
+        if demoCredentials {
+            _method = State(initialValue: .credentials)
+            _accountName = State(initialValue: "Demo Account")
+            _username = State(initialValue: "email@example.com")
+            _password = State(initialValue: "password12345")
+        }
+    }
+    #endif
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Sign In to Audible")

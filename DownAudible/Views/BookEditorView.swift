@@ -28,6 +28,14 @@ struct BookEditorView: View {
     @State private var previewIsPlaying = false
     @State private var previewError: String?
 
+    #if HELP_SCREENSHOTS
+    init(model: WorkspaceModel, request: BookEditRequest, excludedSections: Set<Int> = []) {
+        self.model = model
+        self.request = request
+        _excluded = State(initialValue: excludedSections)
+    }
+    #endif
+
     var body: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 8) {

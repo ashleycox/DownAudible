@@ -34,6 +34,14 @@ final class SoftwareUpdater {
         refreshState()
     }
 
+    #if HELP_SCREENSHOTS
+    convenience init(helpScreenshotDelegate delegate: any SPUUpdaterDelegate) {
+        self.init(delegate: delegate)
+        state = State(canCheckForUpdates: true, automaticallyChecksForUpdates: true,
+                      automaticallyDownloadsUpdates: false, allowsAutomaticUpdates: true)
+    }
+    #endif
+
     var canCheckForUpdates: Bool { state.canCheckForUpdates }
     var allowsAutomaticUpdates: Bool { state.allowsAutomaticUpdates }
 
