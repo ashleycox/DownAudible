@@ -7,6 +7,7 @@ struct LibraryView: View {
     let showsStatusBar: Bool
     @Binding var sort: LibrarySort
     @Binding var filters: LibraryFilters
+    @AppStorage("LibraryColumnCustomization") private var columnCustomization: TableColumnCustomization<LibraryRow>
     @AppStorage(LibraryFilters.suggestionsPreferenceKey) private var showsFilterSuggestions = true
     @FocusState private var searchFocused: Bool
     @State private var search = ""
@@ -186,21 +187,30 @@ struct LibraryView: View {
                 activeFilters
                 Divider()
             }
-            Table(rows, selection: $model.selectedBooks, sortOrder: tableSortOrder) {
-                TableColumn("Title", value: \.title) { row in
+            Table(
+                rows, selection: $model.selectedBooks, sortOrder: tableSortOrder,
+                columnCustomization: $columnCustomization
+            ) {
+                TableColumn("Title", value: \.title, comparator: .localizedStandard) { row in
                     Text(row.title)
                         .appHelp(row.title)
                 }
                 .width(min: 128, ideal: 280)
-                TableColumn("Author", value: \.authors) { row in
+                .customizationID("title")
+                .disabledCustomizationBehavior(.visibility)
+                TableColumn("Author", value: \.authors, comparator: .localizedStandard) { row in
                     Text(row.authors).appHelp(row.authors)
                 }
                 .width(min: 80, ideal: 144)
-                TableColumn("Narrator", value: \.narrators) { row in
+                .customizationID("author")
+                .disabledCustomizationBehavior(.visibility)
+                TableColumn("Narrator", value: \.narrators, comparator: .localizedStandard) { row in
                     Text(row.narrators).appHelp(row.narrators)
                 }
                 .width(min: 80, ideal: 144)
-                TableColumn("Download Status", value: \.statusLabel) { row in
+                .customizationID("narrator")
+                .disabledCustomizationBehavior(.visibility)
+                TableColumn("Download Status", value: \.statusLabel, comparator: .localizedStandard) { row in
                     Label(row.statusLabel, systemImage: row.statusSymbol)
                         .labelStyle(.titleAndIcon)
                         .lineLimit(1)
@@ -211,6 +221,8 @@ struct LibraryView: View {
                         }
                 }
                 .width(min: 124, ideal: 144, max: 180)
+                .customizationID("downloadStatus")
+                .disabledCustomizationBehavior(.visibility)
             }
             .contextMenu(forSelectionType: AudibleBook.ID.self) { ids in
                 let books = rows.filter { ids.contains($0.id) }.map(\.book)

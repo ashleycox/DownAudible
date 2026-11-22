@@ -2,7 +2,9 @@
 
 ## Browse your books
 
-Choose **Sort Library** in the toolbar or **View > Sort Library**. Pick a field and an order. Sort by title, author, narrator, series, purchase date, release year, length, or download status. Books with no value for the chosen field appear last. You can also click a column header to sort by that column. DownAudible remembers each account’s sort order.
+Choose **Sort Library** in the toolbar or **View > Sort Library**. Pick a field and an order. Sort by title, author, narrator, series, purchase date, release year, length, or download status. Books with no value for the chosen field appear last. Click any column header to sort by that column. Click it again to reverse the order. The header and **Sort Library** reflect the same sort, and DownAudible remembers each account’s choice.
+
+Drag a column header left or right to move that column. DownAudible remembers the column layout across accounts and app launches.
 
 Choose **Filter Library** in the toolbar or **View > Filter Library** to narrow the table by title, author, series, narrator, genre, language, release year, or download status. You can apply several filters together. Choose the same field again to edit it or choose **Remove Filter**. Under **Download Status**, choose **Any Status** to remove that filter. Choose **Clear Filters** to start over. Filters clear when you switch accounts, sign out, or quit DownAudible.
 
