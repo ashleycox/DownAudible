@@ -20,6 +20,7 @@ import audible
 import httpx
 from audible.activation_bytes import extract_activation_bytes
 from audible.aescipher import AESCipher, detect_file_encryption
+from audible.auth import user_profile_audible
 from audible.client import default_response_callback
 from audible.exceptions import (
     AuthFlowError,
@@ -77,8 +78,21 @@ def emit(**message):
     )
 
 
+def uses_android_profile(request):
+    profile = request.get("deviceProfile")
+    if profile not in (None, "standard", "android") or (
+        profile == "android" and request.get("legacyUsername")
+    ):
+        raise OperationError("signInFailed")
+    return profile == "android"
+
+
 def begin_sign_in(request):
     locale = Locale(country_code=request["marketplace"])
+    if uses_android_profile(request):
+        from android_sign_in import begin_android_sign_in
+
+        return begin_android_sign_in(locale)
     verifier = create_code_verifier()
     url, serial = build_oauth_url(
         country_code=locale.country_code,
@@ -93,7 +107,8 @@ def begin_sign_in(request):
 def complete_sign_in(request):
     locale = Locale(country_code=request["marketplace"])
     legacy = request.get("legacyUsername", False)
-    host = "audible" if legacy else "amazon"
+    android = uses_android_profile(request)
+    host = "audible" if legacy or android else "amazon"
     redirect = urlsplit(request["redirect"])
     codes = parse_qs(redirect.query).get(AUTHORIZATION_CODE, [])
     if (
@@ -103,22 +118,77 @@ def complete_sign_in(request):
         or len(codes) != 1
     ):
         raise OperationError("invalidRedirect")
+
+    previous_id = None
+    if "previousSession" in request:
+        previous_id = previous_customer_id(request["previousSession"], locale)
     try:
-        credentials = register(
-            authorization_code=codes[0],
-            code_verifier=request["verifier"].encode("ascii"),
-            domain=locale.domain,
-            serial=request["serial"],
-            with_username=legacy,
-        )
+        if android:
+            from android_sign_in import register_android
+
+            credentials = register_android(
+                locale, codes[0], request["verifier"], request["serial"],
+                request.get("registrationContext"), timeout_for(request),
+            )
+        else:
+            credentials = register(
+                authorization_code=codes[0],
+                code_verifier=request["verifier"].encode("ascii"),
+                domain=locale.domain,
+                serial=request["serial"],
+                with_username=legacy,
+            )
+        credentials["locale_code"] = locale.country_code
+        credentials["with_username"] = legacy
+        auth = audible.Authenticator.from_dict(credentials)
     except httpx.RequestError:
         raise
     except Exception as error:
         raise OperationError("signInFailed") from error
-    credentials["locale_code"] = locale.country_code
-    credentials["with_username"] = legacy
-    auth = audible.Authenticator.from_dict(credentials)
+    if previous_id is not None:
+        current_id = customer_id(auth.customer_info)
+        if current_id is None:
+            raise OperationError("accountVerification")
+        if current_id != previous_id:
+            raise OperationError("accountMismatch")
     return {"session": session_json(auth)}
+
+
+def customer_id(info):
+    identifier = info.get("user_id") if isinstance(info, dict) else None
+    return identifier if isinstance(identifier, str) and identifier.strip() else None
+
+
+def previous_customer_id(session, locale):
+    try:
+        data = json.loads(session)
+    except (TypeError, ValueError) as error:
+        raise OperationError("accountVerification") from error
+    if not isinstance(data, dict) or not isinstance(data.get("locale_code"), str):
+        raise OperationError("accountVerification")
+    if data["locale_code"] != locale.country_code:
+        raise OperationError("accountMismatch")
+
+    identifier = customer_id(data.get("customer_info"))
+    if identifier is None:
+        # Old imported sessions can omit customer_info. Fetch that ID from the
+        # original first-party profile before exchanging the new sign-in code.
+        try:
+            auth = audible.Authenticator.from_dict(data)
+            missing_token = auth.access_token is None or auth.expires is None
+            if missing_token or auth.access_token_expired:
+                auth.refresh_access_token(force=missing_token)
+            profile = (
+                user_profile_audible(access_token=auth.access_token, domain=locale.domain)
+                if auth.with_username
+                else auth.user_profile()
+            )
+            identifier = customer_id(profile)
+        except Exception as error:
+            raise OperationError("accountVerification") from error
+    if identifier is None:
+        raise OperationError("accountVerification")
+    return identifier
 
 
 def sign_in_answer(kind, image_url=None):
@@ -138,6 +208,8 @@ def sign_in_answer(kind, image_url=None):
 
 def credential_sign_in(request):
     try:
+        if uses_android_profile(request):
+            raise OperationError("credentialSignInFailed")
         locale = Locale(country_code=request["marketplace"])
         legacy = request.get("legacyUsername", False)
 
@@ -363,7 +435,11 @@ def represent_book(item):
     elif rights.get("is_consumable_offline") is False:
         unavailable_reason = "offlineRestricted"
     library_status = item.library_status or {}
+    is_plus = item.is_ayce
+    if is_plus is None and item.benefit_id == "AYCL":
+        is_plus = True
     rating = (item.rating or {}).get("overall_distribution") or {}
+    isbn = item.isbn
     genres = (
         entry["name"]
         for category in item.category_ladders or []
@@ -372,6 +448,7 @@ def represent_book(item):
     )
     return {
         "asin": item.asin,
+        "isbn": isbn if isinstance(isbn, str) else None,
         "title": item.title,
         "subtitle": item.subtitle,
         "authors": names(item.authors),
@@ -399,6 +476,10 @@ def represent_book(item):
         "hasPDF": bool(item.pdf_url),
         "isDownloadable": unavailable_reason is None,
         "downloadUnavailableReason": unavailable_reason,
+        "isAudiblePlus": is_plus if isinstance(is_plus, bool) else None,
+        "isIndefinite": rights.get("is_consumable_indefinitely")
+        if isinstance(rights.get("is_consumable_indefinitely"), bool)
+        else None,
     }
 
 
@@ -662,7 +743,7 @@ def conversion_credentials(license_response):
     return {}
 
 
-async def download_audio(item, client, web, folder, progress, options):
+async def download_audio(item, client, web, folder, progress, options, widevine=None):
     if (
         not isinstance(item.asin, str)
         or not re.fullmatch(r"[A-Za-z0-9]{10}", item.asin)
@@ -680,6 +761,16 @@ async def download_audio(item, client, web, folder, progress, options):
     quality = options.get("quality", "best")
     mode = options.get("format", "preferAAX")
     bandwidth = max(0, options.get("bytesPerSecond", 0))
+    if widevine is not None and mode == "preferAAX":
+        from widevine_download import WidevineUnavailable
+
+        try:
+            return await widevine.download(
+                item.asin, web, folder, quality, bandwidth, progress,
+                check_license_response, chapters_from,
+            )
+        except WidevineUnavailable:
+            pass
     aax_providers = (
         () if mode == "aaxcOnly" else (item.get_aax_url_old, item.get_aax_url)
     )
@@ -701,6 +792,7 @@ async def download_audio(item, client, web, folder, progress, options):
                 "asin": item.asin,
                 "credentials": {},
                 "originalFilename": target.original_filename,
+                "downloadedBytes": target.transferred_bytes,
             }
         except NotDownloadableAsAAX:
             break
@@ -743,6 +835,7 @@ async def download_audio(item, client, web, folder, progress, options):
         "file": target.path.name,
         "asin": item.asin,
         "credentials": credentials,
+        "downloadedBytes": target.transferred_bytes,
     }
 
 
@@ -754,7 +847,7 @@ async def resolve_parts(item):
     return parts
 
 
-async def download_book(client, web, asin, folder, options):
+async def download_book(client, web, asin, folder, options, widevine=None):
     item = await library_item(client, asin)
     prefer_parts = (
         item.content_delivery_type == "MultiPartBook"
@@ -769,6 +862,7 @@ async def download_book(client, web, asin, folder, options):
                 folder,
                 lambda progress: emit(progress=progress),
                 options,
+                widevine,
             )
             return {"parts": [result]}
         except PartsRequired:
@@ -782,7 +876,7 @@ async def download_book(client, web, asin, folder, options):
             emit(progress=(part_index + progress) / len(parts))
 
         results.append(
-            await download_audio(part, client, web, folder, report_progress, options)
+            await download_audio(part, client, web, folder, report_progress, options, widevine)
         )
     return {"parts": results}
 
@@ -881,6 +975,57 @@ async def download_json_extras(client, request, options):
     return result
 
 
+def annotation_entries(response, asin):
+    if not isinstance(response, dict):
+        raise OperationError("annotationsResponse")
+    payload = response.get("payload", response)
+    if (
+        not isinstance(payload, dict)
+        or payload.get("key", asin) != asin
+        or not isinstance(payload.get("records"), list)
+    ):
+        raise OperationError("annotationsResponse")
+
+    entries = []
+    kinds = {"audible.bookmark": "bookmark", "audible.note": "note"}
+    for record in payload["records"]:
+        if not isinstance(record, dict):
+            continue
+        record_type = record.get("type")
+        kind = kinds.get(record_type) if isinstance(record_type, str) else None
+        if kind is None:
+            continue
+        position = record.get("startPosition")
+        if isinstance(position, str) and re.fullmatch(r"[0-9]{1,16}", position):
+            position = int(position)
+        if type(position) is not int or not 0 <= position <= 2**53 - 1:
+            position = None
+        text = record.get("text")
+        entries.append({
+            "kind": kind,
+            "positionMilliseconds": position,
+            "text": text if isinstance(text, str) else "",
+        })
+    entries.sort(key=lambda entry: (entry["positionMilliseconds"] is None, entry["positionMilliseconds"] or 0))
+    return entries
+
+
+async def read_annotations(client, asin):
+    if not isinstance(asin, str) or not re.fullmatch(r"[A-Z0-9]{10}", asin):
+        raise OperationError("invalidTitle")
+    item = LibraryItem({"asin": asin}, client)
+    try:
+        response = await item.get_annotations()
+    except NotFoundError:
+        return {"entries": []}
+    return {"entries": annotation_entries(response, asin)}
+
+
+def timeout_for(request):
+    options = request.get("options") or {}
+    return max(0, min(600, options.get("timeout", 45))) or None
+
+
 async def execute(request):
     command = request["command"]
     if command == "beginSignIn":
@@ -895,11 +1040,37 @@ async def execute(request):
         return bool(auth_encoding(Path(request["file"])))
     if command == "importAuthFile":
         return import_auth_file(request)
+    if command == "inspectOpenAudible":
+        from open_audible_import import inspect_open_audible
+
+        return inspect_open_audible(request["file"])
+    if command == "importOpenAudible":
+        from open_audible_import import import_open_audible
+
+        return await import_open_audible(request["file"], request["checkpoint"], timeout_for(request))
+    if command == "chapterRepair" and request.get("file"):
+        from chapter_repair import read_chapter_repair
+
+        return read_chapter_repair(request["file"], request.get("asin"))
 
     options = request.get("options") or {}
-    timeout = max(0, min(600, options.get("timeout", 45))) or None
+    timeout = timeout_for(request)
     quality = options.get("quality", "best")
     auth = audible.Authenticator.from_dict(json.loads(request["session"]))
+    if command == "deviceRegistration":
+        from audible_reports import device_registration
+
+        return device_registration(auth)
+    if command == "deregisterDevice":
+        from audible_reports import deregister_device
+
+        timeout = min(timeout or 45, 45)
+        async with asyncio.timeout(timeout):
+            return await deregister_device(auth, request.get("confirmed"), timeout)
+    if command == "provisionWidevine":
+        from widevine_download import provision
+
+        return await provision(auth, request.get("consent"), timeout)
     if command == "exportAuthFile":
         password = request.get("password")
         if not password:
@@ -933,11 +1104,34 @@ async def execute(request):
             return await catalog_search(client, request["query"])
         if command in ("wishlistAdd", "wishlistRemove"):
             return await edit_wishlist(client, command, request["asins"])
+        if command == "listeningStats":
+            from audible_reports import listening_stats
+
+            return await listening_stats(client, request.get("startYear"))
         asin = request["asin"]
         if not re.fullmatch(r"[A-Za-z0-9]{10}", asin):
             raise OperationError("unavailable")
         if command == "chapters":
             return await book_chapters(client, asin, quality)
+        if command == "chapterRepair":
+            from chapter_repair import fetch_chapter_repair
+
+            return await fetch_chapter_repair(client, asin, quality)
+        if command == "annotations":
+            return await read_annotations(client, asin)
+        if command == "checkTitle":
+            from audible_reports import audio_offers
+
+            item = await library_item(client, asin)
+            if item.asin != asin:
+                raise OperationError("unavailable")
+            preferred_format = None
+            if request.get("preferredAudioOnly") is True:
+                preferred_format = options.get("format", "preferAAX") or "preferAAX"
+            return await audio_offers(
+                item, auth, quality, options.get("preferWidevine") is True, timeout,
+                check_license_response, failure_code, preferred_format=preferred_format,
+            )
         if command == "jsonExtras":
             return await download_json_extras(client, request, options)
         if command == "voucher":
@@ -948,8 +1142,15 @@ async def execute(request):
             headers={"Accept-Encoding": "identity"}, timeout=timeout
         ) as web:
             if command == "download":
+                widevine = None
+                if options.get("format", "preferAAX") == "preferAAX" and "widevineCDM" in request:
+                    from widevine_download import WidevineDownload
+
+                    widevine = WidevineDownload(
+                        auth, request["widevineCDM"], request.get("ffmpeg"), timeout
+                    )
                 return await download_book(
-                    client, web, asin, Path(request["directory"]), options
+                    client, web, asin, Path(request["directory"]), options, widevine
                 )
             if command == "extras":
                 return await download_extras(client, web, request, options)
@@ -977,7 +1178,7 @@ def failure_code(error, command=None):
             404: "notFound",
             429: "rateLimited",
         }.get(status, "requestRejected")
-    if isinstance(error, (httpx.TimeoutException, NotResponding)):
+    if isinstance(error, (TimeoutError, httpx.TimeoutException, NotResponding)):
         return "timeout"
     if isinstance(error, (httpx.RequestError, RequestError)):
         return "network"

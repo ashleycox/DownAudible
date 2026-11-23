@@ -102,7 +102,10 @@ class DownloadTransferTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.target.read_bytes(), ORIGINAL)
         self.assertFalse(self.partial.exists())
         cached = await self.transfer(lambda request: self.fail("Completed stage fetched again"))
-        self.assertEqual(cached, result)
+        self.assertEqual(cached.path, result.path)
+        self.assertEqual(cached.original_filename, result.original_filename)
+        self.assertEqual(result.transferred_bytes, len(ORIGINAL) - CHUNK_SIZE)
+        self.assertEqual(cached.transferred_bytes, 0)
 
     async def test_aax_name_prefers_disposition_then_uses_a_safe_url_basename(self):
         cases = [

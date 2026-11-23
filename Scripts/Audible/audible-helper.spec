@@ -1,7 +1,11 @@
 from pathlib import Path
 from platform import machine
+from PyInstaller.utils.hooks import copy_metadata
 
-analysis = Analysis([str(Path(SPECPATH) / "audible_helper.py")])
+analysis = Analysis(
+    [str(Path(SPECPATH) / "audible_helper.py")],
+    datas=copy_metadata("pywidevine"),
+)
 modules = PYZ(analysis.pure)
 launcher = EXE(
     modules,

@@ -58,7 +58,7 @@ class DownloadBookTests(unittest.IsolatedAsyncioTestCase):
         self.requests = []
 
     async def download(
-        self, mode, *, aax=(), licenses=None, parts=False, include_book_rights=True,
+        self, mode=None, *, aax=(), licenses=None, parts=False, include_book_rights=True,
         book_aaxc_status=200, delivery_type="MultiPartBook", prefer_whole_book=None,
     ):
         licenses = licenses or {}
@@ -111,7 +111,7 @@ class DownloadBookTests(unittest.IsolatedAsyncioTestCase):
         async def sign(_auth, request):
             yield request
 
-        options = {"format": mode}
+        options = {} if mode is None else {"format": mode}
         if prefer_whole_book is not None:
             options["preferWholeBookDownloads"] = prefer_whole_book
         with (
@@ -161,8 +161,8 @@ class DownloadBookTests(unittest.IsolatedAsyncioTestCase):
         self.assert_files(result, (BOOK,), "aaxc")
         self.assertEqual(self.requests, [("book", BOOK), ("license", BOOK), ("aaxc", BOOK)])
 
-    async def test_prefer_aax_tries_whole_aaxc_when_aax_requires_parts(self):
-        result = await self.download("preferAAX", aax=(BOOK,), licenses={BOOK: license_for(BOOK)})
+    async def test_default_format_tries_whole_aaxc_after_aax(self):
+        result = await self.download(aax=(BOOK,), licenses={BOOK: license_for(BOOK)})
         self.assert_files(result, (BOOK,), "aaxc")
         self.assertEqual(self.requests, [
             ("book", BOOK), ("aax", BOOK), ("webAAX", BOOK), ("license", BOOK), ("aaxc", BOOK)

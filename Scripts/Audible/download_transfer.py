@@ -53,6 +53,7 @@ def fingerprint(*values):
 class DownloadedFile:
     path: Path
     original_filename: str | None = None
+    transferred_bytes: int = 0
 
 
 @dataclass(frozen=True)
@@ -92,8 +93,10 @@ def check_staging_path(path):
 
 
 def artifact_matches(prefix, content_type, kind):
-    if kind in ("aax", "aaxc"):
+    if kind in ("aax", "aaxc", "mp4"):
         expected = AAX_CONTENT_TYPES if kind == "aax" else AAXC_CONTENT_TYPES
+        if kind == "mp4":
+            expected = (*expected, "audio/mp4", "video/mp4")
         return (
             content_type in (*expected, "application/octet-stream")
             and prefix[4:8] == b"ftyp"
@@ -372,9 +375,9 @@ async def receive(
                 updated.save(state_path)
         partial.replace(target)
     finally:
-        if kind not in ("aax", "aaxc", "mp3"):
+        if kind not in ("aax", "aaxc", "mp3", "mp4"):
             partial.unlink(missing_ok=True)
-    return DownloadedFile(target, filename)
+    return DownloadedFile(target, filename, written - offset)
 
 
 async def stream_file(

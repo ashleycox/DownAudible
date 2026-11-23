@@ -5,7 +5,9 @@ requires-python = ">=3.13,<3.14"
 dependencies = [
     "audible==0.13.1",
     "audible-cli==0.6.0",
+    "pycryptodome==3.24.1",
     "pyinstaller==6.22.3",
+    "pywidevine==1.9.0",
 ]
 
 [tool.uv]
