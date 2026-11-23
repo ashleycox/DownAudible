@@ -11,6 +11,11 @@ struct BookEditRequest: Identifiable {
     let apiOptions: AudibleAPIOptions
     let destination: ArchiveLayout
     var activationBytes: String? = nil
+
+    var chapterASIN: String? {
+        let asin = origin.archiveTitle.asin
+        return asin == ArchiveTitle.unknownASIN ? nil : asin
+    }
 }
 
 @MainActor @Observable
@@ -112,6 +117,41 @@ final class WorkspaceModel {
         didSet { save(transferPreferences, as: "TransferPreferences") }
     }
 
+    var downloadPacing: DownloadPacing {
+        didSet {
+            save(downloadPacing, as: "DownloadPacing")
+            for index in transfers.indices where transfers[index].paceResumeAt != nil {
+                transfers[index].paceResumeAt = .now
+            }
+            pacingWait?.cancel()
+        }
+    }
+
+    var libraryOrganization: LibraryOrganization {
+        didSet { save(libraryOrganization, as: "LibraryOrganization") }
+    }
+
+    var backgroundLibraryRefresh: Bool {
+        didSet {
+            defaults.set(backgroundLibraryRefresh, forKey: "BackgroundLibraryRefresh")
+            startBackgroundLibraryRefresh()
+        }
+    }
+
+    private(set) var catalogSnapshots: [UUID: LibraryCatalog] = [:]
+    private(set) var catalogFailures: [UUID: String] = [:]
+    private(set) var audibleRetryDelays: [UUID: AudibleRetryDelay] {
+        didSet { save(audibleRetryDelays, as: "AudibleRetryDelays") }
+    }
+
+    var shelfSettings: ShelfSettings {
+        didSet { save(shelfSettings, as: "AudiobookshelfSettings") }
+    }
+
+    private(set) var shelfLibraries: [ShelfLibrary] = []
+    private(set) var shelfUploads: [ShelfUpload] = []
+    var showShelfUploads = false
+
     var transferFeedback: TransferFeedbackPreferences {
         didSet { save(transferFeedback, as: "TransferFeedback") }
     }
@@ -140,6 +180,11 @@ final class WorkspaceModel {
     private let media = MediaTools()
     private let archive: ArchiveWorker
     private let transferLog = TransferLog()
+    private let downloadPacer = DownloadPacer()
+    private let catalogStore = LibraryCatalogStore()
+    @ObservationIgnored private var backgroundLibraryTask: Task<Void, Never>?
+    private let shelfQueue: ShelfUploadQueue
+    @ObservationIgnored private var shelfTask: Task<Void, Never>?
     private let queue = TransferQueueStore()
     private let completionSoundPlayer = QueueCompletionSoundPlayer()
     @ObservationIgnored private var queueSaveTask: Task<Void, Never>?
@@ -148,6 +193,7 @@ final class WorkspaceModel {
     @ObservationIgnored private var completedQueueRevision = 0
     @ObservationIgnored private var queueSaveFailed = false
     @ObservationIgnored private var scheduledTransferIndices: [Int] = []
+    @ObservationIgnored private var pacingWait: Task<Void, Never>?
     @ObservationIgnored private var activeJobs: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored private var batchEncounteredError = false
     @ObservationIgnored private var feedbackProgress: [UUID: TransferFeedbackProgress] = [:]
@@ -159,12 +205,14 @@ final class WorkspaceModel {
     @ObservationIgnored private var activeTransfer: Task<Void, Never>?
     @ObservationIgnored private var initialLoad = false
     @ObservationIgnored private var lastBatch: TransferBatch?
-    @ObservationIgnored private var pendingAccount: SavedAudibleAccount?
+    @ObservationIgnored private var pendingAccount: (destination: SavedAudibleAccount, matching: SavedAudibleAccount?)?
     @ObservationIgnored private var matchesByAccount: [UUID: LocalMatches]
 
-    init(defaultsSuite: String? = nil, audible: AudibleClient = AudibleClient()) {
+    init(defaultsSuite: String? = nil, audible: AudibleClient = AudibleClient(),
+         shelfQueue: ShelfUploadQueue = ShelfUploadQueue()) {
         defaults = defaultsSuite.flatMap(UserDefaults.init(suiteName:)) ?? .standard
         self.audible = audible
+        self.shelfQueue = shelfQueue
         archive = ArchiveWorker(media: media, defaultsSuite: defaultsSuite)
         marketplace = defaults.string(forKey: "Marketplace")
             .flatMap(AudibleMarketplace.init(rawValue:)) ?? .unitedKingdom
@@ -182,6 +230,11 @@ final class WorkspaceModel {
         downloadOptions = Self.load("DownloadOptions", from: defaults) ?? DownloadOptions()
         apiOptions = Self.load("AudibleAPIOptions", from: defaults) ?? AudibleAPIOptions()
         transferPreferences = Self.load("TransferPreferences", from: defaults) ?? TransferPreferences()
+        downloadPacing = Self.load("DownloadPacing", from: defaults) ?? DownloadPacing()
+        libraryOrganization = Self.load("LibraryOrganization", from: defaults) ?? LibraryOrganization()
+        backgroundLibraryRefresh = defaults.bool(forKey: "BackgroundLibraryRefresh")
+        audibleRetryDelays = Self.load("AudibleRetryDelays", from: defaults) ?? [:]
+        shelfSettings = Self.load("AudiobookshelfSettings", from: defaults) ?? ShelfSettings()
         transferFeedback = Self.load("TransferFeedback", from: defaults) ?? TransferFeedbackPreferences()
         accounts = Self.load("Accounts", from: defaults) ?? []
         activeAccountID = defaults.string(forKey: "ActiveAccountID").flatMap(UUID.init(uuidString:))
@@ -215,6 +268,10 @@ final class WorkspaceModel {
 
     func seedHelpScreenshotArchive(_ files: [String: URL]) {
         helpScreenshotArchive = files
+    }
+
+    func seedHelpScreenshotCatalogs(_ catalogs: [UUID: LibraryCatalog]) {
+        catalogSnapshots = catalogs
     }
     #endif
 
@@ -302,12 +359,16 @@ final class WorkspaceModel {
         startFallbackFileCheck()
         await restoreTransfers()
         didRestoreTransfers = true
+        await refreshShelfUploads()
+        sendShelfUploads()
         do {
             if accounts.isEmpty, try audible.hasSession() {
                 let account = SavedAudibleAccount(id: UUID(), name: marketplace.displayName, marketplace: marketplace, usesLegacySession: true)
                 accounts = [account]
                 activeAccountID = account.id
             }
+            let available = Set(signedInCatalogAccounts.map(\.id))
+            catalogSnapshots = ((try? await catalogStore.load()) ?? [:]).filter { available.contains($0.key) }
             migrateLibrarySort()
             if let account = activeAccount ?? accounts.first {
                 try await activate(account)
@@ -315,21 +376,31 @@ final class WorkspaceModel {
         } catch {
             show("Couldn’t open the saved session", error: error)
         }
+        startBackgroundLibraryRefresh()
     }
 
     func beginSignIn(
         marketplace: AudibleMarketplace,
         name: String = "",
         legacyUsername: Bool = false,
-        addingAccount: Bool = false
+        addingAccount: Bool = false,
+        deviceProfile: AudibleDeviceProfile? = nil,
+        matching existing: SavedAudibleAccount? = nil
     ) async {
-        guard canSwitchAccounts else { return }
+        guard canSwitchAccounts, signIn == nil else { return }
+        if let existing, !canChangeAndroidSignIn(for: existing) {
+            show("Couldn’t start sign-in", error: AccountError.busy)
+            return
+        }
         signInBusy = true
         defer { signInBusy = false }
-        let account = accountForSignIn(marketplace: marketplace, name: name, addingAccount: addingAccount)
+        let account = (addingAccount ? nil : existing)
+            ?? accountForSignIn(marketplace: marketplace, name: name, addingAccount: addingAccount)
         do {
-            signIn = try await client(for: account).beginSignIn(marketplace: marketplace, legacyUsername: legacyUsername)
-            pendingAccount = account
+            signIn = try await client(for: account).beginSignIn(
+                marketplace: marketplace, legacyUsername: legacyUsername, deviceProfile: deviceProfile
+            )
+            pendingAccount = (account, existing)
         } catch {
             show("Couldn’t start sign-in", error: error)
         }
@@ -337,24 +408,43 @@ final class WorkspaceModel {
 
     @discardableResult
     func finishSignIn(_ attempt: AudibleSignIn, redirect: String) async -> Bool {
-        guard !signInBusy, signIn?.url == attempt.url, let account = pendingAccount else { return false }
+        guard !signInBusy, signIn?.url == attempt.url, let pendingAccount else { return false }
         guard let url = URL(string: redirect.trimmingCharacters(in: .whitespacesAndNewlines)),
               url.scheme?.lowercased() == "https", url.host() != nil else {
             show("Check the address", error: AudibleError.invalidRedirect)
             return false
         }
+        if let existing = pendingAccount.matching, !canChangeAndroidSignIn(for: existing) {
+            show("Couldn’t finish sign-in", error: AccountError.busy)
+            return false
+        }
         signInBusy = true
         defer { signInBusy = false }
         do {
-            try await client(for: account).completeSignIn(attempt, redirectURL: url)
+            let account = pendingAccount.destination
+            try await client(for: account).completeSignIn(
+                attempt, redirectURL: url, matching: pendingAccount.matching.map { client(for: $0) }
+            )
             store(account)
             cancelBrowserSignIn(attempt)
             try await activate(account)
             return true
         } catch {
+            if let failure = error as? AudibleError,
+               [.accountMismatch, .accountVerification, .signInFailed].contains(failure) {
+                cancelBrowserSignIn(attempt)
+            }
             show("Couldn’t sign in", error: error)
             return false
         }
+    }
+
+    func canChangeAndroidSignIn(for account: SavedAudibleAccount) -> Bool {
+        guard canRemoveAccounts, accounts.contains(where: { $0.id == account.id }) else { return false }
+        #if HELP_SCREENSHOTS
+        if helpScreenshotArchive != nil { return true }
+        #endif
+        return (try? client(for: account).hasSession()) == true
     }
 
     func cancelBrowserSignIn(_ attempt: AudibleSignIn) {
@@ -406,10 +496,21 @@ final class WorkspaceModel {
         guard canRemoveAccounts, let account = activeAccount else { return }
         do {
             try client(for: account).signOut()
-            clearLibrary()
+            finishSigningOut(account)
         } catch {
             show("Couldn’t sign out", error: error)
         }
+    }
+
+    private func finishSigningOut(_ account: SavedAudibleAccount) {
+        if let index = accounts.firstIndex(where: { $0.id == account.id }) {
+            accounts[index].widevineEnabled = nil
+        }
+        catalogFailures[account.id] = nil
+        audibleRetryDelays[account.id] = nil
+        catalogSnapshots[account.id] = nil
+        Task { try? await catalogStore.save(catalogSnapshots) }
+        if activeAccountID == account.id { clearLibrary() }
     }
 
     func renameAccount(_ account: SavedAudibleAccount, to name: String) {
@@ -453,6 +554,10 @@ final class WorkspaceModel {
         do {
             try client(for: account).signOut()
             accounts.removeAll { $0.id == account.id }
+            libraryOrganization.removeAccount(account.id)
+            catalogSnapshots[account.id] = nil
+            catalogFailures[account.id] = nil
+            audibleRetryDelays[account.id] = nil
             matchesByAccount.removeValue(forKey: account.id)
             save(matchesByAccount, as: "AccountMatches")
             if activeAccountID == account.id {
@@ -460,6 +565,7 @@ final class WorkspaceModel {
                 activeAccountID = nil
                 if let next = accounts.first { try await activate(next) }
             }
+            try await catalogStore.save(catalogSnapshots)
         } catch {
             show("Couldn’t remove the account", error: error)
         }
@@ -473,12 +579,23 @@ final class WorkspaceModel {
         try await audible.inspectAuthFile(url)
     }
 
-    func importAccount(from url: URL, name: String, password: String?, marketplace: AudibleMarketplace?) async throws {
+    func openAudibleProfiles(_ url: URL) async throws -> [OpenAudibleProfile] {
+        try await audible.openAudibleProfiles(url)
+    }
+
+    func importAccount(
+        from url: URL, name: String, password: String?, marketplace: AudibleMarketplace?, openAudible: OpenAudibleProfile? = nil
+    ) async throws {
         guard canSwitchAccounts else { throw AccountError.busy }
         accountBusy = true
         defer { accountBusy = false }
         let id = UUID()
-        let accepted = try await audible.scoped(to: id, options: apiOptions).importAuthFile(url, password: password, marketplace: marketplace)
+        let scoped = audible.scoped(to: id, options: apiOptions)
+        let accepted = if let openAudible {
+            try await scoped.importOpenAudible(url, profile: openAudible)
+        } else {
+            try await scoped.importAuthFile(url, password: password, marketplace: marketplace)
+        }
         let account = SavedAudibleAccount(id: id, name: Self.accountName(name, accepted), marketplace: accepted)
         store(account)
         try await activate(account)
@@ -499,7 +616,11 @@ final class WorkspaceModel {
         defaults.set(marketplace.rawValue, forKey: "Marketplace")
         signedIn = hasSession
         watchFiles()
-        if signedIn { await refresh() }
+        if signedIn {
+            books = catalogSnapshots[account.id]?.books ?? []
+            libraryLoadError = catalogFailures[account.id]
+            await refreshCatalogs([account])
+        }
     }
 
     private func clearLibrary() {
@@ -514,7 +635,23 @@ final class WorkspaceModel {
     }
 
     private func store(_ account: SavedAudibleAccount) {
-        if !accounts.contains(where: { $0.id == account.id }) { accounts.append(account) }
+        if let index = accounts.firstIndex(where: { $0.id == account.id }) {
+            accounts[index].widevineEnabled = nil
+        } else {
+            accounts.append(account)
+        }
+    }
+
+    func setWidevine(enabled: Bool, for account: SavedAudibleAccount) async throws {
+        guard canSwitchAccounts, !isTransferring, accounts.contains(where: { $0.id == account.id }) else {
+            throw AccountError.busy
+        }
+        accountBusy = true
+        defer { accountBusy = false }
+        if enabled { try await client(for: account).provisionWidevine() }
+        if let index = accounts.firstIndex(where: { $0.id == account.id }) {
+            accounts[index].widevineEnabled = enabled ? true : nil
+        }
     }
 
     private static func accountName(_ name: String, _ marketplace: AudibleMarketplace) -> String {
@@ -528,6 +665,7 @@ final class WorkspaceModel {
         options.purchaseStart = options.purchaseStart.map { calendar.startOfDay(for: $0) }
         options.purchaseEnd = options.purchaseEnd.flatMap { calendar.dateInterval(of: .day, for: $0) }?
             .end.addingTimeInterval(-0.000_001)
+        options.preferWidevine = accounts.first { $0.id == account?.id }?.widevineEnabled
         let profileID = account?.usesLegacySession == false ? account?.id : nil
         return audible.scoped(to: profileID, options: options)
     }
@@ -537,38 +675,122 @@ final class WorkspaceModel {
     }
 
     func refresh() async {
-        guard signedIn, !isRefreshing, !isScanning else { return }
-        if let start = apiOptions.purchaseStart, let end = apiOptions.purchaseEnd,
-           Calendar.current.compare(start, to: end, toGranularity: .day) == .orderedDescending {
-            libraryRefreshFailed("Choose a purchase end date on or after the start date in Settings > Library.")
-            return
-        }
-        let account = activeAccount
-        isRefreshing = true
-        defer { isRefreshing = false }
-        do {
-            let loadedBooks = try await client(for: account).library()
-            try Task.checkCancellation()
-            guard signedIn, activeAccountID == account?.id else { return }
-            books = loadedBooks
-            libraryLoadError = nil
-            selectedBooks.formIntersection(books.map(\.id))
-            await refreshExportStatus()
-            if let directory = localMatches.directory { await scanMatches(in: directory) }
-        } catch is CancellationError {
-            return
-        } catch {
-            guard signedIn, activeAccountID == account?.id else { return }
-            libraryRefreshFailed(error.localizedDescription)
+        guard canRefreshLibrary, let account = activeAccount else { return }
+        await refreshCatalogs([account])
+    }
+
+    var canRefreshLibrary: Bool { signedIn && !isRefreshing && !isScanning && !accountBusy && !signInBusy }
+
+    var signedInCatalogAccounts: [SavedAudibleAccount] {
+        #if HELP_SCREENSHOTS
+        accounts
+        #else
+        accounts.filter { (try? client(for: $0).hasSession()) == true }
+        #endif
+    }
+
+    var currentCatalog: LibraryCatalog? {
+        guard let account = activeAccountID else { return nil }
+        return catalogSnapshots[account]
+    }
+
+    var currentCatalogFailure: String? {
+        guard let account = activeAccountID else { return nil }
+        return catalogFailures[account]
+    }
+
+    var currentCatalogRetry: AudibleRetryDelay? {
+        guard let account = activeAccountID, let retry = audibleRetryDelays[account], retry.until > .now else { return nil }
+        return retry
+    }
+
+    func refreshAllAccounts() async {
+        guard !isRefreshing, !isScanning, !signInBusy, !accountBusy else { return }
+        await refreshCatalogs(signedInCatalogAccounts)
+    }
+
+    private func startBackgroundLibraryRefresh() {
+        backgroundLibraryTask?.cancel()
+        guard initialLoad, backgroundLibraryRefresh else { return }
+        backgroundLibraryTask = Task { [weak self] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(30 * 60)) } catch { return }
+                guard let self else { return }
+                if !self.isTransferring { await self.refreshAllAccounts() }
+            }
         }
     }
 
-    private func libraryRefreshFailed(_ message: String) {
-        if books.isEmpty {
-            libraryLoadError = message
-        } else {
-            notice = Notice(title: "Couldn’t refresh your library", message: message)
+    private func refreshCatalogs(_ targets: [SavedAudibleAccount]) async {
+        guard !targets.isEmpty else { return }
+        if let start = apiOptions.purchaseStart, let end = apiOptions.purchaseEnd,
+           Calendar.current.compare(start, to: end, toGranularity: .day) == .orderedDescending {
+            let message = "Choose a purchase end date on or after the start date in Settings > Library."
+            for account in targets { catalogRefreshFailed(message, for: account.id) }
+            return
         }
+        let options = apiOptions
+        let query = LibraryCatalog.Query(options)
+        var changed = false
+        isRefreshing = true
+        defer { isRefreshing = false }
+
+        for account in targets where !Task.isCancelled {
+            if let retry = audibleRetryDelays[account.id], retry.until > .now {
+                catalogRefreshFailed(retry.reason, for: account.id)
+                continue
+            }
+            do {
+                let loadedBooks = try await client(for: account, with: options).library()
+                try Task.checkCancellation()
+                guard accounts.contains(where: { $0.id == account.id }) else { continue }
+                catalogSnapshots[account.id] = LibraryCatalog(
+                    books: loadedBooks, query: query, previous: catalogSnapshots[account.id]
+                )
+                catalogFailures[account.id] = nil
+                changed = true
+                if activeAccountID == account.id, signedIn {
+                    books = loadedBooks
+                    libraryLoadError = nil
+                    selectedBooks.formIntersection(books.map(\.id))
+                }
+            } catch is CancellationError {
+                break
+            } catch {
+                if let delay = AudibleRetryDelay(error: error) { _ = rememberAudibleDelay(delay, for: account.id) }
+                catalogRefreshFailed(error.localizedDescription, for: account.id)
+            }
+        }
+        if changed {
+            do {
+                try await catalogStore.save(catalogSnapshots)
+            } catch {
+                show("Couldn’t save the offline library", error: error)
+            }
+        }
+        if !Task.isCancelled, let activeAccountID, targets.contains(where: { $0.id == activeAccountID }) {
+            await refreshExportStatus()
+            if catalogFailures[activeAccountID] == nil, let directory = localMatches.directory {
+                await scanMatches(in: directory)
+            }
+        }
+    }
+
+    private func catalogRefreshFailed(_ message: String, for account: UUID) {
+        catalogFailures[account] = message
+        if activeAccountID == account { libraryLoadError = message }
+    }
+
+    private func rememberAudibleDelay(_ delay: AudibleRetryDelay, for account: UUID) -> AudibleRetryDelay {
+        if let existing = audibleRetryDelays[account], existing.until >= delay.until { return existing }
+        audibleRetryDelays[account] = delay
+        if lastBatch?.account?.id == account {
+            for index in transfers.indices where !transfers[index].isFinished && transfers[index].audibleRetry != nil {
+                transfers[index].audibleRetry = delay
+            }
+            pacingWait?.cancel()
+        }
+        return delay
     }
 
     func refreshExportStatus() async {
@@ -843,23 +1065,51 @@ final class WorkspaceModel {
     }
 
     func startDownloads(
-        for books: [AudibleBook], options: DownloadOptions, restartsIncomplete: Bool = false, repairsArchive: Bool = false
+        for books: [AudibleBook], options: DownloadOptions, restartsIncomplete: Bool = false, repairsArchive: Bool = false,
+        existingFiles: ExistingFiles? = nil, audioOptions: AudibleAPIOptions? = nil, forceRemoteAudio: Bool = false
     ) {
         guard canStartDownloads, options.hasSelection, !restartsIncomplete || options.downloadAudio,
               let account = activeAccount else { return }
         let work = books.map { book in
-            TransferWork.library(book, matches: restartsIncomplete || repairsArchive ? [] : sourceFiles(for: book))
+            TransferWork.library(book, matches: restartsIncomplete || repairsArchive || forceRemoteAudio ? [] : sourceFiles(for: book))
         }
         let jobLimit = options.makesConversion
             ? min(transferPreferences.jobLimit, transferPreferences.conversionJobLimit)
             : transferPreferences.jobLimit
+        var preferences = transferPreferences
+        if let existingFiles { preferences.existingFiles = existingFiles }
         run(
             TransferBatch(
-                work: work, account: account, apiOptions: apiOptions, layout: layout, options: options,
+                work: work, account: account, apiOptions: audioOptions ?? apiOptions, layout: layout, options: options,
                 conversion: conversionPreferences, appleBooks: appleBooksDestination,
-                preferences: transferPreferences, jobLimit: jobLimit, repairsArchive: repairsArchive ? true : nil
+                preferences: preferences, jobLimit: jobLimit, repairsArchive: repairsArchive ? true : nil,
+                forcesRemoteAudio: forceRemoteAudio ? true : nil
             ), restartIncomplete: restartsIncomplete
         )
+    }
+
+    func downloadMissingPDFs() async {
+        guard canRequestDownloads, let account = activeAccount else { return }
+        let candidates = books.filter(\.hasPDF)
+        let destination = layout
+        let saved = await archive.inventory(for: candidates.map(\.id), account: archiveID(for: account), layout: destination)
+        let missing = candidates.filter { saved[$0.id]?.hasPDF != true }
+        guard !Task.isCancelled, canRequestDownloads, activeAccount?.id == account.id, layout == destination else { return }
+        guard !missing.isEmpty else {
+            notice = Notice(title: "No Missing PDFs", message: "The loaded library has no unsaved companion PDFs in this archive.")
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = missing.count == 1 ? "Download 1 Missing PDF?" : "Download \(missing.count.formatted()) Missing PDFs?"
+        alert.informativeText = "DownAudible will save the companion PDFs and keep existing audio files."
+        alert.addButton(withTitle: "Download PDFs")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn, canRequestDownloads,
+              activeAccount?.id == account.id, layout == destination else { return }
+        var options = DownloadOptions()
+        options.downloadAudio = false
+        options.downloadPDF = true
+        startDownloads(for: missing, options: options, existingFiles: .reuse)
     }
 
     func previewSourceFormat(for book: AudibleBook, downloadingAudio: Bool) -> String? {
@@ -935,6 +1185,19 @@ final class WorkspaceModel {
         )
     }
 
+    func chapterRepair(for request: BookEditRequest, file: URL?) async throws -> ChapterRepair {
+        try await client(for: request.account, with: request.apiOptions).chapterRepair(asin: request.chapterASIN, file: file)
+    }
+
+    func repairBookEdit(
+        _ prepared: PreparedBookEdit, request: BookEditRequest, selection: ChapterRepairSelection
+    ) async throws -> PreparedBookEdit {
+        try await archive.repairBookEdit(
+            prepared, origin: request.origin, audible: client(for: request.account, with: request.apiOptions),
+            activationBytes: request.activationBytes, selection: selection
+        )
+    }
+
     func previewBookSection(
         _ section: BookEditSection, at position: BookPreviewPosition, source: BookEditSource,
         request: BookEditRequest, to destination: URL
@@ -965,9 +1228,10 @@ final class WorkspaceModel {
         conversion.format = .m4b
         conversion.chapterMode = .single
         conversion.moveAAXToTrash = false
+        if prepared.chapterRepair != nil { conversion.embedChapters = true }
         let work = BookEditWork(
             origin: request.origin, sources: prepared.sources, audibleChapters: prepared.audibleChapters,
-            edit: BookEdit(layout: prepared.layout, excludedSections: excludedSections)
+            edit: BookEdit(layout: prepared.layout, excludedSections: excludedSections, chapterRepair: prepared.chapterRepair)
         )
         var batch = TransferBatch(
             work: [.editedBook(work)], account: request.account, apiOptions: request.apiOptions,
@@ -995,6 +1259,7 @@ final class WorkspaceModel {
         scheduledTransferIndices.append(contentsOf: firstNewIndex..<batch.work.count)
         lastBatch = batch
         transferHistorySelection = nil
+        pacingWait?.cancel()
         scheduleQueueSave()
     }
 
@@ -1052,6 +1317,9 @@ final class WorkspaceModel {
         activeJobs[id]?.cancel()
         if case .waiting = transfers[index].status {
             transfers[index].status = .cancelled
+            transfers[index].paceResumeAt = nil
+            transfers[index].audibleRetry = nil
+            pacingWait?.cancel()
             scheduleQueueSave()
         }
     }
@@ -1105,7 +1373,7 @@ final class WorkspaceModel {
         }
         for index in selected {
             if case .library(let book, _) = batch.work[index], activeAccountID == batch.account?.id {
-                let requiresDownload = restartIncomplete || batch.repairsArchive == true
+                let requiresDownload = restartIncomplete || batch.repairsArchive == true || batch.forcesRemoteAudio == true
                 batch.work[index] = .library(book, matches: requiresDownload ? [] : sourceFiles(for: book))
             }
         }
@@ -1183,6 +1451,7 @@ final class WorkspaceModel {
         } else {
             for index in selected {
                 transfers[index].status = .waiting
+                transfers[index].didRetryAudible = nil
                 if restartIncomplete { transfers[index].restartPending = true }
             }
         }
@@ -1190,7 +1459,8 @@ final class WorkspaceModel {
         startedBatch.startedAt = .now
         lastBatch = startedBatch
         scheduledTransferIndices = selected
-        acceptingDownloadRunID = batch.work.first?.isDownload == true && batch.repairsArchive != true ? UUID() : nil
+        acceptingDownloadRunID = batch.options.downloadAudio && batch.work.first?.isDownload == true
+            && batch.repairsArchive != true && batch.forcesRemoteAudio != true ? UUID() : nil
         transferHistorySelection = nil
         page = .transfers
 
@@ -1200,27 +1470,48 @@ final class WorkspaceModel {
                 transfers[index].partialFolder = batch.work[index].bookID.flatMap { partialFolders[$0] }
             }
             await persistQueue()
-            await withTaskGroup(of: Void.self) { group in
+            await withTaskGroup(of: Int.self) { group in
                 var next = 0
                 var running = 0
+                var deferred: Set<Int> = []
                 let limit = max(1, min(12, batch.jobLimit))
                 while true {
                     let canStart = !Task.isCancelled && (!batchEncounteredError || batch.preferences.continueAfterError)
                     if !canStart { acceptingDownloadRunID = nil }
-                    while canStart, next < scheduledTransferIndices.count, running < limit {
-                        let index = scheduledTransferIndices[next]
-                        next += 1
+                    while canStart, running < limit {
+                        let index: Int
+                        if next < scheduledTransferIndices.count {
+                            index = scheduledTransferIndices[next]
+                            next += 1
+                        } else if let ready = deferred.filter({ (transfers[$0].nextAttempt ?? .distantPast) <= .now }).min() {
+                            index = ready
+                            deferred.remove(ready)
+                        } else {
+                            break
+                        }
                         guard !transfers[index].isFinished, let updatedBatch = lastBatch else { continue }
-                        group.addTask { await self.execute(updatedBatch, at: index) }
+                        group.addTask {
+                            await self.execute(updatedBatch, at: index)
+                            return index
+                        }
                         running += 1
                     }
-                    guard running > 0, await group.next() != nil else { break }
-                    running -= 1
+                    if running > 0, let completed = await group.next() {
+                        running -= 1
+                        if !transfers[completed].isFinished, transfers[completed].nextAttempt != nil { deferred.insert(completed) }
+                    } else if canStart, let nextCheck = deferred.compactMap({ transfers[$0].nextAttempt }).min() {
+                        await waitForPacing(until: nextCheck)
+                    } else {
+                        break
+                    }
                 }
                 acceptingDownloadRunID = nil
                 let stopped = !Task.isCancelled && batchEncounteredError && !batch.preferences.continueAfterError
-                for index in scheduledTransferIndices.dropFirst(next) where !transfers[index].isFinished {
+                for index in scheduledTransferIndices where !transfers[index].isFinished {
+                    if isFinishingForQuit, transfers[index].nextAttempt != nil { continue }
                     transfers[index].status = stopped ? .stopped : .cancelled
+                    transfers[index].paceResumeAt = nil
+                    transfers[index].audibleRetry = nil
                 }
             }
             await recheckFiles()
@@ -1232,6 +1523,19 @@ final class WorkspaceModel {
             isTransferring = false
             activeTransfer = nil
         }
+    }
+
+    private func waitForPacing(until date: Date) async {
+        let delay = Task<Void, Never> {
+            try? await Task.sleep(for: .seconds(max(0, date.timeIntervalSinceNow)))
+        }
+        pacingWait = delay
+        await withTaskCancellationHandler {
+            await delay.value
+        } onCancel: {
+            delay.cancel()
+        }
+        pacingWait = nil
     }
 
     private func announceTransferResults(indices: [Int]) {
@@ -1295,6 +1599,14 @@ final class WorkspaceModel {
             return
         }
         transfers[index].status = .active("Preparing", nil)
+        transfers[index].paceResumeAt = nil
+        transfers[index].audibleRetry = nil
+        let downloadAccount: UUID? = if case .library = batch.work[index] { batch.account?.id } else { nil }
+        if let downloadAccount, let delay = audibleRetryDelays[downloadAccount], delay.until > .now {
+            transfers[index].status = .waiting
+            transfers[index].audibleRetry = delay
+            return
+        }
         let id = transfers[index].id
         feedbackProgress[id] = TransferFeedbackProgress(isDownload: batch.work[index].isDownload)
         let feedback: @Sendable (ArchiveWorker.FeedbackMilestone) async -> Void = { [weak self] milestone in
@@ -1315,6 +1627,7 @@ final class WorkspaceModel {
                     matches: restart ? [] : matches, layout: batch.layout, options: batch.options,
                     existingFiles: batch.preferences.existingFiles, conversion: batch.conversion,
                     requestID: id, repairAudio: batch.repairsArchive == true, restartIncomplete: restart,
+                    meter: DownloadMeter(pacer: downloadPacer, settings: downloadPacing, job: id),
                     didRestart: { [weak self] in
                         await self?.acknowledgeRestart(at: index, id: id)
                     }, feedback: feedback, progress: progress
@@ -1322,6 +1635,22 @@ final class WorkspaceModel {
                 transfers[index].restartPending = false
                 if batch.options.downloadAudio, activeAccountID == account.id, layout == batch.layout {
                     scheduleFileCheck()
+                }
+                if shelfSettings.autoUpload, let destination = shelfSettings.destination {
+                    let preferred = receipt.converted.isEmpty ? receipt.addedOriginal : receipt.converted
+                    let added = receipt.addedConverted.isEmpty ? receipt.addedOriginal : receipt.addedConverted
+                    if added.contains(where: ShelfBook.supports), let item = await archive.shelfBook(
+                        book, account: archiveID(for: account), layout: batch.layout, preferred: preferred,
+                        includePDF: shelfSettings.includePDFs
+                    ) {
+                        do {
+                            try await shelfQueue.add([item], to: destination)
+                            await refreshShelfUploads()
+                            sendShelfUploads()
+                        } catch {
+                            show("Couldn’t queue the Audiobookshelf upload", error: error)
+                        }
+                    }
                 }
             case .local(let file):
                 receipt = try await archive.convert(
@@ -1343,9 +1672,23 @@ final class WorkspaceModel {
             transfers[index].files = receipt.audioFiles.isEmpty ? [receipt.url] : receipt.audioFiles
             let note = await sendToAppleBooks(receipt, destination: batch.appleBooks, at: index)
             transfers[index].status = .done(receipt.url, note: note)
+        } catch let deferred as DownloadPacer.Deferred {
+            transfers[index].status = Task.isCancelled ? .cancelled : .waiting
+            if !Task.isCancelled { transfers[index].paceResumeAt = deferred.until }
         } catch {
             if Task.isCancelled {
                 transfers[index].status = .cancelled
+            } else if let downloadAccount, let delay = AudibleRetryDelay(error: error) {
+                let retry = rememberAudibleDelay(delay, for: downloadAccount)
+                if transfers[index].didRetryAudible != true {
+                    transfers[index].status = .waiting
+                    transfers[index].didRetryAudible = true
+                    transfers[index].audibleRetry = retry
+                } else {
+                    batchEncounteredError = true
+                    let next = retry.until.formatted(date: .abbreviated, time: .shortened)
+                    transfers[index].status = .failed("\(error.localizedDescription) Try again after \(next).")
+                }
             } else {
                 batchEncounteredError = true
                 transfers[index].status = .failed(error.localizedDescription)
@@ -1406,7 +1749,10 @@ final class WorkspaceModel {
             lastBatch = batch
             transfers = zip(snapshot.transfers, batch.work).map { saved, work in
                 var transfer = saved
-                if !saved.isFinished { transfer.status = .interrupted }
+                if !saved.isFinished {
+                    transfer.status = .interrupted
+                    transfer.paceResumeAt = nil
+                }
                 transfer.partialFolder = work.bookID.flatMap { partialFolders[$0] }
                 if case .done(_, let note) = saved.status, note?.hasSuffix(Self.legacyBooksImportError) == true {
                     transfer.booksImportPending = true
@@ -1502,6 +1848,65 @@ final class WorkspaceModel {
     }
 
     var showingArchiveVerification = false
+    var titleCheckRequest: TitleCheckRequest?
+    var annotationsRequest: AnnotationsRequest?
+    var goodreadsExport: GoodreadsExport?
+    var qualityAudit: QualityAuditScope?
+
+    func listeningClient(for account: SavedAudibleAccount) -> AudibleClient { client(for: account) }
+
+    func requestTitleCheck(_ book: AudibleBook) {
+        guard let account = activeAccount, signedIn else { return }
+        titleCheckRequest = TitleCheckRequest(book: book, marketplace: account.marketplace, client: client(for: account))
+    }
+
+    func requestAnnotations(_ book: AudibleBook) {
+        guard let account = activeAccount, signedIn else { return }
+        annotationsRequest = AnnotationsRequest(book: book, account: account.name, client: client(for: account))
+    }
+
+    func qualityAuditScope() -> QualityAuditScope? {
+        guard signedIn, let account = activeAccount else { return nil }
+        var options = apiOptions
+        options.quality = .best
+        let candidates = books.compactMap { book -> QualityAuditScope.Input? in
+            let files = (exportedFiles[book.id, default: []] + localAudio(for: book)).filter { file in
+                ["m4b", "m4a", "mp3", "aax", "aaxc"].contains(file.pathExtension.lowercased())
+            }
+            return files.isEmpty ? nil : .init(book: book, files: Array(Set(files)))
+        }
+        return QualityAuditScope(accountID: account.id, accountName: account.name, client: client(for: account, with: options),
+                                 layout: layout, inputs: candidates)
+    }
+
+    func queueQualityUpgrades(_ choices: Set<AudibleBook.ID>, from scope: QualityAuditScope) throws {
+        guard let account = activeAccount, signedIn, account.id == scope.accountID, layout == scope.layout,
+              (account.widevineEnabled == true) == (scope.client.options.preferWidevine == true) else {
+            throw QualityAuditError.scopeChanged
+        }
+        guard canRequestDownloads else { throw ArchiveVerificationError.transfersRunning }
+        guard layout.isValid else { throw ArchiveError.invalidTemplate }
+        let titles = books.filter { choices.contains($0.id) && $0.isDownloadable }
+        guard !titles.isEmpty else { throw QualityAuditError.scopeChanged }
+        startDownloads(for: titles, options: DownloadOptions(), existingFiles: .saveNewCopy,
+                       audioOptions: scope.client.options, forceRemoteAudio: true)
+    }
+
+    func deviceRegistration(for account: SavedAudibleAccount) async throws -> AudibleClient.DeviceConfirmation {
+        guard canChangeAndroidSignIn(for: account) else { throw AccountError.busy }
+        let confirmation = try await client(for: account).deviceRegistration()
+        guard confirmation.registration.marketplace == account.marketplace.rawValue else { throw AudibleError.accountMismatch }
+        return confirmation
+    }
+
+    func deregisterDevice(for account: SavedAudibleAccount, expected: AudibleClient.DeviceConfirmation) async throws {
+        guard canChangeAndroidSignIn(for: account) else { throw AccountError.busy }
+        accountBusy = true
+        defer { accountBusy = false }
+        let client = client(for: account)
+        try await client.deregisterDevice(expected: expected)
+        finishSigningOut(account)
+    }
 
     var canVerifyArchive: Bool {
         signedIn && activeAccount != nil && !books.isEmpty && !isRefreshing && !isScanning
@@ -1552,6 +1957,126 @@ final class WorkspaceModel {
 
     private func show(_ title: String, error: any Error) {
         notice = Notice(title: title, message: error.localizedDescription)
+    }
+
+    func exportCue(for url: URL) async {
+        do {
+            let sheet = try await CueSheet.write(for: url)
+            NSWorkspace.shared.activateFileViewerSelecting([sheet])
+        } catch {
+            show("Couldn’t export the CUE sheet", error: error)
+        }
+    }
+
+    func connectShelf(server: String, token: String) async throws {
+        let address = try ShelfClient.serverURL(server).absoluteString
+        let supplied = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        let secret = supplied.isEmpty ? try ShelfCredentials.read(address) ?? "" : supplied
+        let client = try ShelfClient(server: address, token: secret)
+        let libraries = try await client.libraries()
+        if !supplied.isEmpty { try ShelfCredentials.save(secret, server: address) }
+        if shelfSettings.server != address {
+            shelfSettings.libraryID = ""
+            shelfSettings.folderID = ""
+            shelfSettings.autoUpload = false
+        }
+        shelfSettings.server = address
+        shelfLibraries = libraries
+        let selected = libraries.first { $0.id == shelfSettings.libraryID }
+        useShelfLibrary((selected ?? libraries.first)?.id ?? "")
+    }
+
+    func forgetShelfToken() throws {
+        guard !shelfSettings.server.isEmpty else { return }
+        try ShelfCredentials.remove(shelfSettings.server)
+        shelfTask?.cancel()
+        shelfLibraries = []
+        shelfSettings = ShelfSettings()
+    }
+
+    func useShelfLibrary(_ id: String) {
+        let library = shelfLibraries.first { $0.id == id }
+        shelfSettings.libraryID = library?.id ?? ""
+        shelfSettings.libraryName = library?.name ?? ""
+        let folder = library?.folders.first { $0.id == shelfSettings.folderID } ?? library?.folders.first
+        useShelfFolder(folder?.id ?? "")
+    }
+
+    func useShelfFolder(_ id: String) {
+        let folder = shelfLibraries.first { $0.id == shelfSettings.libraryID }?.folders.first { $0.id == id }
+        shelfSettings.folderID = folder?.id ?? ""
+        shelfSettings.folderName = folder?.fullPath ?? ""
+        sendShelfUploads()
+    }
+
+    func queueShelfBooks(_ books: [AudibleBook]) async {
+        do {
+            guard let account = activeAccount, let destination = shelfSettings.destination else { throw ShelfError.destination }
+            let root = layout
+            let includePDF = shelfSettings.includePDFs
+            var items: [ShelfBook] = []
+            for book in books {
+                if let item = await archive.shelfBook(
+                    book, account: archiveID(for: account), layout: root, matches: localAudio(for: book), includePDF: includePDF
+                ) { items.append(item) }
+            }
+            guard !items.isEmpty else { throw ShelfError.noFiles }
+            try await shelfQueue.add(items, to: destination)
+            await refreshShelfUploads()
+            showShelfUploads = true
+            sendShelfUploads()
+        } catch {
+            show("Couldn’t queue Audiobookshelf uploads", error: error)
+        }
+    }
+
+    func refreshShelfUploads() async {
+        do { shelfUploads = try await shelfQueue.list() } catch {
+            show("Couldn’t read the Audiobookshelf queue", error: error)
+        }
+    }
+
+    func retryShelfUploads() async {
+        guard let destination = shelfSettings.destination else { return }
+        do {
+            try await shelfQueue.repeatFailed(for: destination)
+            await refreshShelfUploads()
+            sendShelfUploads()
+        } catch {
+            show("Couldn’t retry Audiobookshelf uploads", error: error)
+        }
+    }
+
+    func clearSentShelfUploads() async {
+        do {
+            try await shelfQueue.clearSent()
+            await refreshShelfUploads()
+        } catch {
+            show("Couldn’t clear completed Audiobookshelf uploads", error: error)
+        }
+    }
+
+    private func sendShelfUploads() {
+        guard shelfTask == nil, let destination = shelfSettings.destination,
+              shelfUploads.contains(where: { $0.state == .waiting && $0.destination == destination })
+        else { return }
+        shelfTask = Task {
+            defer {
+                shelfTask = nil
+                if shelfSettings.destination != destination { sendShelfUploads() }
+            }
+            do {
+                guard let token = try ShelfCredentials.read(destination.server) else { throw ShelfError.token }
+                while shelfSettings.destination == destination, try await shelfQueue.sendNext(to: destination, token: token, didStart: {
+                    [weak self] in await self?.refreshShelfUploads()
+                }) {
+                    await refreshShelfUploads()
+                }
+            } catch {
+                show("Couldn’t send Audiobookshelf uploads", error: error)
+            }
+            await refreshShelfUploads()
+        }
     }
 
     private func save<Value: Encodable>(_ value: Value, as key: String) {

@@ -90,6 +90,66 @@ struct BookEditingLayout: Codable, Hashable, Sendable {
 struct BookEdit: Codable, Hashable, Sendable {
     let layout: BookEditingLayout
     let excludedSections: Set<Int>
+    var chapterRepair: ChapterRepairSelection? = nil
+}
+
+nonisolated struct ChapterRepair: Decodable, Sendable {
+    let asin: String?
+    let runtimeMilliseconds: Int64
+    let chapters: [MediaChapter]
+    let separatedChapters: [MediaChapter]?
+
+    func selection(separatingAnnouncements: Bool) -> ChapterRepairSelection {
+        ChapterRepairSelection(
+            asin: asin, runtimeMilliseconds: runtimeMilliseconds,
+            chapters: (separatingAnnouncements ? separatedChapters : nil) ?? chapters
+        )
+    }
+}
+
+nonisolated struct ChapterRepairSelection: Codable, Hashable, Sendable {
+    let asin: String?
+    let runtimeMilliseconds: Int64
+    let chapters: [MediaChapter]
+
+    func markers(for probes: [AudioProbe]) throws -> [MediaChapter] {
+        guard !probes.isEmpty, !probes.contains(where: { MediaTags.isEditedBook($0.formatTags) }) else {
+            throw BookEditError.chapterRepairNeedsCompleteAudio
+        }
+        if let asin, probes.contains(where: { probe in
+            guard let tag = MediaTools.taggedIdentifier(in: probe.formatTags) else { return false }
+            return asin.caseInsensitiveCompare(tag) != .orderedSame
+        }) {
+            throw BookEditError.chapterRepairWrongEdition
+        }
+        guard !chapters.isEmpty, (1...2_592_000_000).contains(runtimeMilliseconds) else {
+            throw BookEditError.chapterRepairMetadata
+        }
+        var duration: Int64 = 0
+        for probe in probes {
+            guard let length = probe.durationMilliseconds, (1...2_592_000_000).contains(length),
+                  duration <= 2_592_000_000 - length else { throw BookEditError.unknownDuration }
+            duration += length
+        }
+        // Allow for encoder padding and rounding without applying a map to shortened audio.
+        let tolerance = min(2_000, max(250, runtimeMilliseconds / 1_000))
+        guard abs(runtimeMilliseconds - duration) <= tolerance else { throw BookEditError.chapterRepairDuration }
+
+        var priorEnd: Int64 = 0
+        return try chapters.map { chapter in
+            let start = chapter.startMilliseconds
+            let (end, overflow) = start.addingReportingOverflow(chapter.durationMilliseconds)
+            guard !overflow, start >= priorEnd, start < min(end, duration), end <= runtimeMilliseconds,
+                  !chapter.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw BookEditError.chapterRepairMetadata
+            }
+            priorEnd = end
+            let sourceEnd = end == runtimeMilliseconds ? duration : min(end, duration)
+            return MediaChapter(
+                startMilliseconds: start, durationMilliseconds: sourceEnd - start, title: chapter.title
+            )
+        }
+    }
 }
 
 struct BookEditSelection: Sendable {
@@ -141,6 +201,10 @@ enum BookEditError: LocalizedError {
     case sourceChanged
     case emptySelection
     case unsupportedConversion
+    case chapterRepairDuration
+    case chapterRepairNeedsCompleteAudio
+    case chapterRepairWrongEdition
+    case chapterRepairMetadata
 
     var errorDescription: String? {
         switch self {
@@ -148,6 +212,10 @@ enum BookEditError: LocalizedError {
         case .sourceChanged: "The source audio or its chapters have changed. Open Edit Book again to update your choices."
         case .emptySelection: "Keep at least one section to convert the book."
         case .unsupportedConversion: "Book edits require a single M4B file."
+        case .chapterRepairDuration: "The chapter runtime does not match this audio. Choose chapter data for this edition and make sure every part is present."
+        case .chapterRepairNeedsCompleteAudio: "Chapter repair needs the complete audiobook. Open the original or an unabridged copy before repairing it."
+        case .chapterRepairWrongEdition: "The chapter data belongs to a different Audible edition."
+        case .chapterRepairMetadata: "The chapter data has invalid or overlapping time ranges."
         }
     }
 }

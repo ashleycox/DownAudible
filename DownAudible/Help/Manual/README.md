@@ -14,3 +14,5 @@ Use **Help > DownAudible Help** to read this manual in the app.
 - [Keyboard Shortcuts](help-10-keyboard-shortcuts.md)
 - [Credits](help-11-credits.md)
 - [Settings Reference](help-12-settings.md)
+- [Widevine Stereo](help-13-widevine.md)
+- [Audiobookshelf](help-14-audiobookshelf.md)

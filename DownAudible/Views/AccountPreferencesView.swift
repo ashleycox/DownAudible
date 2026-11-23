@@ -20,15 +20,21 @@ struct AccountPreferencesView: View {
     private enum Sheet: Identifiable {
         case add
         case reconnect
-        case importCLI
+        case importAccount
         case rename(SavedAudibleAccount)
+        case widevine(SavedAudibleAccount)
+        case android(SavedAudibleAccount, separate: Bool)
+        case device(SavedAudibleAccount)
 
         var id: String {
             switch self {
             case .add: "add"
             case .reconnect: "reconnect"
-            case .importCLI: "import"
+            case .importAccount: "import"
             case .rename(let account): account.id.uuidString
+            case .widevine(let account): "widevine-" + account.id.uuidString
+            case .android(let account, let separate): "android-\(separate)-" + account.id.uuidString
+            case .device(let account): "device-" + account.id.uuidString
             }
         }
     }
@@ -37,7 +43,7 @@ struct AccountPreferencesView: View {
         Form {
             Section("Audible Accounts") {
                 if model.accounts.isEmpty {
-                    Text("Add an account or import one from Audible CLI.")
+                    Text("Add an account or import an existing sign-in.")
                         .foregroundStyle(.secondary)
                 } else {
                     Table(model.accounts, selection: $selectedAccount) {
@@ -73,9 +79,9 @@ struct AccountPreferencesView: View {
                     Button("Add Account…", systemImage: "person.badge.plus") { sheet = .add }
                         .keyboardShortcut("a", modifiers: [.control, .shift])
                         .appHelp("Connect another Audible account through your browser.")
-                    Button("Import from Audible CLI…", systemImage: "square.and.arrow.down") { sheet = .importCLI }
+                    Button("Import Account…", systemImage: "square.and.arrow.down") { sheet = .importAccount }
                         .keyboardShortcut("i", modifiers: [.control, .shift])
-                        .appHelp("Connect an account using an Audible CLI profile or auth file.")
+                        .appHelp("Connect an account using a saved Audible CLI or OpenAudible sign-in.")
                     if model.accountBusy {
                         ProgressView().controlSize(.small)
                             .accessibilityLabel("Updating Audible accounts")
@@ -114,10 +120,16 @@ struct AccountPreferencesView: View {
                 AudibleSignInView(model: model, addingAccount: true)
             case .reconnect:
                 AudibleSignInView(model: model)
-            case .importCLI:
-                AudibleCLIImportView(model: model)
+            case .importAccount:
+                AudibleAccountImportView(model: model)
             case .rename(let account):
                 RenameAccountView(model: model, account: account)
+            case .widevine(let account):
+                WidevineAccountView(model: model, account: account)
+            case .android(let account, let separate):
+                AudibleSignInView(model: model, addingAccount: separate, androidAccount: account)
+            case .device(let account):
+                AudibleDeviceView(model: model, account: account)
             }
         }
         .alert("Remove Account?", isPresented: $showingRemove, presenting: accountToRemove) { account in
@@ -158,6 +170,19 @@ struct AccountPreferencesView: View {
             .keyboardShortcut("n", modifiers: [.control, .shift])
             .disabled(!model.canSwitchAccounts)
             .appHelp("Change the name shown for this account in DownAudible.")
+        Button("Widevine Stereo…") { sheet = .widevine(account) }
+            .appHelp("Review the provider and manage Widevine for this Audible account.")
+            .disabled(!model.canSwitchAccounts || model.isTransferring)
+        let canChange = model.canChangeAndroidSignIn(for: account)
+        Button("Reconnect as Android (Advanced)…") { sheet = .android(account, separate: false) }
+            .disabled(!canChange)
+            .appHelp("Register the same Audible account as Android while keeping this profile and its file matches.")
+        Button("Add Separate Android Profile (Advanced)…") { sheet = .android(account, separate: true) }
+            .disabled(!canChange)
+            .appHelp("Sign in to the same Audible account to add a separate profile with its own saved sign-in and file matches.")
+        Button("Deregister This Device…") { sheet = .device(account) }
+            .disabled(!canChange)
+            .appHelp("Review this profile’s saved device and choose whether to deregister it with Audible.")
         Button("Remove Account…", role: .destructive) {
             accountToRemove = account
             showingRemove = true
@@ -183,6 +208,61 @@ struct AccountPreferencesView: View {
             await model.removeAccount(account)
             issue = model.notice
             model.notice = nil
+        }
+    }
+}
+
+struct WidevineAccountView: View {
+    @Environment(\.dismiss) private var dismiss
+    let model: WorkspaceModel
+    let account: SavedAudibleAccount
+    @State private var busy = false
+    @State private var error = ""
+
+    private var enabled: Bool { account.widevineEnabled == true }
+    private let links = [
+        ("CDM provisioning server", "https://ollj0gz40d.execute-api.us-west-2.amazonaws.com/default/AudibleCdm"),
+        ("Michael Bucari’s provisioning documentation", "https://github.com/mkb79/audible-cli/issues/155#issuecomment-2788239962"),
+        ("Provider data storage", "https://github.com/mkb79/audible-cli/issues/155#issuecomment-2788472372"),
+        ("pywidevine repository", "https://github.com/devine-dl/pywidevine"),
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Widevine Stereo").font(.title2.bold()).accessibilityAddTraits(.isHeader)
+            Text("\(account.name) · \(enabled ? "Enabled" : "Off")")
+            Text("Use Android Browser (Advanced) or import a compatible Android sign-in. Widevine stereo works with AAX with fallback.")
+                .fixedSize(horizontal: false, vertical: true)
+            Text("The first time you enable Widevine for a sign-in, DownAudible sends a signed Audible account-information request, including its ADP token, to Michael Bucari’s third-party server. The server uses it to provision a CDM and keeps a hashed account identifier. DownAudible saves the CDM in Keychain and reuses it for future downloads.")
+                .fixedSize(horizontal: false, vertical: true)
+            ForEach(links.indices, id: \.self) { index in
+                if let url = URL(string: links[index].1) { Link(links[index].0, destination: url) }
+            }
+            if busy { ProgressView("Preparing Widevine…").controlSize(.small) }
+            if !error.isEmpty { Text(error).foregroundStyle(.secondary).textSelection(.enabled) }
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(enabled ? "Turn Off Widevine" : "Enable Widevine") { changeSetting() }
+            }
+            .disabled(busy)
+        }
+        .padding(24)
+        .frame(width: 540)
+        .interactiveDismissDisabled(busy)
+    }
+
+    private func changeSetting() {
+        busy = true
+        error = ""
+        Task {
+            defer { busy = false }
+            do {
+                try await model.setWidevine(enabled: !enabled, for: account)
+                dismiss()
+            } catch let failure {
+                error = failure.localizedDescription
+            }
         }
     }
 }

@@ -59,7 +59,7 @@ enum IncompleteDownloads {
               ) else {
             return false
         }
-        let extensions: Set<String> = ["partial", "aax", "aaxc", "aa", "mp3"]
+        let extensions: Set<String> = ["partial", "aax", "aaxc", "aa", "mp3", "m4a", "m4b"]
         return files.contains { url in
             guard extensions.contains(url.pathExtension.lowercased()),
                   let info = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey, .isSymbolicLinkKey]) else {

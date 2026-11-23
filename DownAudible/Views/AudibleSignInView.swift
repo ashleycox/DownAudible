@@ -4,6 +4,7 @@ struct AudibleSignInView: View {
     private enum Method: String, CaseIterable {
         case browser = "Web Browser"
         case credentials = "Enter Credentials"
+        case androidBrowser = "Android Browser (Advanced)"
     }
 
     private enum Field: Hashable {
@@ -37,9 +38,11 @@ struct AudibleSignInView: View {
     @Environment(\.openURL) private var openURL
     let model: WorkspaceModel
     let addingAccount: Bool
+    private let androidAccount: SavedAudibleAccount?
 
     @FocusState private var focusedField: Field?
     @AccessibilityFocusState private var challengeFocused: Bool
+    @AccessibilityFocusState private var issueFocused: Bool
     @State private var method: Method = .browser
     @State private var marketplace: AudibleMarketplace
     @State private var accountName: String
@@ -54,16 +57,19 @@ struct AudibleSignInView: View {
     @State private var issue: WorkspaceModel.Notice?
     private let reconnecting: Bool
 
-    init(model: WorkspaceModel, addingAccount: Bool = false) {
+    init(model: WorkspaceModel, addingAccount: Bool = false, androidAccount: SavedAudibleAccount? = nil) {
         self.model = model
         self.addingAccount = addingAccount
-        reconnecting = !addingAccount && model.activeAccount != nil
-        _marketplace = State(initialValue: model.activeAccount?.marketplace ?? model.marketplace)
-        _accountName = State(initialValue: addingAccount ? "" : (model.activeAccount?.name ?? ""))
+        self.androidAccount = androidAccount
+        let account = androidAccount ?? model.activeAccount
+        reconnecting = !addingAccount && account != nil
+        _marketplace = State(initialValue: account?.marketplace ?? model.marketplace)
+        _accountName = State(initialValue: addingAccount ? (androidAccount.map { $0.name + " (Android)" } ?? "") : (account?.name ?? ""))
+        _method = State(initialValue: androidAccount == nil ? .browser : .androidBrowser)
     }
 
     #if HELP_SCREENSHOTS
-    init(model: WorkspaceModel, demoCredentials: Bool, attempt: AudibleSignIn? = nil) {
+    init(model: WorkspaceModel, demoCredentials: Bool, demoAndroid: Bool = false, attempt: AudibleSignIn? = nil) {
         self.init(model: model, addingAccount: true)
         _attempt = State(initialValue: attempt)
         if demoCredentials {
@@ -71,13 +77,15 @@ struct AudibleSignInView: View {
             _accountName = State(initialValue: "Demo Account")
             _username = State(initialValue: "email@example.com")
             _password = State(initialValue: "password12345")
+        } else if demoAndroid {
+            _method = State(initialValue: .androidBrowser)
         }
     }
     #endif
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Sign In to Audible")
+            Text(signInTitle)
                 .font(.title2.bold())
                 .accessibilityAddTraits(.isHeader)
 
@@ -95,6 +103,8 @@ struct AudibleSignInView: View {
                 Label(issue.message, systemImage: "exclamationmark.circle")
                     .foregroundStyle(.secondary)
                     .accessibilityLabel("\(issue.title). \(issue.message)")
+                    .accessibilityFocused($issueFocused)
+                    .onAppear { issueFocused = true }
             }
 
             HStack {
@@ -147,25 +157,35 @@ struct AudibleSignInView: View {
                         .textFieldStyle(.roundedBorder)
                         .appHelp("Enter a label that will identify this account in DownAudible.")
                 }
-                Picker("Marketplace", selection: $marketplace) {
-                    ForEach(AudibleMarketplace.allCases) { marketplace in
-                        Text(marketplace.displayName).tag(marketplace)
+                if androidAccount != nil {
+                    LabeledContent("Marketplace", value: marketplace.displayName)
+                } else {
+                    Picker("Marketplace", selection: $marketplace) {
+                        ForEach(AudibleMarketplace.allCases) { marketplace in
+                            Text(marketplace.displayName).tag(marketplace)
+                        }
                     }
+                    .appHelp("Select the Audible store where this account’s library is held.")
                 }
-                .appHelp("Select the Audible store where this account’s library is held.")
             }
-            if marketplace.supportsLegacySignIn {
+            if marketplace.supportsLegacySignIn && method != .androidBrowser {
                 Toggle("Sign in with a legacy Audible username", isOn: $legacyUsername)
                     .toggleStyle(.checkbox)
                     .appHelp("Use an older Audible username account when the marketplace supports it.")
             }
 
-            Picker("Sign-in method", selection: $method) {
-                ForEach(Method.allCases, id: \.self) { method in
-                    Text(method.rawValue).tag(method)
+            if androidAccount == nil {
+                Picker("Sign-in method", selection: $method) {
+                    ForEach(reconnecting ? [.browser, .credentials] : Method.allCases, id: \.self) { method in
+                        Text(method.rawValue).tag(method)
+                    }
                 }
+                .appHelp("Choose where to enter your sign-in details.")
             }
-            .appHelp("Choose where to enter your sign-in details.")
+
+            if method == .androidBrowser {
+                Text(androidInstructions).foregroundStyle(.secondary)
+            }
 
             if method == .credentials {
                 let usernameLabel = usesLegacyUsername ? "Audible username" : "Amazon email or phone"
@@ -178,6 +198,20 @@ struct AudibleSignInView: View {
                     .textContentType(.password)
             }
         }
+    }
+
+    private var signInTitle: String {
+        guard androidAccount != nil else { return "Sign In to Audible" }
+        return addingAccount ? "Add Separate Android Profile" : "Reconnect as Android"
+    }
+
+    private var androidInstructions: String {
+        if let androidAccount {
+            return addingAccount
+                ? "Sign in to the same Audible account as \(androidAccount.name) to add a separate DownAudible profile. Widevine starts off."
+                : "Sign in to the same Audible account to keep this DownAudible profile and its file matches. Widevine starts off."
+        }
+        return "Use your Amazon sign-in to create a compatible Android registration. You can enable Widevine separately in Accounts."
     }
 
     private func browserForm(_ attempt: AudibleSignIn) -> some View {
@@ -253,7 +287,7 @@ struct AudibleSignInView: View {
     }
 
     private var usesLegacyUsername: Bool {
-        legacyUsername && marketplace.supportsLegacySignIn
+        method != .androidBrowser && legacyUsername && marketplace.supportsLegacySignIn
     }
 
     private func trimmed(_ text: String) -> String {
@@ -272,7 +306,8 @@ struct AudibleSignInView: View {
             }
             await model.beginSignIn(
                 marketplace: marketplace, name: accountName,
-                legacyUsername: usesLegacyUsername, addingAccount: addingAccount
+                legacyUsername: usesLegacyUsername, addingAccount: addingAccount,
+                deviceProfile: method == .androidBrowser ? .android : nil, matching: androidAccount
             )
             attempt = model.signIn
             if attempt == nil { readIssue() }
@@ -286,6 +321,10 @@ struct AudibleSignInView: View {
                 address = ""
                 dismiss()
             } else {
+                if model.signIn == nil {
+                    self.attempt = nil
+                    address = ""
+                }
                 readIssue()
             }
         }

@@ -40,18 +40,25 @@ nonisolated enum AudibleMarketplace: String, Codable, CaseIterable, Identifiable
     }
 }
 
+nonisolated enum AudibleDeviceProfile: String, Encodable, Sendable {
+    case android
+}
+
 nonisolated struct AudibleSignIn: Sendable {
     let url: URL
     let marketplace: AudibleMarketplace
     fileprivate let serial: String
     fileprivate let verifier: String
     fileprivate let legacyUsername: Bool
+    fileprivate let deviceProfile: AudibleDeviceProfile?
+    fileprivate let registrationContext: String?
 }
 
 #if HELP_SCREENSHOTS
 extension AudibleSignIn {
     static let helpScreenshot = Self(url: URL(string: "https://example.com/sign-in")!,
-                                     marketplace: .unitedKingdom, serial: "", verifier: "", legacyUsername: false)
+                                     marketplace: .unitedKingdom, serial: "", verifier: "", legacyUsername: false,
+                                     deviceProfile: nil, registrationContext: nil)
 }
 #endif
 
@@ -121,6 +128,7 @@ nonisolated struct AudibleAPIOptions: Codable, Equatable, Sendable {
     var coverSizes: [Int] = []
     var chapterStyle: AudibleChapterStyle = .tree
     var bytesPerSecond: Int = 0
+    var preferWidevine: Bool?
     private var preferWholeBookDownloads: Bool?
 
     var prefersWholeBookDownloads: Bool {
@@ -137,6 +145,15 @@ nonisolated struct AudibleCLIProfile: Decodable, Identifiable, Sendable {
     let requiresPassword: Bool
 
     var id: String { name }
+}
+
+nonisolated struct OpenAudibleProfile: Decodable, Identifiable, Sendable {
+    let name: String
+    let marketplace: AudibleMarketplace
+    let isDefault: Bool
+    let checkpoint: String
+
+    var id: String { checkpoint }
 }
 
 nonisolated struct AudibleBook: Codable, Identifiable, Hashable, Sendable {
@@ -168,6 +185,9 @@ nonisolated struct AudibleBook: Codable, Identifiable, Hashable, Sendable {
     let hasPDF: Bool
     let isDownloadable: Bool
     let downloadUnavailableReason: DownloadUnavailableReason?
+    var isAudiblePlus: Bool? = nil
+    var isIndefinite: Bool? = nil
+    var isbn: String? = nil
 
     var id: String { asin }
 }
@@ -189,6 +209,7 @@ nonisolated struct AudibleAudioPart: Sendable {
     let credentials: AudibleConversionCredentials
     let asin: String
     let originalFilename: String?
+    let downloadedBytes: Int64?
 }
 
 nonisolated struct AudibleDownload: Sendable {
@@ -216,11 +237,16 @@ nonisolated struct AudibleJSONExtras: Sendable {
 nonisolated enum AudibleError: String, Decodable, LocalizedError {
     case activation, activationRequired, authorization, fileAccess, invalidRedirect, keychain, network
     case notSignedIn, service, signInFailed, credentialSignInFailed, unavailable, voucherMissing, helperMissing
+    case chapterRepairFile, chapterRepairMetadata, chapterRepairEdition
+    case accountMismatch, accountVerification
+    case deviceDeregistrationConfirmation, deviceDeregistration, listeningStatsYear, listeningStatsResponse, annotationsResponse
     case authImport, cliConfig, importPassword, importPasswordIncorrect, importMarketplace, unsupportedLegacySignIn
+    case openAudibleFile, openAudibleChanged, openAudibleVerify
     case exportPassword, exportFileAccess, helperStart
     case aaxUnavailable, aaxcUnavailable, licenseDenied, licenseEntitlement, licenseThrottled, licenseResponse
     case notFound, notPublished, offlineRestricted, partsUnavailable, requestRejected, podcastSeries, invalidTitle
     case rateLimited, serverUnavailable, timeout, sourceRejected, downloadResponse, incompleteResponse
+    case widevineConsent, widevineRegistration, widevineProvision, widevineLicense, widevineManifest, widevineAudio
     case diskFull, stagingFileAccess, extraUnavailable
 
     var errorDescription: String? {
@@ -233,14 +259,27 @@ nonisolated enum AudibleError: String, Decodable, LocalizedError {
         case .keychain: "DownAudible could not access your credentials in Keychain."
         case .network: "DownAudible lost its connection while contacting Audible. Check your internet connection and retry."
         case .notSignedIn: "Sign in to Audible to continue."
+        case .chapterRepairFile: "DownAudible couldn’t read the selected chapter JSON file."
+        case .chapterRepairMetadata: "This source does not provide usable Audible chapter data."
+        case .chapterRepairEdition: "The chapter data belongs to a different Audible edition."
         case .service: "DownAudible could not complete the request. Try again."
         case .signInFailed: "Amazon could not finish signing you in. Start again with a new sign-in link."
+        case .accountMismatch: "You signed in to a different Audible account. Start a new sign-in with the Audible account already connected to this profile."
+        case .accountVerification: "DownAudible could not verify that this is the same Audible account. Your saved sign-in is still available. Start again or add an Android profile from Add Account."
+        case .deviceDeregistrationConfirmation: "Confirm deregistration for the selected device first."
+        case .deviceDeregistration: "Audible could not confirm that this device was deregistered. Check your sign-in and try again."
+        case .listeningStatsYear: "Enter a start year from 1997 through the current year."
+        case .listeningStatsResponse: "Audible returned unreadable listening statistics. Try again later."
+        case .annotationsResponse: "Audible returned unreadable bookmarks or notes. Try again later."
         case .credentialSignInFailed: "Check your credentials and marketplace, then try again. If Amazon asks for a different verification step, choose Web Browser."
         case .unavailable: "Audible did not provide a download for this title."
         case .voucherMissing: "DownAudible could not find a license for this AAXC file. Keep its .voucher file beside it or match it to your Audible library."
         case .helperMissing: "DownAudible’s Audible helper is missing. Reinstall DownAudible and try again."
         case .helperStart: "DownAudible could not start its Audible helper. Reopen DownAudible and try again."
         case .authImport: "DownAudible could not read this Audible CLI authentication file."
+        case .openAudibleFile: "Choose an OpenAudible credentials.json file with a supported account."
+        case .openAudibleChanged: "The selected profile changed. Choose the OpenAudible file again."
+        case .openAudibleVerify: "Audible could not verify this OpenAudible sign-in. Reconnect the account in OpenAudible and choose its credentials file again."
         case .cliConfig: "Choose an Audible CLI config.toml that points to at least one existing authentication file."
         case .importPassword: "Enter the password used to encrypt this Audible CLI authentication file."
         case .importPasswordIncorrect: "DownAudible could not unlock this account file. Check the password or export a new copy of the file."
@@ -266,6 +305,12 @@ nonisolated enum AudibleError: String, Decodable, LocalizedError {
         case .timeout: "The Audible request timed out. Check your connection or increase Request timeout in Settings > Jobs."
         case .sourceRejected: "The download server refused to send the file. Retry or check that it is still available in Audible."
         case .downloadResponse: "The download server sent an unexpected response instead of the requested file. Try again later."
+        case .widevineConsent: "Review the provider details and enable Widevine for this account in Settings > Accounts."
+        case .widevineRegistration: "Widevine requires a compatible Android Audible sign-in. Use Android Browser (Advanced) or import a compatible sign-in in Settings > Accounts."
+        case .widevineProvision: "The Widevine provider could not provision this Audible account. Try again later."
+        case .widevineLicense: "Audible did not supply a usable Widevine license for this title."
+        case .widevineManifest: "Audible returned an unsupported Widevine audio manifest."
+        case .widevineAudio: "DownAudible could not save the Widevine stereo audio."
         case .incompleteResponse: "The download arrived incomplete. Use Retry in Downloads to resume any valid partial file."
         case .diskFull: "There is not enough space to write the file. Free up space or choose another destination."
         case .stagingFileAccess: "DownAudible could not access its temporary download files. Reconnect the destination disk or choose a writable folder."
@@ -308,29 +353,40 @@ nonisolated struct AudibleClient: Sendable {
     }
 
     @concurrent func beginSignIn(
-        marketplace: AudibleMarketplace, legacyUsername: Bool = false
+        marketplace: AudibleMarketplace, legacyUsername: Bool = false, deviceProfile: AudibleDeviceProfile? = nil
     ) async throws -> AudibleSignIn {
         guard !legacyUsername || marketplace.supportsLegacySignIn else { throw AudibleError.unsupportedLegacySignIn }
         let result: SignInLink = try await run(.init(
-            command: .beginSignIn, marketplace: marketplace.rawValue, legacyUsername: legacyUsername
+            command: .beginSignIn, marketplace: marketplace.rawValue, legacyUsername: legacyUsername,
+            deviceProfile: deviceProfile
         ))
         return AudibleSignIn(
             url: result.url, marketplace: marketplace, serial: result.serial, verifier: result.verifier,
-            legacyUsername: legacyUsername
+            legacyUsername: legacyUsername, deviceProfile: deviceProfile, registrationContext: result.registrationContext
         )
     }
 
-    @concurrent func completeSignIn(_ attempt: AudibleSignIn, redirectURL: URL) async throws {
+    @concurrent func completeSignIn(
+        _ attempt: AudibleSignIn, redirectURL: URL, matching previous: AudibleClient? = nil
+    ) async throws {
+        let previousSession = try previous?.session()
         let result: Session = try await run(.init(
             command: .completeSignIn,
             marketplace: attempt.marketplace.rawValue,
             redirect: redirectURL.absoluteString,
             serial: attempt.serial,
             verifier: attempt.verifier,
-            legacyUsername: attempt.legacyUsername
+            legacyUsername: attempt.legacyUsername,
+            deviceProfile: attempt.deviceProfile,
+            registrationContext: attempt.registrationContext,
+            previousSession: previousSession
         ))
         try Task.checkCancellation()
-        try vault.save(Data(result.session.utf8), for: sessionAccount)
+        let expected = previous.flatMap { client in
+            previousSession.map { AudibleKeychain.VerifiedSession(account: client.sessionAccount,
+                data: Data($0.utf8), device: client.widevineAccount) }
+        }
+        try replaceSession(result.session, matching: expected)
     }
 
     @concurrent func signInWithCredentials(
@@ -343,7 +399,7 @@ nonisolated struct AudibleClient: Sendable {
             username: username, password: password
         ), respond: respond)
         try Task.checkCancellation()
-        try vault.save(Data(result.session.utf8), for: sessionAccount)
+        try replaceSession(result.session)
     }
 
     @concurrent func cliProfiles(config: URL) async throws -> [AudibleCLIProfile] {
@@ -354,6 +410,20 @@ nonisolated struct AudibleClient: Sendable {
         try await run(.init(command: .inspectAuthFile, file: url.path))
     }
 
+    @concurrent func openAudibleProfiles(_ url: URL) async throws -> [OpenAudibleProfile] {
+        try await run(.init(command: .inspectOpenAudible, file: url.path))
+    }
+
+    @concurrent func importOpenAudible(_ url: URL, profile: OpenAudibleProfile) async throws -> AudibleMarketplace {
+        let result: ImportedSession = try await run(.init(
+            command: .importOpenAudible, file: url.path, checkpoint: profile.checkpoint
+        ))
+        try Task.checkCancellation()
+        guard result.marketplace == profile.marketplace else { throw AudibleError.accountMismatch }
+        try replaceSession(result.session)
+        return result.marketplace
+    }
+
     @concurrent func importAuthFile(
         _ url: URL, password: String?, marketplace: AudibleMarketplace? = nil
     ) async throws -> AudibleMarketplace {
@@ -361,7 +431,7 @@ nonisolated struct AudibleClient: Sendable {
             command: .importAuthFile, marketplace: marketplace?.rawValue, file: url.path, password: password
         ))
         try Task.checkCancellation()
-        try vault.save(Data(result.session.utf8), for: sessionAccount)
+        try replaceSession(result.session)
         return result.marketplace
     }
 
@@ -370,7 +440,21 @@ nonisolated struct AudibleClient: Sendable {
     }
 
     func signOut() throws {
+        try vault.remove(widevineAccount)
         try vault.remove(sessionAccount)
+    }
+
+    @concurrent func provisionWidevine() async throws {
+        let current = try session()
+        if try vault.load(widevineAccount) != nil { return }
+        let result: WidevineProvision = try await run(.init(command: .provisionWidevine, session: current, consent: true))
+        try Task.checkCancellation()
+        guard !result.cdm.isEmpty, try session() == current else { throw AudibleError.widevineProvision }
+        try vault.save(Data(result.cdm.utf8), for: widevineAccount)
+    }
+
+    private func replaceSession(_ session: String, matching expected: AudibleKeychain.VerifiedSession? = nil) throws {
+        try vault.replaceSession(Data(session.utf8), for: sessionAccount, clearing: widevineAccount, matching: expected)
     }
 
     @concurrent func library() async throws -> [AudibleBook] {
@@ -379,6 +463,50 @@ nonisolated struct AudibleClient: Sendable {
 
     @concurrent func wishlist() async throws -> [AudibleBook] {
         try await run(.init(command: .wishlist, session: session()))
+    }
+
+    @concurrent func checkTitle(_ asin: String, preferredAudioOnly: Bool = false) async throws -> AudibleTitleCheck {
+        var checkedOptions = options
+        if preferredAudioOnly, options.format == .preferAAX, options.preferWidevine == true {
+            checkedOptions.preferWidevine = try vault.load(widevineAccount) != nil
+        }
+        return try await run(.init(command: .checkTitle, session: session(), asin: asin,
+                                   preferredAudioOnly: preferredAudioOnly, options: checkedOptions))
+    }
+
+    @concurrent func listeningStatistics(startYear: Int) async throws -> [AudibleListeningMonth] {
+        let report: AudibleListeningStatistics = try await run(.init(
+            command: .listeningStats, session: session(), startYear: startYear
+        ))
+        return report.months.sorted { $0.month < $1.month }
+    }
+
+    @concurrent func annotations(for book: AudibleBook) async throws -> [AudibleAnnotation] {
+        let report: AudibleAnnotationReport = try await run(.init(command: .annotations, session: session(), asin: book.asin))
+        return report.entries
+    }
+
+    nonisolated struct DeviceConfirmation: Sendable {
+        let registration: AudibleDeviceRegistration
+        fileprivate let profileID: UUID?
+        fileprivate let sessionHash: SHA256.Digest
+    }
+
+    @concurrent func deviceRegistration() async throws -> DeviceConfirmation {
+        let saved = try session()
+        let registration: AudibleDeviceRegistration = try await run(.init(command: .deviceRegistration, session: saved))
+        return DeviceConfirmation(registration: registration, profileID: profileID, sessionHash: SHA256.hash(data: Data(saved.utf8)))
+    }
+
+    @concurrent func deregisterDevice(expected: DeviceConfirmation) async throws {
+        let saved = try session()
+        let data = Data(saved.utf8)
+        guard profileID == expected.profileID, SHA256.hash(data: data) == expected.sessionHash else {
+            throw AudibleError.deviceDeregistrationConfirmation
+        }
+        let completed: Bool = try await run(.init(command: .deregisterDevice, session: saved, confirmed: true))
+        guard completed else { throw AudibleError.requestRejected }
+        try vault.removeSession(matching: data, account: sessionAccount, device: widevineAccount)
     }
 
     @concurrent func searchCatalog(_ query: String) async throws -> [AudibleBook] {
@@ -422,6 +550,13 @@ nonisolated struct AudibleClient: Sendable {
         try await run(.init(command: .chapters, session: session(), asin: book.asin))
     }
 
+    @concurrent func chapterRepair(asin: String?, file: URL?) async throws -> ChapterRepair {
+        let scoped = file?.startAccessingSecurityScopedResource() ?? false
+        defer { if scoped { file?.stopAccessingSecurityScopedResource() } }
+        return try await run(.init(command: .chapterRepair, session: file == nil ? try session() : nil,
+                                   file: file?.path, asin: asin))
+    }
+
     @concurrent func download(
         _ book: AudibleBook,
         to stagingDirectory: URL,
@@ -430,11 +565,17 @@ nonisolated struct AudibleClient: Sendable {
     ) async throws -> AudibleDownload {
         var downloadOptions = options
         downloadOptions.format = format ?? options.format
+        let cdm = if downloadOptions.preferWidevine == true, downloadOptions.format == .preferAAX {
+            try vault.load(widevineAccount).flatMap { String(data: $0, encoding: .utf8) }
+        } else { nil as String? }
+        let mediaTool = cdm.flatMap { _ in Bundle.main.resourceURL?.appending(path: "MediaSupport/ffmpeg").path }
         let result: DownloadResponse = try await run(.init(
             command: .download,
             session: session(),
             asin: book.asin,
             directory: stagingDirectory.path,
+            widevineCDM: cdm,
+            ffmpeg: mediaTool,
             options: downloadOptions
         ), progress: progress)
         let parts = try result.parts.map { part in
@@ -444,7 +585,8 @@ nonisolated struct AudibleClient: Sendable {
                 try cacheVoucher(KeyAndIV(key: key, iv: iv), for: audio)
             }
             return AudibleAudioPart(
-                audio: audio, credentials: part.credentials, asin: part.asin, originalFilename: part.originalFilename
+                audio: audio, credentials: part.credentials, asin: part.asin, originalFilename: part.originalFilename,
+                downloadedBytes: part.downloadedBytes
             )
         }
         return try AudibleDownload(parts: parts)
@@ -536,6 +678,7 @@ nonisolated struct AudibleClient: Sendable {
     }
 
     private var sessionAccount: AudibleKeychain.Account { .session(profileID) }
+    private var widevineAccount: AudibleKeychain.Account { .widevine(profileID) }
 
     private func session() throws -> String {
         #if HELP_SCREENSHOTS
@@ -596,8 +739,11 @@ private extension String {
 private nonisolated struct Request: Encodable, Sendable {
     enum Command: String, Encodable, Sendable {
         case beginSignIn, completeSignIn, credentialSignIn, library, download, chapters, extras, jsonExtras, activation, voucher
-        case cliProfiles, inspectAuthFile, importAuthFile
+        case cliProfiles, inspectAuthFile, importAuthFile, provisionWidevine
+        case inspectOpenAudible, importOpenAudible
         case wishlist, catalog, wishlistAdd, wishlistRemove, exportAuthFile
+        case checkTitle, listeningStats, deviceRegistration, deregisterDevice, annotations
+        case chapterRepair
     }
 
     let command: Command
@@ -610,7 +756,11 @@ private nonisolated struct Request: Encodable, Sendable {
     var serial: String?
     var verifier: String?
     var legacyUsername: Bool?
+    var deviceProfile: AudibleDeviceProfile?
+    var registrationContext: String?
+    var previousSession: String?
     var file: String?
+    var checkpoint: String?
     var username: String?
     var password: String?
     var asin: String?
@@ -621,13 +771,24 @@ private nonisolated struct Request: Encodable, Sendable {
     var pdf: Bool?
     var chapters: Bool?
     var annotations: Bool?
+    var widevineCDM: String?
+    var ffmpeg: String?
+    var consent: Bool?
+    var startYear: Int?
+    var confirmed: Bool?
+    var preferredAudioOnly: Bool?
     var options: AudibleAPIOptions?
+}
+
+private nonisolated struct WidevineProvision: Decodable, Sendable {
+    let cdm: String
 }
 
 private nonisolated struct SignInLink: Decodable, Sendable {
     let url: URL
     let serial: String
     let verifier: String
+    let registrationContext: String?
 }
 
 private nonisolated struct Session: Decodable, Sendable {
@@ -650,6 +811,7 @@ private nonisolated struct DownloadResponse: Decodable, Sendable {
         let asin: String
         let credentials: AudibleConversionCredentials
         let originalFilename: String?
+        let downloadedBytes: Int64?
     }
 
     let parts: [Part]
@@ -853,13 +1015,21 @@ private nonisolated final class AudibleKeychain: Sendable {
     enum Account {
         case session(UUID?)
         case voucher(String)
+        case widevine(UUID?)
 
         var name: String {
             switch self {
             case .session(let id): id.map { "Audible session " + $0.uuidString } ?? "Audible session"
             case .voucher(let digest): "AAXC voucher " + digest
+            case .widevine(let id): id.map { "Widevine CDM " + $0.uuidString } ?? "Widevine CDM"
             }
         }
+    }
+
+    struct VerifiedSession {
+        let account: Account
+        let data: Data
+        let device: Account
     }
 
     func load(_ account: Account) throws -> Data? {
@@ -871,9 +1041,14 @@ private nonisolated final class AudibleKeychain: Sendable {
     }
 
     func remove(_ account: Account) throws {
+        try mutex.withLock { _ in try delete(account) }
+    }
+
+    func removeSession(matching data: Data, account: Account, device: Account) throws {
         try mutex.withLock { _ in
-            let status = SecItemDelete(query(for: account) as CFDictionary)
-            guard status == errSecSuccess || status == errSecItemNotFound else { throw AudibleError.keychain }
+            guard try read(account) == data else { throw AudibleError.deviceDeregistrationConfirmation }
+            try delete(device)
+            try delete(account)
         }
     }
 
@@ -884,6 +1059,31 @@ private nonisolated final class AudibleKeychain: Sendable {
                 try write(new, account: account)
             }
         }
+    }
+
+    func replaceSession(_ data: Data, for account: Account, clearing device: Account, matching expected: VerifiedSession?) throws {
+        try mutex.withLock { _ in
+            if let expected, try read(expected.account) != expected.data { throw AudibleError.accountVerification }
+            let cachedDevice = try read(device)
+            let reusableDevice = try expected.flatMap { try read($0.device) }
+            if reusableDevice != cachedDevice { try persist(reusableDevice, account: device) }
+            do {
+                try write(data, account: account)
+            } catch {
+                if reusableDevice != cachedDevice { try? persist(cachedDevice, account: device) }
+                throw error
+            }
+        }
+    }
+
+    private func persist(_ data: Data?, account: Account) throws {
+        if let data { try write(data, account: account) }
+        else { try delete(account) }
+    }
+
+    private func delete(_ account: Account) throws {
+        let status = SecItemDelete(query(for: account) as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else { throw AudibleError.keychain }
     }
 
     private func query(for account: Account) -> [String: Any] {

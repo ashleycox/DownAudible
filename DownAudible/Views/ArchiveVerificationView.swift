@@ -9,6 +9,9 @@ struct ArchiveVerificationButton: View {
         }
         .disabled(!model.canVerifyArchive)
         .appHelp("Check the current account’s saved audio and queue repairs for selected titles.")
+        Button("Check for Better-Quality Audio…") { model.qualityAudit = model.qualityAuditScope() }
+            .disabled(!model.canVerifyArchive)
+            .appHelp("Compare the current account’s saved audio with the source Audible can supply.")
     }
 }
 

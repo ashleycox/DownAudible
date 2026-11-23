@@ -61,6 +61,14 @@ struct Transfer: Codable, Identifiable, Sendable {
     var partialFolder: URL?
     var restartPending: Bool?
     var booksImportPending: Bool?
+    var paceResumeAt: Date?
+    var audibleRetry: AudibleRetryDelay?
+    var didRetryAudible: Bool?
+
+    var nextAttempt: Date? {
+        if let paceResumeAt, let audibleRetry { return max(paceResumeAt, audibleRetry.until) }
+        return audibleRetry?.until ?? paceResumeAt
+    }
 
     var isFinished: Bool {
         switch status {
@@ -119,7 +127,7 @@ struct ExportReceipt: Sendable {
     var audioFiles: [URL] { original + converted }
 }
 
-enum LibraryDownloadStatus: CaseIterable, Identifiable, Sendable {
+enum LibraryDownloadStatus: String, Codable, CaseIterable, Identifiable, Sendable {
     case downloaded, matched, partial, missing, notDownloaded, unavailable
 
     var id: Self { self }
@@ -166,4 +174,5 @@ struct ArchiveInventoryItem: Sendable {
     var missingFiles: [URL] = []
     var hadAudio = false
     var hasPartial = false
+    var hasPDF = false
 }

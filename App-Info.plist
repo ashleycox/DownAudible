@@ -6,6 +6,13 @@
     <string>DownAudible.help</string>
     <key>CFBundleHelpBookName</key>
     <string>$(PRODUCT_BUNDLE_IDENTIFIER).help</string>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>DownAudible connects to your Audiobookshelf server to send audiobooks you choose to upload.</string>
     <key>SUFeedURL</key>
     <string>https://github.com/ashleycox/DownAudible/releases/latest/download/appcast.xml</string>
     <key>SUPublicEDKey</key>

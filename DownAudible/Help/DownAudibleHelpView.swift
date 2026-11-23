@@ -6,6 +6,8 @@ enum DownAudibleHelp {
     static let contents = "index"
     static let shortcuts = "help-10-keyboard-shortcuts"
     static let settings = "help-12-settings"
+    static let widevine = "help-13-widevine"
+    static let audiobookshelf = "help-14-audiobookshelf"
 
     private static var book: Bundle? {
         guard let folder = Bundle.main.object(forInfoDictionaryKey: "CFBundleHelpBookFolder") as? String,

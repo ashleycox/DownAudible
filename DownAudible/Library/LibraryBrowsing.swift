@@ -132,10 +132,10 @@ enum LibrarySortDirection: String, Codable, Sendable, CaseIterable, Identifiable
     var tableOrder: SortOrder { self == .ascending ? .forward : .reverse }
 }
 
-struct LibraryFilters: Equatable {
+struct LibraryFilters: Equatable, Codable, Sendable {
     static let suggestionsPreferenceKey = "ShowsLibraryFilterSuggestions"
 
-    enum Field: String, CaseIterable, Identifiable {
+    enum Field: String, CaseIterable, Identifiable, Codable, Sendable {
         case title, author, series, narrator, genre, language, releaseYear
 
         var id: Self { self }
@@ -175,8 +175,40 @@ struct LibraryFilters: Equatable {
 
     private var text: [Field: String] = [:]
     var status: LibraryDownloadStatus?
+    var access: Access?
+    var listening: Listening?
+    var tag: String?
 
-    var isEmpty: Bool { text.isEmpty && status == nil }
+    var isEmpty: Bool { text.isEmpty && status == nil && access == nil && listening == nil && tag == nil }
+
+    enum Access: String, Codable, CaseIterable, Identifiable, Sendable {
+        case owned = "Indefinite Access", plus = "Audible Plus", other = "Other Titles", unknown = "Unknown"
+
+        var id: Self { self }
+
+        static func status(for book: AudibleBook) -> Self {
+            if book.isAudiblePlus == true { return .plus }
+            if book.isIndefinite == true { return .owned }
+            if book.isAudiblePlus == false, book.isIndefinite == false { return .other }
+            return .unknown
+        }
+    }
+
+    enum Listening: String, Codable, CaseIterable, Identifiable, Sendable {
+        case unstarted = "Not Started", started = "In Progress", finished = "Finished", unknown = "Unknown"
+
+        var id: Self { self }
+
+        static func status(for book: AudibleBook) -> Self {
+            if book.isFinished == true { return .finished }
+            if let percent = book.percentComplete, percent.isFinite {
+                if percent >= 100 { return .finished }
+                if percent > 0 { return .started }
+                if percent == 0 { return .unstarted }
+            }
+            return .unknown
+        }
+    }
 
     subscript(field: Field) -> String? {
         get { text[field] }
@@ -189,22 +221,30 @@ struct LibraryFilters: Equatable {
     var summary: [String] {
         var values = Field.allCases.compactMap { field in text[field].map { "\(field.displayName) “\($0)”" } }
         if let status { values.append(status.displayName) }
+        if let access { values.append("Access \(access.rawValue)") }
+        if let listening { values.append("Listening Progress \(listening.rawValue)") }
+        if let tag { values.append("Tag “\(tag)”") }
         return values
     }
 
     func matches(_ book: AudibleBook) -> Bool {
         text.allSatisfy { $0.key.matches(book, text: $0.value) }
+            && (access.map { $0 == Access.status(for: book) } ?? true)
+            && (listening.map { $0 == Listening.status(for: book) } ?? true)
     }
 
     func rows(
         in books: [AudibleBook], search: String, excluding field: Field? = nil,
-        statusFor: (AudibleBook) -> LibraryDownloadStatus, missingFiles: (AudibleBook) -> [URL] = { _ in [] }
+        statusFor: (AudibleBook) -> LibraryDownloadStatus, missingFiles: (AudibleBook) -> [URL] = { _ in [] },
+        tagsFor: (AudibleBook) -> [String] = { _ in [] }
     ) -> [LibraryRow] {
         var filters = self
         if let field { filters[field] = nil }
         let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
         return books.compactMap { book in
             guard filters.matches(book) else { return nil }
+            if let tag = filters.tag,
+               !tagsFor(book).contains(where: { $0.localizedCaseInsensitiveCompare(tag) == .orderedSame }) { return nil }
             let status = statusFor(book)
             guard filters.status.map({ $0 == status }) ?? true else { return nil }
             let row = LibraryRow(book: book, status: status, missingFiles: missingFiles(book))

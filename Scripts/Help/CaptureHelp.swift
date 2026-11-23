@@ -40,6 +40,7 @@ final class HelpCapture {
     private let delegate = CaptureUpdaterDelegate()
     lazy var updater = SoftwareUpdater(helpScreenshotDelegate: delegate)
     let archive: URL
+    private let shelfQueueFile: URL
     let model: WorkspaceModel
     let signedOut: WorkspaceModel
 
@@ -48,12 +49,14 @@ final class HelpCapture {
         self.fixture = fixture
         self.requested = requested
         archive = fixture.appending(path: "Demo Audiobooks", directoryHint: .isDirectory)
+        shelfQueueFile = fixture.appending(path: "AudiobookshelfUploads.json")
         defaults = UserDefaults(suiteName: preferencesName)!
         defaults.set(true, forKey: "HasFinishedOnboarding")
         defaults.set(archive.path, forKey: "OutputDirectory")
         let client = AudibleClient(helperURL: fixture.appending(path: "audible-demo-helper"))
-        model = WorkspaceModel(defaultsSuite: preferencesName, audible: client)
-        signedOut = WorkspaceModel(defaultsSuite: preferencesName, audible: client)
+        let shelfQueue = ShelfUploadQueue(file: shelfQueueFile)
+        model = WorkspaceModel(defaultsSuite: preferencesName, audible: client, shelfQueue: shelfQueue)
+        signedOut = WorkspaceModel(defaultsSuite: preferencesName, audible: client, shelfQueue: shelfQueue)
     }
 
     func removeFixturePreferences() {
@@ -61,7 +64,7 @@ final class HelpCapture {
     }
 
     func run() throws {
-        let books = (1...6).map(makeBook)
+        let books = (1...6).map { makeBook($0) }
         let account = SavedAudibleAccount(id: UUID(), name: "Demo Account", marketplace: .unitedKingdom)
         let second = SavedAudibleAccount(id: UUID(), name: "Demo Account 2", marketplace: .unitedStates)
         let existing = fixture.appending(path: "Demo Audio", directoryHint: .isDirectory)
@@ -109,6 +112,24 @@ final class HelpCapture {
         ]
         model.selectedFiles = [sourceFile]
 
+        let query = LibraryCatalog.Query(model.apiOptions)
+        let catalog = LibraryCatalog(books: books, query: query, previous: LibraryCatalog(
+            books: Array(books.prefix(5)) + [makeBook(7)], query: query, previous: nil, refreshed: date
+        ), refreshed: date.addingTimeInterval(7_200))
+        model.seedHelpScreenshotCatalogs([
+            account.id: catalog,
+            second.id: LibraryCatalog(books: [books[2], makeBook(8)], query: query, previous: nil, refreshed: date),
+        ])
+        model.libraryOrganization.changeTags(["To Listen"], for: [books[2].asin], account: account.id, adding: true)
+        try capture("library-saved-view", size: (420, 190)) {
+            LibrarySaveViewSheet(saved: []) { _ in }
+        }
+        try capture("library-tags", size: (440, 268)) {
+            LibraryTagsSheet(model: model, account: account.id, books: [books[2]])
+        }
+        try capture("library-changes", size: (520, 360)) { LibraryChangesView(snapshot: catalog) }
+        try capture("library-all-accounts", size: (740, 440)) { AllAccountsLibraryView(model: model) }
+
         try capture("setup-welcome", size: (640, 380)) {
             OnboardingView(model: signedOut, softwareUpdater: updater) { _ in }
         }
@@ -119,13 +140,17 @@ final class HelpCapture {
             OnboardingView(model: signedOut, softwareUpdater: updater, finished: true) { _ in }
         }
         try capture("sign-in-methods", size: (486, 230)) { AudibleSignInView(model: signedOut, addingAccount: true) }
+        try capture("sign-in-android", size: (486, 280)) { AudibleSignInView(model: signedOut, demoCredentials: false, demoAndroid: true) }
         try capture("sign-in-credentials", size: (486, 284)) { AudibleSignInView(model: signedOut, demoCredentials: true) }
         try capture("sign-in-browser", size: (486, 254)) {
             AudibleSignInView(model: signedOut, demoCredentials: false, attempt: .helpScreenshot)
         }
-        try capture("sign-in-cli", size: (500, 360), settle: 0.7) { AudibleCLIImportView(model: signedOut) }
+        try capture("sign-in-cli", size: (500, 360), settle: 0.7) { AudibleAccountImportView(model: signedOut) }
         try capture("sign-in-cli-auth", size: (500, 310), settle: 0.7) {
-            AudibleCLIImportView(model: signedOut, demoAuthFile: fixture.appending(path: "cli/demo-account.json"))
+            AudibleAccountImportView(model: signedOut, demoAuthFile: fixture.appending(path: "cli/demo-account.json"))
+        }
+        try capture("import-openaudible", size: (500, 330), settle: 0.7) {
+            AudibleAccountImportView(model: signedOut, demoOpenAudibleFile: fixture.appending(path: "cli/credentials.json"))
         }
 
         try capture("library", title: "Library", size: (1_080, 405)) { workspace(.library) }
@@ -163,6 +188,23 @@ final class HelpCapture {
                 account: nil, apiOptions: model.apiOptions, destination: model.layout
             ), excludedSections: [0])
         }
+        try capture("book-chapter-repair", size: (750, 455), settle: 1.5) {
+            let chapters = [
+                MediaChapter(startMilliseconds: 0, durationMilliseconds: 22_000, title: "Chapter 1"),
+                MediaChapter(startMilliseconds: 22_000, durationMilliseconds: 26_000, title: "Chapter 2"),
+            ]
+            let separated = [
+                MediaChapter(startMilliseconds: 0, durationMilliseconds: 4_000, title: "Audible Intro"),
+                MediaChapter(startMilliseconds: 4_000, durationMilliseconds: 18_000, title: "Chapter 1"),
+                MediaChapter(startMilliseconds: 22_000, durationMilliseconds: 22_000, title: "Chapter 2"),
+                MediaChapter(startMilliseconds: 44_000, durationMilliseconds: 4_000, title: "Audible Outro"),
+            ]
+            BookEditorView(model: model, request: BookEditRequest(
+                origin: .local(ArchiveTitle(books[2])), localAudio: [StoredAudio(url: sourceFile, asin: nil)],
+                account: nil, apiOptions: model.apiOptions, destination: model.layout
+            ), chapterRepair: ChapterRepair(asin: nil, runtimeMilliseconds: 48_000,
+                                            chapters: chapters, separatedChapters: separated))
+        }
         try capture("archive-verification", size: (690, 380), settle: 1) {
             ArchiveVerificationView(model: model)
         }
@@ -180,6 +222,10 @@ final class HelpCapture {
             Transfer(title: books[2].title, status: .waiting)
         ]
         try capture("transfers-active", title: "Downloads", size: (870, 340)) { workspace(.transfers) }
+        var deferred = Transfer(title: books[1].title, status: .waiting)
+        deferred.audibleRetry = AudibleRetryDelay(error: AudibleError.rateLimited, now: date)
+        model.transfers = [transfers[0], deferred, Transfer(title: books[2].title, status: .waiting)]
+        try capture("transfers-audible-retry", title: "Downloads", size: (870, 340)) { workspace(.transfers) }
         model.selectedBooks = [books[3].id]
         try capture("download-queue", title: "Library", size: (1_080, 405), menu: .toolbar("Download")) {
             workspace(.library)
@@ -194,28 +240,103 @@ final class HelpCapture {
                 AudibleToolsView(client: client, accountName: account.name)
             }
             try capture("audible-catalogue", size: (590, 330)) {
-                demoAudibleCatalogue(client: client, books: (10...13).map(makeBook))
+                demoAudibleCatalogue(client: client, books: (10...13).map { makeBook($0) })
             }
             try capture("audible-activation", title: "Audible Tools", size: (700, 430)) {
                 AudibleToolsView(client: client, accountName: account.name, showAccount: true)
             }
             try capture("audible-export", size: (460, 250)) { demoAudibleAuthExport(client: client) }
+            let statistics: [AudibleListeningMonth] = [
+                .init(month: "2025-11", durationMilliseconds: 49_500_000),
+                .init(month: "2026-08", durationMilliseconds: 98_400_000),
+                .init(month: "2026-09", durationMilliseconds: 0),
+                .init(month: "2026-10", durationMilliseconds: 183_600_000),
+            ]
+            try capture("listening-statistics", title: "Listening Statistics", size: (760, 450)) {
+                ListeningStatisticsWindow(model: model, initialMonths: statistics)
+            }
+            let check = try JSONDecoder().decode(AudibleTitleCheck.self, from: Data("""
+                {"asin":"DEMOBOOK01","offers":[
+                 {"format":"aax","status":"available","codec":"AAC-LC","bitrateKbps":64},
+                 {"format":"aaxc","status":"available","codec":"AAC-LC","bitrateKbps":96},
+                 {"format":"widevine","status":"available","codec":"AAC-LC","bitrateKbps":128}]}
+                """.utf8))
+            try capture("title-diagnostics", size: (600, 350)) {
+                TitleInsightsView(request: TitleCheckRequest(book: books[0], marketplace: account.marketplace, client: client),
+                                  initialReport: check)
+            }
+            try capture("audible-annotations", size: (720, 460)) {
+                AudibleAnnotationsView(request: AnnotationsRequest(book: books[0], account: account.name, client: client),
+                    initialEntries: [
+                        .init(kind: .bookmark, positionMilliseconds: 115_000, text: ""),
+                        .init(kind: .note, positionMilliseconds: 506_000, text: "Return to the description of the old station.\nIt sets up the next chapter."),
+                        .init(kind: .bookmark, positionMilliseconds: 3_733_000, text: ""),
+                    ])
+            }
+            var finished = makeBook(1, finished: true, progress: 100)
+            finished.isbn = "9780000000002"
+            let started = makeBook(2, progress: 35)
+            try capture("library-goodreads-export", size: (760, 435)) {
+                GoodreadsExportView(export: GoodreadsExport([finished, started, finished]))
+            }
+            let audit = QualityAuditScope(accountID: account.id, accountName: account.name, client: client, layout: model.layout,
+                                          inputs: books.prefix(3).map { .init(book: $0, files: []) })
+            try capture("audio-quality-audit", size: (860, 460)) {
+                QualityAuditView(scope: audit, demoResults: true) { _ in }
+            }
+            try capture("audible-device-registration", size: (510, 260)) {
+                AudibleDeviceView(model: model, account: account, initialRegistration: .init(
+                    kind: "android", name: "Audible for Android", marketplace: "uk", serialSuffix: "1234"
+                ))
+            }
         }
         try capture("about", title: "About DownAudible", size: (480, 380)) { AboutView() }
         let settings: [(SettingsPane, String)] = [
-            (.general, "general"), (.accounts, "accounts"), (.library, "library"), (.downloads, "downloads"),
-            (.conversion, "conversion"), (.files, "files"), (.jobs, "jobs"), (.notifications, "notifications")
+            (.general, "general"), (.downloads, "downloads"),
+            (.conversion, "conversion"), (.files, "files"), (.notifications, "notifications")
         ]
         for (pane, name) in settings {
             try capture("settings-" + name, title: "DownAudible Settings", size: (720, 600)) {
                 PreferencesView(model: model, softwareUpdater: updater, selection: pane)
             }
         }
+        try capture("settings-library", size: (680, 570)) {
+            SettingsPane.library.content(for: model, softwareUpdater: updater)
+        }
+        try capture("settings-accounts", size: (680, 650)) { AccountPreferencesView(model: model) }
+        try capture("settings-jobs", size: (680, 670)) {
+            SettingsPane.jobs.content(for: model, softwareUpdater: updater)
+        }
+        model.shelfSettings = ShelfSettings(
+            server: "https://audiobookshelf.example.com", libraryID: "demo-library", libraryName: "Audiobooks",
+            folderID: "demo-folder", folderName: "/audiobooks", autoUpload: true, includePDFs: true
+        )
+        try capture("settings-audiobookshelf", size: (680, 520)) {
+            AudiobookshelfPreferencesView(model: model)
+        }
+        if requested.isEmpty || requested.contains("audiobookshelf-uploads"),
+           let destination = model.shelfSettings.destination {
+            let examples: [(AudibleBook, URL, ShelfUpload.State, String?)] = [
+                (books[0], completedFile, .sent, nil),
+                (books[1], importedFile, .failed, "The server couldn’t be reached."),
+                (books[2], sourceFile, .waiting, nil),
+            ]
+            let uploads = examples.map { book, audio, state, detail in
+                let item = ShelfBook(asin: book.asin, title: book.title, authors: book.authors,
+                                     series: book.series, audio: [audio], cover: nil, pdf: nil)
+                return ShelfUpload(book: item, destination: destination, state: state, detail: detail)
+            }
+            try JSONEncoder().encode(uploads).write(to: shelfQueueFile, options: .atomic)
+            try capture("audiobookshelf-uploads", size: (620, 340)) { ShelfUploadsView(model: model) }
+        }
         try capture("settings-downloads-extras", title: "DownAudible Settings", size: (720, 600), scrollToBottom: true) {
             PreferencesView(model: model, softwareUpdater: updater, selection: .downloads)
         }
-        try capture("settings-accounts-switch", title: "Accounts", size: (680, 465)) {
+        try capture("settings-accounts-switch", size: (680, 650)) {
             AccountPreferencesView(model: model, demoAccountID: second.id)
+        }
+        try capture("widevine-stereo", size: (540, 410)) {
+            WidevineAccountView(model: model, account: account)
         }
         model.conversionPreferences.chapterMode = .separate
         model.conversionPreferences.copyChapterAudio = true
@@ -232,10 +353,16 @@ final class HelpCapture {
                 .formStyle(.grouped)
         }
         model.conversionPreferences = ConversionPreferences()
+        model.downloadPacing.scope = .all
+        model.downloadPacing.limit = 25
+        try capture("settings-jobs-pacing", size: (680, 610)) {
+            SettingsPane.jobs.content(for: model, softwareUpdater: updater)
+        }
+        model.downloadPacing = DownloadPacing()
         model.transferPreferences.logLevel = .errors
         model.transferPreferences.logFile = fixture.appending(path: "Demo Transfers.txt")
-        try capture("settings-jobs-log", title: "DownAudible Settings", size: (720, 600), scrollToBottom: true) {
-            PreferencesView(model: model, softwareUpdater: updater, selection: .jobs)
+        try capture("jobs-log", size: (680, 600), scrollToBottom: true) {
+            SettingsPane.jobs.content(for: model, softwareUpdater: updater)
         }
         model.setTransferDelivery(.soundOnly, for: .downloadCompleted)
         try capture("notifications-sound", title: "DownAudible Settings", size: (720, 600), scrollToBottom: true) {
@@ -263,7 +390,7 @@ final class HelpCapture {
                       appleBooks: .off, preferences: model.transferPreferences, jobLimit: 3)
     }
 
-    private func makeBook(_ index: Int) -> AudibleBook {
+    private func makeBook(_ index: Int, finished: Bool = false, progress: Double = 0) -> AudibleBook {
         AudibleBook(
             asin: "DEMOBOOK\(index < 10 ? "0" : "")\(index)", title: "Demo Book \(index)", subtitle: nil,
             authors: ["Demo Author \(index <= 2 ? 1 : 2)"], narrators: ["Demo Narrator \(index % 2 + 1)"],
@@ -271,7 +398,7 @@ final class HelpCapture {
             publisher: "Demo Publisher", description: nil, language: "English",
             genres: [index.isMultiple(of: 2) ? "Adventure" : "Mystery"], releaseDate: "2026-08-11",
             purchaseDate: "2026-08-12", dateAdded: "2026-08-12", rating: nil, ratingCount: nil,
-            isFinished: false, percentComplete: 0, durationSeconds: 18_000 + index * 800,
+            isFinished: finished, percentComplete: progress, durationSeconds: 18_000 + index * 800,
             coverURL: nil, coverImages: nil, hasPDF: index == 3, isDownloadable: index != 6,
             downloadUnavailableReason: index == 6 ? .offlineRestricted : nil
         )

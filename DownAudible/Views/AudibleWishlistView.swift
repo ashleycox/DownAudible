@@ -202,17 +202,18 @@ private struct WishlistExportActions: View {
     var body: some View {
         ForEach(LibraryExportFormat.allCases) { format in
             Button(format.rawValue.uppercased()) { state.export(format) }
-                .keyboardShortcut(inMenuBar ? KeyboardShortcut(shortcut(for: format), modifiers: [.control, .shift]) : nil)
+                .keyboardShortcut(inMenuBar ? shortcut(for: format).map { KeyboardShortcut($0, modifiers: [.control, .shift]) } : nil)
                 .disabled(!state.canExport)
                 .appHelp("Save the complete wish list as \(format.rawValue.uppercased()).")
         }
     }
 
-    private func shortcut(for format: LibraryExportFormat) -> KeyEquivalent {
+    private func shortcut(for format: LibraryExportFormat) -> KeyEquivalent? {
         switch format {
         case .json: "j"
         case .csv: "g"
         case .tsv: "t"
+        case .xlsx: nil
         }
     }
 }

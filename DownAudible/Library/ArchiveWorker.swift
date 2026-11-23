@@ -250,6 +250,7 @@ actor ArchiveWorker {
         requestID: UUID? = nil,
         repairAudio: Bool = false,
         restartIncomplete: Bool = false,
+        meter: DownloadMeter? = nil,
         didRestart: @escaping @Sendable () async -> Void = {},
         feedback: @escaping @Sendable (FeedbackMilestone) async -> Void = { _ in },
         progress: @escaping Progress
@@ -310,12 +311,11 @@ actor ArchiveWorker {
                     case nil: throw ArchiveError.unavailable
                     }
                 }
-                let audioDirectory = try IncompleteDownloads.audioFolder(
-                    for: book.id, account: account, root: layout.root, restart: restartIncomplete
-                )
                 usesAudioStaging = true
-                if restartIncomplete { await didRestart() }
-                sources = try await downloadSources(book, audible: audible, to: audioDirectory, progress: progress)
+                sources = try await downloadSources(
+                    book, account: account, audible: audible, root: layout.root, restart: restartIncomplete,
+                    meter: meter, didRestart: didRestart, progress: progress
+                )
                 if options.savesOriginal {
                     sources = try saveOriginals(sources, title: title, layout: layout)
                     record.originals = sources.map(\.audio)
@@ -394,12 +394,10 @@ actor ArchiveWorker {
                     throw error
                 }
                 await feedback(.downloading)
-                let audioDirectory = try IncompleteDownloads.audioFolder(
-                    for: book.id, account: account, root: layout.root, restart: false
-                )
                 usesAudioStaging = true
                 let fallback = try await downloadSources(
-                    book, audible: audible, to: audioDirectory, format: .aaxcOnly, progress: progress
+                    book, account: account, audible: audible, root: layout.root, format: .aaxcOnly,
+                    meter: meter, progress: progress
                 )
                 await feedback(.downloaded)
                 await feedback(.preparingConversion)
@@ -420,6 +418,7 @@ actor ArchiveWorker {
         }
 
         if options.downloadPDF && book.hasPDF && !(record.pdf.map(record.contains) ?? false) {
+            let pdfOnly = !options.downloadAudio && !options.downloadCover && !options.downloadChapters && !options.downloadAnnotations
             await progress("Downloading PDF", nil)
             do {
                 let extras = try await audible.downloadExtras(book, to: staging, pdf: true, cover: false)
@@ -430,10 +429,12 @@ actor ArchiveWorker {
                     await feedback(.downloaded)
                 } else {
                     let reason = extras.failed["PDF"] ?? .extraUnavailable
+                    if pdfOnly { throw reason }
                     issues.append("Couldn’t download the PDF. \(reason.localizedDescription)")
                 }
             } catch {
                 try Task.checkCancellation()
+                if pdfOnly { throw error }
                 let action = error is ArchiveError ? "save" : "download"
                 issues.append("Couldn’t \(action) the PDF. \(error.localizedDescription)")
             }
@@ -469,19 +470,37 @@ actor ArchiveWorker {
     }
 
     private func downloadSources(
-        _ book: AudibleBook, audible: AudibleClient, to directory: URL,
-        format: AudibleDownloadFormat? = nil, progress: @escaping Progress
+        _ book: AudibleBook, account: String, audible: AudibleClient, root: URL, restart: Bool = false,
+        format: AudibleDownloadFormat? = nil, meter: DownloadMeter?,
+        didRestart: @Sendable () async -> Void = {}, progress: @escaping Progress
     ) async throws -> [Source] {
-        let status = format == .aaxcOnly ? "Downloading AAXC audio for conversion" : "Downloading audio"
-        await progress(status, nil)
-        let download = try await audible.download(book, to: directory, format: format) { fraction in
-            await progress(status, fraction)
+        let permit: UUID? = if let meter {
+            try await meter.pacer.begin(meter.settings, job: meter.job, plus: book.isAudiblePlus == true)
+        } else {
+            nil
         }
-        return download.parts.map {
-            Source(
-                audio: StoredAudio(url: $0.audio, asin: $0.asin), credentials: $0.credentials,
-                originalFilename: $0.originalFilename
-            )
+        do {
+            try Task.checkCancellation()
+            let directory = try IncompleteDownloads.audioFolder(for: book.id, account: account, root: root, restart: restart)
+            if restart { await didRestart() }
+            let status = format == .aaxcOnly ? "Downloading AAXC audio for conversion" : "Downloading audio"
+            await progress(status, nil)
+            let download = try await audible.download(book, to: directory, format: format) { fraction in
+                await progress(status, fraction)
+            }
+            let bytes = download.parts.reduce(Int64(0)) { total, part in
+                total + (part.downloadedBytes ?? Int64(Self.fileSize(part.audio) ?? 0))
+            }
+            try await meter?.pacer.complete(permit, bytes: bytes)
+            return download.parts.map {
+                Source(
+                    audio: StoredAudio(url: $0.audio, asin: $0.asin), credentials: $0.credentials,
+                    originalFilename: $0.originalFilename
+                )
+            }
+        } catch {
+            await meter?.pacer.release(permit)
+            throw error
         }
     }
 
@@ -590,6 +609,20 @@ actor ArchiveWorker {
         return PreparedBookEdit(sources: sources, audibleChapters: chapters, layout: sections)
     }
 
+    func repairBookEdit(
+        _ prepared: PreparedBookEdit, origin: BookEditOrigin, audible: AudibleClient,
+        activationBytes: String?, selection: ChapterRepairSelection
+    ) async throws -> PreparedBookEdit {
+        let inputs = try await editingInputs(
+            prepared.sources, book: origin.book, audible: audible, activationBytes: activationBytes
+        )
+        let sections = try await media.bookEditingLayout(
+            inputs, metadata: Self.bookMetadata(origin.book, chapters: []), chapterRepair: selection,
+            refreshActivation: Self.editingActivation(audible, override: activationBytes)
+        )
+        return PreparedBookEdit(sources: prepared.sources, audibleChapters: [], layout: sections, chapterRepair: selection)
+    }
+
     func previewBookSection(
         _ section: BookEditSection, at position: BookPreviewPosition, source: BookEditSource,
         book: AudibleBook?, audible: AudibleClient,
@@ -620,10 +653,13 @@ actor ArchiveWorker {
         let inputs = try await editingInputs(work.sources, book: work.origin.book, audible: audible, activationBytes: activationBytes)
         var metadata = Self.bookMetadata(work.origin.book, chapters: work.audibleChapters)
         metadata.title = work.origin.title
+        let suffix = if !work.edit.excludedSections.isEmpty { " - Edited" }
+            else if work.edit.chapterRepair != nil { " - Chapters Repaired" }
+            else { "" }
         let converted = try await convertAudio(
             inputs, audible: activationBytes == nil ? audible : nil, title: work.origin.archiveTitle,
             layout: layout, preferences: conversion, metadata: metadata, bookEdit: work.edit,
-            filenameSuffix: work.edit.excludedSections.isEmpty ? "" : " - Edited", progress: progress
+            filenameSuffix: suffix, progress: progress
         )
         guard let first = converted.first else { throw ArchiveError.noAudio }
         record.addConversion(converted, key: recipe)
@@ -886,6 +922,7 @@ actor ArchiveWorker {
                   ids.contains(parts.asin) else { continue }
             var item = inventory[parts.asin, default: ArchiveInventoryItem()]
             item.hadAudio = item.hadAudio || !record.audioGroups.isEmpty
+            item.hasPDF = item.hasPDF || record.pdf.map(record.contains) == true
             for group in record.audioGroups where group.allSatisfy(record.contains) {
                 for path in group where !item.files.contains(path) { item.files.append(path) }
             }
@@ -898,6 +935,47 @@ actor ArchiveWorker {
             inventory[id, default: ArchiveInventoryItem()].hasPartial = true
         }
         return inventory
+    }
+
+    func shelfBook(
+        _ book: AudibleBook, account: String, layout: ArchiveLayout, preferred: [URL] = [],
+        matches: [URL] = [], includePDF: Bool
+    ) -> ShelfBook? {
+        loadRecords()
+        let currentKey = recordKey(layout, account, book.id)
+        let root = layout.root.standardizedFileURL.path
+        let related = records.keys.filter { key in
+            guard let parts = Self.recordParts(key) else { return false }
+            return key != currentKey && parts.root == root && parts.account == account && parts.asin == book.id
+        }.sorted()
+        let candidates = ([currentKey] + related).compactMap { records[$0] }
+        let valid: ([URL]) -> Bool = { urls in
+            !urls.isEmpty && urls.allSatisfy { ShelfBook.supports($0) && Self.isFile($0) }
+        }
+        var selected = candidates.first { record in preferred.contains(where: record.contains) }
+        var audio = valid(preferred) ? preferred : []
+        if audio.isEmpty {
+            for record in candidates {
+                let converted = record.conversions?.keys.sorted().compactMap { record.conversions?[$0] } ?? []
+                let groups = converted + [record.converted.map { [$0] } ?? [], record.originals.map(\.url)]
+                    + (record.history ?? [])
+                if let group = groups.first(where: { valid($0) && $0.allSatisfy(record.contains) }) {
+                    selected = record
+                    audio = group
+                    break
+                }
+            }
+        }
+        if audio.isEmpty, valid(matches) { audio = matches }
+        guard !audio.isEmpty else { return nil }
+        let record = selected ?? candidates.first
+        let covers = (record?.covers?.values.map { $0 } ?? []) + [record?.cover].compactMap { $0 }
+        let cover = covers.filter { record?.contains($0) == true }.max {
+            (Self.fileSize($0) ?? 0) < (Self.fileSize($1) ?? 0)
+        }
+        let pdf = includePDF ? record?.pdf.flatMap { record?.contains($0) == true ? $0 : nil } : nil
+        return ShelfBook(asin: book.asin, title: book.title, authors: book.authors, series: book.series,
+                         audio: audio, cover: cover, pdf: pdf)
     }
 
     func partialFolders(for ids: Set<String>, account: String, root: URL) -> [String: URL] {

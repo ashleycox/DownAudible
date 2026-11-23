@@ -1,5 +1,6 @@
 import AVFoundation
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct BookEditorView: View {
     private enum PreviewRow: Equatable {
@@ -12,6 +13,17 @@ struct BookEditorView: View {
         let row: PreviewRow
         let section: BookEditSection
         let position: BookPreviewPosition
+    }
+
+    private struct RepairRequest: Identifiable {
+        enum Source {
+            case audible
+            case file(URL)
+            case changeAnnouncements(Bool)
+        }
+
+        let id = UUID()
+        let source: Source
     }
 
     let model: WorkspaceModel
@@ -27,12 +39,21 @@ struct BookEditorView: View {
     @State private var preview: PreviewRequest?
     @State private var previewIsPlaying = false
     @State private var previewError: String?
+    @State private var chapterRepair: ChapterRepair?
+    @State private var originalLayout: PreparedBookEdit?
+    @State private var repairRequest: RepairRequest?
+    @State private var repairError: String?
+    @State private var choosingChapterFile = false
+    @State private var separatesAnnouncements = false
 
     #if HELP_SCREENSHOTS
-    init(model: WorkspaceModel, request: BookEditRequest, excludedSections: Set<Int> = []) {
+    private let helpChapterRepair: ChapterRepair?
+
+    init(model: WorkspaceModel, request: BookEditRequest, excludedSections: Set<Int> = [], chapterRepair: ChapterRepair? = nil) {
         self.model = model
         self.request = request
         _excluded = State(initialValue: excludedSections)
+        helpChapterRepair = chapterRepair
     }
     #endif
 
@@ -44,6 +65,7 @@ struct BookEditorView: View {
                 Text("DownAudible keeps the original AAX and other source files intact. Your edits apply only to the converted M4B.")
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                if prepared != nil { chapterRepairControls }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(20)
@@ -53,6 +75,11 @@ struct BookEditorView: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 8) {
+                if let repairError {
+                    Label(repairError, systemImage: "exclamationmark.circle")
+                        .foregroundStyle(.red)
+                        .accessibilityAddTraits(.updatesFrequently)
+                }
                 if let previewError {
                     Label(previewError, systemImage: "exclamationmark.circle")
                         .foregroundStyle(.red)
@@ -81,6 +108,13 @@ struct BookEditorView: View {
         .frame(minWidth: 560, idealWidth: 640, minHeight: 440, idealHeight: 520)
         .task(id: readingAttempt) { await readAudio() }
         .task(id: preview?.id) { await playPreview() }
+        .task(id: repairRequest?.id) {
+            if let repairRequest { await rebuildChapters(from: repairRequest.source) }
+        }
+        .fileImporter(isPresented: $choosingChapterFile, allowedContentTypes: [.json]) { result in
+            do { beginRepair(.file(try result.get())) }
+            catch { repairError = error.localizedDescription }
+        }
         .onChange(of: didDownload) { _, done in
             if done { readingAttempt += 1 }
         }
@@ -90,6 +124,7 @@ struct BookEditorView: View {
     private var content: some View {
         if let prepared {
             sectionList(prepared)
+                .disabled(repairRequest != nil)
         } else if isReading {
             ProgressView("Reading audio…")
         } else if let readError {
@@ -145,7 +180,93 @@ struct BookEditorView: View {
 
     private var canConvert: Bool {
         guard let prepared else { return false }
-        return !model.isTransferring && request.destination.isValid && excluded.count < prepared.layout.sections.count
+        return repairRequest == nil && !model.isTransferring && request.destination.isValid
+            && excluded.count < prepared.layout.sections.count
+    }
+
+    private var chapterRepairControls: some View {
+        HStack(spacing: 12) {
+            Menu("Repair Chapters…") {
+                if request.chapterASIN != nil, request.account?.id == model.activeAccountID, model.signedIn {
+                    Button("Get Chapters from Audible") { beginRepair(.audible) }
+                }
+                Button("Choose Chapter JSON…") { choosingChapterFile = true }
+                if originalLayout != nil {
+                    Divider()
+                    Button("Use Existing Chapters", action: restoreChapters)
+                }
+            }
+            .appHelp("Rebuild chapter markers from Audible metadata for this recording.")
+
+            if chapterRepair?.separatedChapters != nil {
+                Toggle("Separate Audible Intro and Outro", isOn: Binding(
+                    get: { separatesAnnouncements },
+                    set: { beginRepair(.changeAnnouncements($0)) }
+                ))
+                .toggleStyle(.checkbox)
+            }
+            if repairRequest != nil {
+                ProgressView("Checking chapter data…").controlSize(.small)
+            } else if chapterRepair != nil {
+                Text("Rebuilt Chapters").foregroundStyle(.secondary)
+            }
+        }
+        .disabled(repairRequest != nil)
+        .padding(.top, 4)
+    }
+
+    private func beginRepair(_ source: RepairRequest.Source) {
+        guard prepared != nil, repairRequest == nil else { return }
+        repairError = nil
+        preview = nil
+        repairRequest = RepairRequest(source: source)
+    }
+
+    private func rebuildChapters(from source: RepairRequest.Source) async {
+        defer { repairRequest = nil }
+        guard let prepared else { return }
+        do {
+            let data: ChapterRepair
+            let separate: Bool
+            switch source {
+            case .audible:
+                data = try await model.chapterRepair(for: request, file: nil)
+                separate = false
+            case .file(let url):
+                data = try await model.chapterRepair(for: request, file: url)
+                separate = false
+            case .changeAnnouncements(let value):
+                guard let chapterRepair else { return }
+                data = chapterRepair
+                separate = value
+            }
+            try await applyRepair(data, to: prepared, separate: separate)
+        } catch {
+            if !Task.isCancelled { repairError = error.localizedDescription }
+        }
+    }
+
+    private func applyRepair(_ data: ChapterRepair, to base: PreparedBookEdit, separate: Bool) async throws {
+        let repaired = try await model.repairBookEdit(
+            base, request: request, selection: data.selection(separatingAnnouncements: separate)
+        )
+        try Task.checkCancellation()
+        originalLayout = originalLayout ?? base
+        prepared = repaired
+        chapterRepair = data
+        separatesAnnouncements = separate
+        excluded = []
+    }
+
+    private func restoreChapters() {
+        guard let originalLayout else { return }
+        prepared = originalLayout
+        self.originalLayout = nil
+        chapterRepair = nil
+        repairError = nil
+        separatesAnnouncements = false
+        preview = nil
+        excluded = []
     }
 
     private func sectionList(_ prepared: PreparedBookEdit) -> some View {
@@ -260,6 +381,11 @@ struct BookEditorView: View {
             let result = try await model.prepareBookEdit(request)
             try Task.checkCancellation()
             prepared = result
+            #if HELP_SCREENSHOTS
+            if let result, let helpChapterRepair {
+                try await applyRepair(helpChapterRepair, to: result, separate: true)
+            }
+            #endif
         } catch {
             if !Task.isCancelled { readError = error.localizedDescription }
         }

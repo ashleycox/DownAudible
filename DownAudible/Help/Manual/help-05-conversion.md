@@ -20,7 +20,7 @@ Choose **Audiobooks > Conversion Options…** to open Convert Files and change c
 
 Select rows and click **Convert Selected**. With nothing selected, **Convert All** starts the whole list. With Convert Files open, the **Audiobooks** menu includes actions for the file list. Control-click a row for **Convert**, **Show in Finder**, **Add to Apple Books**, or **Copy Path**.
 
-![Contextual menu for a demo audio file with conversion, Finder, and Apple Books commands.](images/converter-file-menu.png)
+![Contextual menu for a demo audio file with conversion, Export CUE Sheet, Finder, and Apple Books commands.](images/converter-file-menu.png)
 
 Click a row’s **Remove from List** button to remove that file. To remove one or more selected files, press Backspace or Forward Delete while the list has keyboard focus. Choose **Clear List** to empty the list. The source files stay on disk.
 
@@ -43,6 +43,16 @@ Click **Preview Start** or **Preview End** to hear up to 10 seconds from either 
 ![Edit Book for Demo Book 3 with Opening Credits unchecked and preview buttons for each section.](images/book-editor.png)
 
 The editor saves one M4B and uses your audio and book details options from **Settings > Conversion**.
+
+## Repair chapter markers
+
+Open **Edit Book…** with the complete audio for one edition. Choose **Repair Chapters… > Get Chapters from Audible** when the editor has an Audible title and you’re signed in. To work offline with a chapter file saved by DownAudible or Audible CLI, choose **Repair Chapters… > Choose Chapter JSON…**. Choose chapter data for the edition you’re editing. DownAudible checks the runtime and any available Audible title identifiers before applying it.
+
+When the chapter data gives timings for Audible’s spoken intro or outro, turn on **Separate Audible Intro and Outro** to give each available announcement its own chapter. Use **Preview Start** or **Preview End** to check the new markers. Loading a different chapter map or changing the intro and outro option checks all sections again. To go back to the audio’s original chapters, choose **Repair Chapters… > Use Existing Chapters**.
+
+![Edit Book showing the rebuilt chapters, with Separate Audible Intro and Outro checked and the two announcements listed separately.](images/book-chapter-repair.png)
+
+Choose **Convert to M4B** to save a separate copy with the rebuilt chapter markers. With every section checked, DownAudible keeps the complete audio and adds ` - Chapters Repaired` to the filename. Uncheck a section only when you want to omit its audio.
 
 ## Move converted AAX files to Trash
 
@@ -88,6 +98,10 @@ If a player requires mono or a particular sample rate, set **Channels** and **Sa
 
 [Audible Tools](help-08-audible-tools.md)
 
+## Export a CUE sheet
+
+In **Convert Files**, select one saved M4B, M4A, or MP3 with embedded chapter markers and choose **Export CUE Sheet…** from its context menu. This command also appears in **Library** when you select one title with a single saved playable file. DownAudible saves a `.cue` file beside the audio file using the chapter start positions in that file. Keep the two files together and use a player that supports CUE sheets and your audio format. Each sheet can hold up to 99 chapter indexes.
+
 ## Keyboard Shortcuts
 
 | Command | Shortcut |
@@ -109,6 +123,6 @@ If a player requires mono or a particular sample rate, set **Channels** and **Sa
 
 ## Support DownAudible
 
-If this app has helped you, a donation is one way to support my work. There’s no pressure or hard sell. DownAudible is and always will be free.
+If you like DownAudible, a donation is one way to support my work. There’s no pressure or hard sell. DownAudible is and always will be free.
 
 [Make a donation](https://www.paypal.com/donate/?hosted_button_id=WMLX4PLED9PRE)

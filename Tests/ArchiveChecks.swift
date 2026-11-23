@@ -39,6 +39,9 @@ struct ArchiveChecks {
         try checkIncompleteStaging(in: workspace)
         try await checkAudibleHelperExit(in: workspace)
         try await checkCredentialSignIn(in: workspace)
+        try await checkAndroidSignIn(in: workspace)
+        try await checkListeningExports(in: workspace)
+        try await checkReadingExports(in: workspace)
         try await checkMediaErrors(in: workspace)
 
         let previous = Data(#"{"convert":false,"keepOriginal":true,"downloadPDF":false,"downloadCover":true}"#.utf8)
@@ -46,6 +49,8 @@ struct ArchiveChecks {
         check(options.savesOriginal && options.downloadAudio && options.downloadCover && !options.downloadChapters)
         checkBundleIdentifierMigration()
         try checkLibraryBrowsing()
+        try await checkLibraryCatalog(in: workspace)
+        try await checkCompanionPDFOnly(in: workspace)
         checkTransferNotifications()
         checkTransferFeedback()
 
@@ -62,6 +67,7 @@ struct ArchiveChecks {
         check(try String(contentsOf: csv, encoding: .utf8).contains("\"One, \"\"Two\"\"\""))
         try await checkMultilineExport(in: workspace)
         try await checkTransferQueue(in: workspace, book: book, file: file, layout: layout)
+        try await checkDownloadPacing(in: workspace)
         try await checkReplacingMissingAudio(in: workspace, book: book)
 
         var preferences = TransferPreferences()
@@ -115,6 +121,37 @@ struct ArchiveChecks {
         let test = TransferNotificationContent.test()
         check(test.sound == nil && TransferNotificationContent.transferIDs(in: test.userInfo).isEmpty)
         check(TransferNotificationContent.transferIDs(in: [:]).isEmpty)
+    }
+
+    private static func checkDownloadPacing(in workspace: URL) async throws {
+        let file = workspace.appending(path: "DownloadUsage.json")
+        let pacer = DownloadPacer(file: file)
+        let start = Date(timeIntervalSince1970: 1_000_000)
+        let first = UUID()
+        let owned = try await pacer.begin(.init(), job: UUID(), plus: false, now: start)
+        try await pacer.complete(owned, bytes: 800_000, now: start)
+        let plus = try await pacer.begin(.init(), job: first, plus: true, now: start.addingTimeInterval(30))
+        try await pacer.complete(plus, bytes: 1_200_000, now: start.addingTimeInterval(30))
+        let retry = try await pacer.begin(.init(), job: first, plus: true, now: start.addingTimeInterval(60))
+        try await pacer.complete(retry, bytes: 0, now: start.addingTimeInterval(60))
+
+        let reopened = DownloadPacer(file: file)
+        let model = DownloadPacing(scope: .plus, unit: .books, limit: 1)
+        do {
+            _ = try await reopened.begin(model, job: UUID(), plus: true, now: start.addingTimeInterval(90))
+            fatalError("An already used Plus allowance admitted another title")
+        } catch let deferred as DownloadPacer.Deferred {
+            check(deferred.until == start.addingTimeInterval(86_430))
+        }
+        let exempt = try await reopened.begin(model, job: UUID(), plus: false, now: start.addingTimeInterval(90))
+        await reopened.release(exempt)
+        do {
+            _ = try await reopened.begin(DownloadPacing(scope: .all, unit: .megabytes, limit: 1), job: UUID(),
+                                         plus: false, now: start.addingTimeInterval(90))
+            fatalError("The data allowance should delay a new request")
+        } catch let deferred as DownloadPacer.Deferred {
+            check(deferred.until == start.addingTimeInterval(86_430))
+        }
     }
 
     private static func checkTransferFeedback() {
@@ -767,6 +804,13 @@ struct ArchiveChecks {
                         '{"startMilliseconds":250,"durationMilliseconds":750,"title":"Catalogue Preface"},' \
                         '{"startMilliseconds":1000,"durationMilliseconds":1000,"title":"Catalogue Chapter"}'
                     printf '%s\n' ']}' ;;
+                chapterRepair)
+                    printf '%s' '{"result":{"asin":"B000000008","runtimeMilliseconds":1975,' \
+                      '"chapters":[{"startMilliseconds":0,"durationMilliseconds":1975,"title":"Rebuilt Chapter"}],' \
+                      '"separatedChapters":[{"startMilliseconds":0,"durationMilliseconds":250,"title":"Audible Intro"},' \
+                      '{"startMilliseconds":250,"durationMilliseconds":1500,"title":"Rebuilt Chapter"},' \
+                      '{"startMilliseconds":1750,"durationMilliseconds":225,"title":"Audible Outro"}]}}'
+                    printf '\n' ;;
                 download)
                     printf 'Original audio fixture' > "$(field directory)/Book.mp3"
                     printf '%s\n' '{"result":{"parts":[{"file":"Book.mp3","asin":"B000000008","credentials":{}}]}}' ;;
@@ -842,6 +886,25 @@ struct ArchiveChecks {
         check(originalEdit?.sources.map(\.audio.url) == downloaded.original)
         check(originalEdit?.audibleChapters.count == 3)
         check(originalEdit?.layout.sections.map(\.range) == [0..<250, 250..<1_000, 1_000..<2_000])
+
+        guard let matchedEdit else { throw ArchiveError.noAudio }
+        let repair = try await client.chapterRepair(asin: book.asin, file: nil)
+        let repaired = try await archive.repairBookEdit(
+            matchedEdit, origin: origin, audible: client, activationBytes: nil,
+            selection: repair.selection(separatingAnnouncements: true)
+        )
+        check(repaired.layout.sections.map(\.title) == ["Audible Intro", "Rebuilt Chapter", "Audible Outro"])
+        check(repaired.layout.sections.map(\.range) == [0..<250, 250..<1_750, 1_750..<2_000])
+        let work = BookEditWork(
+            origin: origin, sources: repaired.sources, audibleChapters: [],
+            edit: BookEdit(layout: repaired.layout, excludedSections: [], chapterRepair: repaired.chapterRepair)
+        )
+        let output = try await archive.convertEditedBook(
+            work, audible: client, layout: layout, activationBytes: nil, conversion: ConversionPreferences(),
+            requestID: UUID(), feedback: { _ in }, progress: { _, _ in }
+        )
+        check(output.url.lastPathComponent.hasSuffix(" - Chapters Repaired.m4b"))
+        check(try String(contentsOf: matched, encoding: .utf8) == "Matched audio fixture")
     }
 
     private static func checkDownloadAfterActivationFailure(in workspace: URL) async throws {
@@ -1087,6 +1150,121 @@ struct ArchiveChecks {
         check(try !client.hasSession())
     }
 
+    private static func checkAndroidSignIn(in workspace: URL) async throws {
+        let helper = workspace.appending(path: "android-sign-in-helper")
+        let script = #"""
+        #!/bin/sh
+        IFS= read -r request || exit 1
+        field() { printf '%s' "$request" | /usr/bin/plutil -extract "$1" raw -o - -; }
+        case "$(field command)" in
+            importAuthFile)
+                echo '{"result":{"session":"standard-fixture","marketplace":"uk"}}' ;;
+            beginSignIn)
+                [ "$(field deviceProfile)" = android ] && [ "$(field marketplace)" = uk ] || exit 1
+                echo '{"result":{"url":"https://example.test/sign-in","serial":"fixture","verifier":"proof","registrationContext":"opaque"}}' ;;
+            completeSignIn)
+                [ "$(field deviceProfile)" = android ] && [ "$(field marketplace)" = uk ] &&
+                [ "$(field registrationContext)" = opaque ] && [ "$(field previousSession)" = standard-fixture ] || exit 1
+                case "$(field redirect)" in
+                    */different) echo '{"error":"accountMismatch"}' ;;
+                    */same) echo '{"result":{"session":"android-fixture"}}' ;;
+                    *) exit 1 ;;
+                esac ;;
+            activation)
+                case "$(field session)" in
+                    standard-fixture) echo '{"result":{"session":"standard-fixture","activationBytes":"12345678"}}' ;;
+                    android-fixture) echo '{"result":{"session":"android-fixture","activationBytes":"87654321"}}' ;;
+                    *) exit 1 ;;
+                esac ;;
+            provisionWidevine)
+                [ "$(field session)" = standard-fixture ] || exit 1
+                echo '{"result":{"cdm":"Zml4dHVyZQ=="}}' ;;
+            *) exit 1 ;;
+        esac
+        """#
+        try script.write(to: helper, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: helper.path)
+        let original = AudibleClient(profileID: UUID(), helperURL: helper)
+        let separate = original.scoped(to: UUID())
+        defer {
+            try? original.signOut()
+            try? separate.signOut()
+        }
+        _ = try await original.importAuthFile(workspace.appending(path: "fixture.json"), password: nil)
+        try await original.provisionWidevine()
+        let first = try await original.beginSignIn(marketplace: .unitedKingdom, deviceProfile: .android)
+        do {
+            try await original.completeSignIn(first, redirectURL: URL(string: "https://example.test/different")!, matching: original)
+            fatalError("A different Audible account should not replace the previous sign-in.")
+        } catch AudibleError.accountMismatch {}
+        let afterMismatch = try await original.activationBytes()
+        check(afterMismatch == "12345678")
+
+        let same = URL(string: "https://example.test/same")!
+        let second = try await separate.beginSignIn(marketplace: .unitedKingdom, deviceProfile: .android)
+        try await separate.completeSignIn(second, redirectURL: same, matching: original)
+        let separateActivation = try await separate.activationBytes()
+        let originalActivation = try await original.activationBytes()
+        check(separateActivation == "87654321" && originalActivation == "12345678")
+        try await separate.provisionWidevine()
+
+        let third = try await original.beginSignIn(marketplace: .unitedKingdom, deviceProfile: .android)
+        try await original.completeSignIn(third, redirectURL: same, matching: original)
+        let replacementActivation = try await original.activationBytes()
+        check(replacementActivation == "87654321")
+        try await original.provisionWidevine()
+    }
+
+    private static func checkListeningExports(in workspace: URL) async throws {
+        let month = AudibleListeningMonth(month: "2026-10", durationMilliseconds: 183_605_123)
+        check(month.year == 2026 && month.monthNumber == 10)
+        for format in LibraryExportFormat.allCases {
+            let output = workspace.appending(path: "listening-stats." + format.rawValue)
+            try await AudibleListeningMonth.export([month], as: format, to: output)
+            let bytes = try Data(contentsOf: output)
+            switch format {
+            case .json:
+                let data = try JSONDecoder().decode([String: [String: Int64]].self, from: bytes)
+                check(data[month.month] == ["hours": 51, "minutes": 0, "seconds": 5, "durationMilliseconds": 183_605_123])
+            case .csv, .tsv:
+                let text = String(decoding: bytes, as: UTF8.self)
+                check(text.contains("Duration (Milliseconds)") && text.contains("183605123") && text.contains(month.month))
+            case .xlsx:
+                check(bytes.starts(with: [0x50, 0x4b, 0x03, 0x04]))
+                check(bytes.range(of: Data("<v>183605123</v>".utf8)) != nil)
+            }
+        }
+    }
+
+    private static func checkReadingExports(in workspace: URL) async throws {
+        let original = Data(#"{"asin":"B000000001","title":"A Café, After Dark","authors":["Ada Moss"],"narrators":[],"isbn":"978-0-306-40615-7","dateAdded":"2025-03-09T18:00:00Z","isFinished":true,"hasPDF":false,"isDownloadable":true}"#.utf8)
+        let book = try JSONDecoder().decode(AudibleBook.self, from: original)
+        let started = try JSONDecoder().decode(AudibleBook.self, from: Data(#"{"asin":"B000000002","title":"Author's Notes","authors":[],"narrators":[],"isbn":"978-0-306-40615-8","percentComplete":32,"hasPDF":false,"isDownloadable":true}"#.utf8))
+        let unresolved = try matchingBook("Unmatched copy", asin: "INVALID")
+        let export = GoodreadsExport([book, started, book, unresolved])
+        check(export.entries.map(\.status) == ["Ready", "Ready", "Duplicate edition", "No valid ISBN or ASIN"] && export.readyCount == 2)
+        let goodreads = workspace.appending(path: "Goodreads.csv")
+        try await export.write(to: goodreads)
+        let csv = try String(contentsOf: goodreads, encoding: .utf8)
+        check(csv == "Title,Author,ISBN,ASIN,Exclusive Shelf,Date Added,Date Read\r\n"
+            + "\"A Café, After Dark\",Ada Moss,9780306406157,,read,2025/03/09,\r\n"
+            + "Author's Notes,,,B000000002,currently-reading,,\r\n")
+
+        let note = AudibleAnnotation(kind: .note, positionMilliseconds: 183_605_123,
+                                     text: "=A1\n<café> and \"a quote\"")
+        let bookmark = AudibleAnnotation(kind: .bookmark, positionMilliseconds: nil, text: "")
+        check(note.timestamp == "51:00:05" && note.matches("CAFÉ") && !bookmark.matches("CAFÉ"))
+        let notes = workspace.appending(path: "annotations.csv")
+        try await AudibleAnnotation.export([note, bookmark], book: book, as: .csv, to: notes)
+        let text = try String(contentsOf: notes, encoding: .utf8)
+        check(text == "Type,Position,Text\r\nNote,51:00:05,\"'=A1\n<café> and \"\"a quote\"\"\"\r\nBookmark,,\r\n")
+        let markdown = workspace.appending(path: "annotations.md")
+        try await AudibleAnnotation.export([note, bookmark], book: book, as: .markdown, to: markdown)
+        let contents = try String(contentsOf: markdown, encoding: .utf8)
+        check(contents.contains("## Note · 51:00:05\n\n    =A1\n    <café> and \"a quote\""))
+        check(contents.contains("## Bookmark · Unknown position"))
+    }
+
     private static func checkLibraryBrowsing() throws {
         let previous = Data(#"{"id":"1D25B1E2-F9AC-4D68-9043-E5468118B94A","name":"First","marketplace":"uk","usesLegacySession":false}"#.utf8)
         var first = try JSONDecoder().decode(SavedAudibleAccount.self, from: previous)
@@ -1139,6 +1317,101 @@ struct ArchiveChecks {
             check(LibraryAudioCategory(status: .matched, isDownloadable: isDownloadable) == .matched)
         }
         check(LibraryAudioCategory(status: .unavailable, isDownloadable: false) == .unavailable)
+    }
+
+    private static func checkLibraryCatalog(in workspace: URL) async throws {
+        let account = UUID()
+        let other = UUID()
+        let plus = try JSONDecoder().decode(AudibleBook.self, from: Data(
+            #"{"asin":"B000000001","title":"Plus Book","authors":[],"narrators":[],"hasPDF":false,"isDownloadable":true,"isAudiblePlus":true,"isIndefinite":false,"percentComplete":47}"#.utf8
+        ))
+        let retained = try JSONDecoder().decode(AudibleBook.self, from: Data(
+            #"{"asin":"B000000002","title":"Owned Book","authors":[],"narrators":[],"hasPDF":true,"isDownloadable":true,"isAudiblePlus":false,"isIndefinite":true,"isFinished":true}"#.utf8
+        ))
+        var organization = LibraryOrganization()
+        organization.changeTags(["To Listen", "to listen", " "], for: [plus.asin], account: account, adding: true)
+        var filters = LibraryFilters()
+        filters.access = .plus
+        filters.listening = .started
+        filters.tag = "To Listen"
+        let view = SavedLibraryView(name: "Next", search: "Book", sort: LibrarySort(field: .author), filters: filters)
+        organization.save(view, for: account)
+        let restored = try JSONDecoder().decode(LibraryOrganization.self, from: JSONEncoder().encode(organization))
+        check(restored.tags(for: account) == ["To Listen"] && restored.savedViews(for: other).isEmpty)
+        let views = restored.savedViews(for: account)
+        check(views.first?.filters == filters && views.first?.search == "Book" && views.first?.sort.field == .author)
+        let filtered = filters.rows(in: [plus, retained], search: "Book", statusFor: { _ in .notDownloaded },
+                                    tagsFor: { restored.tags(for: $0.asin, account: account) })
+        check(filtered.map(\.id) == [plus.id] && LibraryFilters.Access.status(for: retained) == .owned)
+        organization.changeTags(["TO LISTEN"], for: [plus.asin], account: account, adding: false)
+        check(organization.tags(for: account).isEmpty)
+
+        let query = LibraryCatalog.Query(AudibleAPIOptions())
+        let old = LibraryCatalog(books: [plus], query: query, previous: nil)
+        let refreshed = Date(timeIntervalSince1970: 100)
+        let updated = LibraryCatalog(books: [retained], query: query, previous: old, refreshed: refreshed)
+        let store = LibraryCatalogStore(file: workspace.appending(path: "LibraryCatalog.json"))
+        try await store.save([account: updated])
+        let cached = try await store.load()
+        check(cached[account]?.changes?.added == [retained] && cached[account]?.changes?.removed == [plus])
+        check(cached[account]?.refreshed == refreshed && cached[other] == nil)
+        check(AudibleRetryDelay(error: AudibleError.rateLimited, now: refreshed)?.until.timeIntervalSince(refreshed) == 900)
+        check(AudibleRetryDelay(error: AudibleError.licenseThrottled, now: refreshed)?.until.timeIntervalSince(refreshed) == 3_600)
+        check(AudibleRetryDelay(error: AudibleError.licenseEntitlement, now: refreshed) == nil)
+    }
+
+    private static func checkCompanionPDFOnly(in workspace: URL) async throws {
+        let suite = "org.downaudible.library-pdf-check.\(UUID().uuidString)"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let helper = workspace.appending(path: "pdf-fixture")
+        try Data(#"""
+        #!/usr/bin/python3
+        import json, pathlib, sys
+        request = json.loads(sys.stdin.readline())
+        if request['command'] == 'beginSignIn':
+            result = {'url': 'https://example.com/sign-in', 'serial': 'fixture', 'verifier': 'fixture'}
+        elif request['command'] == 'completeSignIn':
+            result = {'session': '{}'}
+        else:
+            assert request['command'] == 'extras' and request['pdf'] and not request['cover']
+            if request['asin'] == 'B000000009':
+                result = {'pdf': None, 'covers': [], 'failed': {'PDF': 'rateLimited'}}
+            else:
+                pathlib.Path(request['directory'], 'fixture.pdf').write_bytes(b'%PDF-1.4\nfixture')
+                result = {'pdf': 'fixture.pdf', 'covers': [], 'failed': {}}
+        print(json.dumps({'result': result}))
+        """#.utf8).write(to: helper)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: helper.path)
+        let client = AudibleClient(helperURL: helper).scoped(to: UUID())
+        defer { try? client.signOut() }
+        let signIn = try await client.beginSignIn(marketplace: .unitedKingdom)
+        try await client.completeSignIn(signIn, redirectURL: URL(string: "https://example.com/finish")!)
+        let book = try JSONDecoder().decode(AudibleBook.self, from: Data(
+            #"{"asin":"B000000001","title":"PDF Book","authors":[],"narrators":[],"hasPDF":true,"isDownloadable":true}"#.utf8
+        ))
+        let throttled = try JSONDecoder().decode(AudibleBook.self, from: Data(
+            #"{"asin":"B000000009","title":"Later","authors":[],"narrators":[],"hasPDF":true,"isDownloadable":true}"#.utf8
+        ))
+        let archive = ArchiveWorker(media: MediaTools(toolDirectory: nil), defaultsSuite: suite)
+        let layout = ArchiveLayout(root: workspace.appending(path: "PDF Archive"), template: ArchiveLayout.defaultTemplate)
+        let existing = workspace.appending(path: "PDF Book.mp3")
+        let audio = Data("Previously saved audiobook".utf8)
+        try audio.write(to: existing)
+        let saved = try await archive.download(book, account: "pdf", audible: client, matches: [existing], layout: layout,
+                                               options: DownloadOptions(), existingFiles: .saveNewCopy, progress: { _, _ in })
+        var options = DownloadOptions()
+        options.downloadAudio = false
+        options.downloadPDF = true
+        _ = try await archive.download(book, account: "pdf", audible: client, matches: [], layout: layout,
+                                       options: options, existingFiles: .reuse, progress: { _, _ in })
+        let inventory = await archive.inventory(for: [book.asin], account: "pdf", layout: layout)
+        check(inventory[book.asin]?.hasPDF == true && inventory[book.asin]?.files == [saved.url])
+        check(try Data(contentsOf: saved.url) == audio)
+        do {
+            _ = try await archive.download(throttled, account: "pdf", audible: client, matches: [], layout: layout,
+                                           options: options, existingFiles: .reuse, progress: { _, _ in })
+            fatalError("Expected a typed companion PDF limit")
+        } catch AudibleError.rateLimited {}
     }
 
     private static func checkBundleIdentifierMigration() {

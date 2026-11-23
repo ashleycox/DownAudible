@@ -13,6 +13,9 @@ struct LibraryView: View {
     @State private var search = ""
     @State private var showingSearch = false
     @State private var editingFilter: LibraryFilters.Field?
+    @State private var organizationSheet: LibraryOrganizationSheet?
+    @State private var showingCatalogChanges = false
+    @State private var showingAllAccounts = false
     @State private var showingSignIn = false
     @State private var addingAccount = false
     @State private var showingImport = false
@@ -35,9 +38,9 @@ struct LibraryView: View {
                         .buttonStyle(.borderedProminent)
                         .disabled(!model.canSwitchAccounts)
                         .appHelp("Connect your Audible account to load its library.")
-                    Button("Import from Audible CLI…") { showingImport = true }
+                    Button("Import Account…") { showingImport = true }
                         .disabled(!model.canSwitchAccounts)
-                        .appHelp("Use a saved Audible CLI login to connect your account.")
+                        .appHelp("Use a saved Audible CLI or OpenAudible sign-in to connect your account.")
                 }
             }
         }
@@ -53,16 +56,31 @@ struct LibraryView: View {
             AudibleSignInView(model: model, addingAccount: addingAccount)
         }
         .sheet(isPresented: $showingImport) {
-            AudibleCLIImportView(model: model)
+            AudibleAccountImportView(model: model)
         }
         .sheet(item: $editingFilter) { field in
             LibraryTextFilterView(field: field, value: filters[field], suggestions: suggestions(for: field)) { filters[field] = $0 }
         }
+        .sheet(item: $organizationSheet) { sheet in
+            switch sheet {
+            case .save(let account):
+                LibrarySaveViewSheet(saved: model.libraryOrganization.savedViews(for: account)) { name in
+                    let view = SavedLibraryView(name: name, search: search, sort: sort, filters: filters)
+                    model.libraryOrganization.save(view, for: account)
+                }
+            case .manage(let account):
+                LibraryManageViewsSheet(model: model, account: account)
+            case .tags(let account, let books):
+                LibraryTagsSheet(model: model, account: account, books: books)
+            }
+        }
+        .sheet(isPresented: $showingCatalogChanges) { LibraryChangesView(snapshot: model.currentCatalog) }
+        .sheet(isPresented: $showingAllAccounts) { AllAccountsLibraryView(model: model) }
         .toolbar {
             if model.signedIn {
                 ToolbarItemGroup {
                     Button("Refresh Library", systemImage: "arrow.clockwise", action: refresh)
-                        .disabled(model.isRefreshing || model.isScanning)
+                        .disabled(!model.canRefreshLibrary)
                         .appHelp("Fetch the latest information from your Audible library.")
 
                     Menu(LibraryBrowseMenu.sort.rawValue, systemImage: "arrow.up.arrow.down") {
@@ -74,6 +92,7 @@ struct LibraryView: View {
 
                     Menu {
                         LibraryFilterItems(actions: browseActions)
+                        Menu("Saved Views") { LibrarySavedViewItems(actions: browseActions) }
                     } label: {
                         Label(LibraryBrowseMenu.filter.rawValue, systemImage: filters.isEmpty
                               ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
@@ -98,13 +117,17 @@ struct LibraryView: View {
                             .disabled(model.isScanning || model.isRefreshing || model.isCheckingFiles)
                             .appHelp("Check that audio files in the archive and matched folder are still present.")
                         ArchiveVerificationButton(model: model)
+                        Button("Library Changes…") { showingCatalogChanges = true }
+                            .disabled(model.currentCatalog == nil)
+                        Button("Refresh All Accounts") { Task { await model.refreshAllAccounts() } }
+                            .disabled(!model.canSwitchAccounts)
                         LibraryVisibleExportMenu(model: model, books: visibleBooks)
                         Divider()
                         LibraryFolderActions(model: model)
                         let selection = model.selectedAudiobooks
                         if !selection.isEmpty {
                             Divider()
-                            LibraryBookActions(model: model, books: selection)
+                            LibraryBookActions(model: model, books: selection, editTags: editTags)
                         }
                         if model.activeAudibleClient != nil {
                             Divider()
@@ -131,13 +154,39 @@ struct LibraryView: View {
             },
             signIn: { openSignIn(adding: model.signedIn) },
             importAccount: { showingImport = true },
+            editTags: editTags,
+            showChanges: { showingCatalogChanges = true },
+            showAllAccounts: { showingAllAccounts = true },
             visibleBooks: visibleBooks
         ))
         .focusedSceneValue(\.libraryBrowseActions, model.signedIn ? browseActions : nil)
     }
 
     private var browseActions: LibraryBrowseActions {
-        LibraryBrowseActions(field: $sort.field, direction: $sort.direction, filters: $filters) { editingFilter = $0 }
+        let account = model.activeAccountID
+        return LibraryBrowseActions(
+            field: $sort.field, direction: $sort.direction, filters: $filters,
+            savedViews: account.map { model.libraryOrganization.savedViews(for: $0) } ?? [],
+            tags: account.map { model.libraryOrganization.tags(for: $0) } ?? [],
+            applyView: { view in
+                search = view.search
+                showingSearch = !view.search.isEmpty
+                sort = view.sort
+                filters = view.filters
+            },
+            saveView: { if let account { organizationSheet = .save(account) } },
+            manageViews: { if let account { organizationSheet = .manage(account) } },
+            editFilter: { editingFilter = $0 }
+        )
+    }
+
+    private func editTags(_ books: [AudibleBook]) {
+        if let account = model.activeAccountID, !books.isEmpty { organizationSheet = .tags(account, books) }
+    }
+
+    private func tags(for book: AudibleBook) -> [String] {
+        guard let account = model.activeAccountID else { return [] }
+        return model.libraryOrganization.tags(for: book.asin, account: account)
     }
 
     private var tableSortOrder: Binding<[KeyPathComparator<LibraryRow>]> {
@@ -153,6 +202,9 @@ struct LibraryView: View {
 
     private var accountMenu: some View {
         Menu {
+            Button("All Accounts…") { showingAllAccounts = true }
+                .appHelp("Find audiobooks across your saved account libraries.")
+            Divider()
             ForEach(model.accounts) { account in
                 Button {
                     Task { await model.switchAccount(to: account) }
@@ -170,9 +222,9 @@ struct LibraryView: View {
             Button("Add Account…") { openSignIn(adding: true) }
                 .disabled(!model.canSwitchAccounts)
                 .appHelp("Connect another Audible account.")
-            Button("Import from Audible CLI…") { showingImport = true }
+            Button("Import Account…") { showingImport = true }
                 .disabled(!model.canSwitchAccounts)
-                .appHelp("Connect another account using a saved Audible CLI login.")
+                .appHelp("Connect another account using a saved Audible CLI or OpenAudible sign-in.")
             SettingsLink { Label("Settings…", systemImage: "gearshape") }
                 .appHelp("Open DownAudible settings.")
             if model.signedIn {
@@ -191,6 +243,11 @@ struct LibraryView: View {
 
     private func library(rows: [LibraryRow]) -> some View {
         VStack(spacing: 0) {
+            if model.currentCatalog != nil || model.currentCatalogFailure != nil || model.currentCatalogRetry != nil {
+                LibraryCatalogStatusView(catalog: model.currentCatalog, failure: model.currentCatalogFailure,
+                                         retry: model.currentCatalogRetry)
+                Divider()
+            }
             if !filters.isEmpty {
                 activeFilters
                 Divider()
@@ -249,7 +306,7 @@ struct LibraryView: View {
                     }
                     LibraryRestartAction(model: model, books: books)
                     Divider()
-                    LibraryBookActions(model: model, books: books)
+                    LibraryBookActions(model: model, books: books, editTags: editTags)
                 }
             }
             .overlay {
@@ -372,14 +429,16 @@ struct LibraryView: View {
 
     private var visibleRows: [LibraryRow] {
         let rows = filters.rows(
-            in: model.books, search: search, statusFor: model.downloadStatus, missingFiles: model.missingOutputFiles
+            in: model.books, search: search, statusFor: model.downloadStatus, missingFiles: model.missingOutputFiles,
+            tagsFor: tags
         )
         return sort.field.sorted(rows, direction: sort.direction)
     }
 
     private func suggestions(for field: LibraryFilters.Field) -> LibraryFilterSuggestions? {
         guard showsFilterSuggestions else { return nil }
-        let rows = filters.rows(in: model.books, search: search, excluding: field, statusFor: model.downloadStatus)
+        let rows = filters.rows(in: model.books, search: search, excluding: field,
+                                statusFor: model.downloadStatus, tagsFor: tags)
         return LibraryFilterSuggestions(field: field, books: rows.map(\.book))
     }
 

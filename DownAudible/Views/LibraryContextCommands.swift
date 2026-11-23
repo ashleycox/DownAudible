@@ -5,6 +5,9 @@ struct LibraryWorkspaceActions {
     let find: () -> Void
     let signIn: () -> Void
     let importAccount: () -> Void
+    let editTags: ([AudibleBook]) -> Void
+    let showChanges: () -> Void
+    let showAllAccounts: () -> Void
     let visibleBooks: [AudibleBook]
 }
 
@@ -22,6 +25,10 @@ struct LibraryContextCommands: View {
                 .keyboardShortcut("f")
                 .disabled(!model.signedIn)
                 .appHelp("Focus the search field for finding books in this library.")
+            Button("Library Changes…", action: actions.showChanges)
+                .disabled(model.currentCatalog == nil)
+            Button("Refresh All Accounts") { Task { await model.refreshAllAccounts() } }
+                .disabled(!model.canSwitchAccounts)
 
             Menu("File Matching") {
                 LibraryFolderActions(model: model, inMenuBar: true)
@@ -30,20 +37,22 @@ struct LibraryContextCommands: View {
             .appHelp("Find existing audiobook files and match them to your library.")
 
             Menu("Selected Books") {
-                LibraryBookActions(model: model, books: model.selectedAudiobooks, inMenuBar: true)
+                LibraryBookActions(model: model, books: model.selectedAudiobooks, inMenuBar: true, editTags: actions.editTags)
             }
             .disabled(model.selectedBooks.isEmpty)
             .appHelp("Show actions for the currently selected audiobooks.")
 
             Menu("Audible Accounts") {
+                Button("All Accounts…", action: actions.showAllAccounts)
+                    .disabled(model.accounts.isEmpty)
                 Button(model.signedIn ? "Add Account…" : "Sign In…", action: actions.signIn)
                     .keyboardShortcut("a", modifiers: [.control, .shift])
                     .disabled(!model.canSwitchAccounts)
                     .appHelp("Start connecting an Audible account.")
-                Button("Import from Audible CLI…", action: actions.importAccount)
+                Button("Import Account…", action: actions.importAccount)
                     .keyboardShortcut("i", modifiers: [.control, .shift])
                     .disabled(!model.canSwitchAccounts)
-                    .appHelp("Connect an Audible account using a saved CLI login.")
+                    .appHelp("Connect an account using a saved Audible CLI or OpenAudible sign-in.")
                 Button("Sign Out", action: model.signOut)
                     .keyboardShortcut("q", modifiers: [.control, .shift])
                     .disabled(!model.signedIn || !model.canRemoveAccounts)
@@ -77,6 +86,8 @@ struct LibraryVisibleExportMenu: View {
                 }
                 .appHelp("Save the audiobooks shown in the table as \(format.rawValue.uppercased()).")
             }
+            Button("Goodreads CSV…") { model.goodreadsExport = GoodreadsExport(books) }
+                .appHelp("Review the visible titles and save a CSV for Goodreads.")
         }
         .disabled(books.isEmpty || model.isRefreshing)
         .appHelp("Export the titles shown in the library table in their current order.")
@@ -130,18 +141,42 @@ struct LibraryBookActions: View {
     let model: WorkspaceModel
     let books: [AudibleBook]
     var inMenuBar = false
+    var editTags: (([AudibleBook]) -> Void)?
 
     var body: some View {
         if books.count == 1, let book = books.first {
+            Button("Check This Title…") { model.requestTitleCheck(book) }
+                .disabled(!model.signedIn)
+                .appHelp("Check the audio formats and availability Audible reports for this title.")
+            Button("View Annotations…", systemImage: "bookmark") { model.requestAnnotations(book) }
+                .disabled(!model.signedIn)
+                .appHelp("Browse, search, and export the bookmarks and notes Audible supplies for this book.")
             Button("Edit Book…", systemImage: "scissors") { model.editBook(book) }
                 .disabled(!model.canOpenBookEditor)
                 .appHelp("Preview parts or chapters and choose which sections to include in a new M4B.")
             matchActions(book)
         }
+        if model.shelfSettings.destination != nil, !books.isEmpty {
+            Button("Upload to Audiobookshelf…") { Task { await model.queueShelfBooks(books) } }
+                .appHelp("Send saved playable audio for the selected titles to your Audiobookshelf server.")
+        }
+        if let editTags, !books.isEmpty {
+            Button("Tags…", systemImage: "tag") { editTags(books) }
+                .appHelp("Add or remove personal tags for the selected books.")
+        }
+        if !books.isEmpty {
+            Button("Export Selected to Goodreads…") { model.goodreadsExport = GoodreadsExport(books) }
+                .appHelp("Review the selected titles and save a CSV for Goodreads.")
+        }
         let files = Array(Set(books.flatMap { model.localAudio(for: $0) + model.exportedFiles[$0.id, default: []] }))
             .filter { FileManager.default.fileExists(atPath: $0.path) }
             .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
         if inMenuBar || !files.isEmpty {
+            let cueFiles = files.filter(CueSheet.supports)
+            if books.count == 1, cueFiles.count == 1, let url = cueFiles.first {
+                Button("Export CUE Sheet…") { Task { await model.exportCue(for: url) } }
+                    .appHelp("Save a chapter sheet beside this audiobook file.")
+            }
             Button("Show Audio in Finder") { NSWorkspace.shared.activateFileViewerSelecting(files) }
                 .keyboardShortcut(shortcut("s"))
                 .disabled(files.isEmpty)

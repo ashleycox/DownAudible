@@ -6,17 +6,17 @@ DownAudible keeps a copy of your Audible books on your Mac. You can save the aud
 
 ![Setup welcome page with Continue and Skip Setup.](images/setup-welcome.png)
 
-DownAudible opens setup on first launch. Click **Continue** to step through General, Accounts, Library, Downloads, Conversion, Files, Jobs, and Notifications. On the Accounts page, choose **Add Account…**, then choose **Web Browser** or **Enter Credentials** to sign in. Choose **Import from Audible CLI…** to use a saved profile or authentication file. For local conversion, choose **Continue Without an Account**.
+DownAudible opens setup on first launch. Click **Continue** to step through General, Accounts, Library, Downloads, Conversion, Files, Jobs, Notifications, and Audiobookshelf. On the Accounts page, choose **Add Account…**, then choose **Web Browser** or **Enter Credentials** to sign in. Choose **Import Account…** to use a saved profile or authentication file. For local conversion, choose **Continue Without an Account**. For optional Android sign-in, see [Widevine Stereo](help-13-widevine.md).
 
-![Accounts page in setup with Add Account, Import from Audible CLI, and Continue Without an Account.](images/setup-accounts.png)
+![Accounts page in setup with Add Account, Import Account, and Continue Without an Account.](images/setup-accounts.png)
 
 Use **Continue** to move to the next page or **Back** to return to a setting. Setup saves your choices as you edit them. **Skip Setup** on the welcome page and **Skip Configuration** on a settings page take you to the finish with your current settings. At the end, choose **Open DownAudible** to return to the app or **View DownAudible Help** to finish with this guide open.
 
 ![Setup finish page with Open DownAudible and View DownAudible Help.](images/setup-finish.png)
 
-From the menu bar, choose **Help > DownAudible Help** to read this guide any time, or **Help > Set Up DownAudible…** to run setup again with your saved settings.
+From the menu bar, choose **Help > DownAudible Help** to read this guide any time. The **Help** menu also opens **Widevine Stereo** and **Audiobookshelf** directly. Choose **Help > Set Up DownAudible…** to run setup again with your saved settings.
 
-![Help menu with DownAudible Help, Keyboard Shortcuts, Settings Reference, and Set Up DownAudible.](images/help-menu.png)
+![Help menu with DownAudible Help, Widevine Stereo, Audiobookshelf, and Set Up DownAudible.](images/help-menu.png)
 
 ## Software updates
 
@@ -24,13 +24,13 @@ Choose **DownAudible > Check for Updates…** to check GitHub for a new release.
 
 Turn on **Check for updates automatically** in General to let DownAudible check while it’s open. If you haven’t chosen a setting, DownAudible asks the next time you launch it after setup. Turn on **Install updates automatically** to download updates in the background and install them when you quit.
 
-![General settings with automatic update options, Check for Updates, and Show Help Tags.](images/settings-general.png)
+![General settings with automatic update options, Check for Updates, and Show Tooltips.](images/settings-general.png)
 
 ## Your first download
 
-1. Open **Library**. If you need to connect an account, click **Sign In…** and choose the marketplace where you bought your books. You can also choose **Import from Audible CLI…**.
+1. Open **Library**. If you need to connect an account, click **Sign In…** and choose the marketplace where you bought your books. You can also choose **Import Account…**.
 
-   ![Signed-out Library with Sign In and Import from Audible CLI.](images/library-signed-out.png)
+   ![Signed-out Library with Sign In and Import Account.](images/library-signed-out.png)
 
 2. Select a book in the table. From the **Download** toolbar menu, choose **Download Selected As…**.
 
@@ -83,6 +83,6 @@ Choose **DownAudible > Settings** to change the app’s defaults.
 
 ## Support DownAudible
 
-If this app has helped you, a donation is one way to support my work. There’s no pressure or hard sell. DownAudible is and always will be free.
+If you like DownAudible, a donation is one way to support my work. There’s no pressure or hard sell. DownAudible is and always will be free.
 
 [Make a donation](https://www.paypal.com/donate/?hosted_button_id=WMLX4PLED9PRE)

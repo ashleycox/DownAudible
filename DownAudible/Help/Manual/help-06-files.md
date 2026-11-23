@@ -12,7 +12,7 @@ Choose **Audiobooks > Library > Verify and Repair Archive…** or use the same c
 
 The report lists titles with missing, incomplete, or unreadable audio. Select titles in the report or choose **Select All Repairable**. Choose **Repair Selected** or **Repair … Titles** to add just those titles to **Downloads**. Repair resumes valid partial audio when possible and uses your current audio download and conversion settings. DownAudible saves replacement audio alongside existing files. If Audible no longer offers a title for download, the report shows it as unavailable.
 
-![Verify and Repair Archive report for demo titles with repair selection controls.](images/archive-verification.png)
+![Verify and Repair Archive reports missing or incomplete audio for three of six demo titles and offers Repair Selected.](images/archive-verification.png)
 
 ## Templates
 
@@ -24,6 +24,8 @@ Use a slash to start another folder. With the default template `{format}/{author
 Tokens in braces are replaced with information about the book or file. For example, `{format}` becomes `aax`, `aaxc`, `m4b`, or another actual format, and `{asin}` is Audible’s book identifier. Use `{author}` and `{title}` to arrange an archive for browsing. When a label contains characters that cannot go into a Mac filename, DownAudible substitutes safe ones.
 
 Use `{title}`, `{subtitle}`, `{author}`, `{authors}`, `{narrator}`, `{narrators}`, `{series}`, `{seriesNumber}`, `{publisher}`, `{year}`, `{language}`, `{asin}`, and `{format}` for book and format details. The chapter tokens `{chapter}` and `{chapterNumber}` apply to the separate chapter files. Use `{partNumber}` for a multipart original. A field may be blank if the book lacks that detail. The preview shows the result for a sample title. Click **Restore Default Template** to return the folder template to `{format}/{author}/{title}`.
+
+Use `{?field|text}` to include text only when that field has a value. For example, `{?series|{series} - }{title}` includes the series and the dash when the book belongs to a series. A template such as `{author}/{?series|{series}}/{title}` skips the series folder when the series is blank. A segment can contain tokens and literal text. Keep each segment within one folder component and outside other conditional segments.
 
 ![Files settings showing Folder template and Restore Default Template.](images/files-template.png)
 
@@ -69,6 +71,6 @@ Choose **Settings > Downloads > Apple Books** to send newly saved files to the B
 
 ## Support DownAudible
 
-If this app has helped you, a donation is one way to support my work. There’s no pressure or hard sell. DownAudible is and always will be free.
+If you like DownAudible, a donation is one way to support my work. There’s no pressure or hard sell. DownAudible is and always will be free.
 
 [Make a donation](https://www.paypal.com/donate/?hosted_button_id=WMLX4PLED9PRE)

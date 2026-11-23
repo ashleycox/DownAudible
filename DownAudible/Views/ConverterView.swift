@@ -245,6 +245,10 @@ private struct ConversionActions: View {
 
         if inMenuBar || !urls.isEmpty {
             Divider()
+            if urls.count == 1, let url = urls.first, CueSheet.supports(url) {
+                Button("Export CUE Sheet…") { Task { await context.model.exportCue(for: url) } }
+                    .appHelp("Save a chapter sheet beside the selected audio file.")
+            }
             Button("Show in Finder", systemImage: "folder") { NSWorkspace.shared.activateFileViewerSelecting(urls) }
                 .keyboardShortcut(shortcut("s"))
                 .appHelp("Select the source files in Finder.")

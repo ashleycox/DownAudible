@@ -95,7 +95,7 @@ struct DownAudibleApp: App {
                         Task { await model.refresh() }
                     }
                     .keyboardShortcut("r")
-                    .disabled(!model.signedIn || model.isRefreshing || model.isScanning)
+                    .disabled(!model.canRefreshLibrary)
                     .appHelp("Fetch the latest library information from Audible.")
                     Button("Recheck Saved Files") {
                         show(.library)
@@ -119,6 +119,8 @@ struct DownAudibleApp: App {
                         Button("TSV…") { Task { await model.exportLibrary(.tsv) } }
                             .keyboardShortcut("t", modifiers: [.command, .control])
                             .appHelp("Export book information to a tab-separated file.")
+                        Button("Excel (.xlsx)…") { Task { await model.exportLibrary(.xlsx) } }
+                            .appHelp("Export book information as an Excel workbook.")
                     }
                     .disabled(!model.signedIn || model.isRefreshing)
                     .appHelp("Save the loaded library as a structured list.")
@@ -131,6 +133,9 @@ struct DownAudibleApp: App {
                     .keyboardShortcut("5")
                     .disabled(model.activeAudibleClient == nil)
                     .appHelp("Open the Wish List, catalogue search, and account tools.")
+                Button("Listening Statistics…") { openWindow(id: "listening-statistics") }
+                    .disabled(model.signedInCatalogAccounts.isEmpty)
+                    .appHelp("Filter and export monthly listening time for this Audible account.")
                 WishlistExportCommands()
 
                 Divider()
@@ -171,6 +176,8 @@ struct DownAudibleApp: App {
                 .disabled(!model.canClearCompleted)
                 .appHelp("Remove successful jobs from Downloads and keep their saved files.")
                 TransferSelectionCommands()
+                Divider()
+                Button("Audiobookshelf Uploads…") { model.showShelfUploads = true }
             }
             CommandGroup(after: .windowArrangement) {
                 Button("Show DownAudible") { openWindow(id: "workspace") }
@@ -186,6 +193,10 @@ struct DownAudibleApp: App {
                     .appHelp("Open the keyboard shortcuts chapter of the manual.")
                 Button("Settings Reference") { openHelp(anchor: DownAudibleHelp.settings) }
                     .appHelp("Open the manual chapter explaining every setting.")
+                Button("Widevine Stereo") { openHelp(anchor: DownAudibleHelp.widevine) }
+                    .appHelp("Find out when to use Widevine stereo and how to set it up.")
+                Button("Audiobookshelf") { openHelp(anchor: DownAudibleHelp.audiobookshelf) }
+                    .appHelp("Learn how to connect Audiobookshelf and upload books.")
                 Button("Set Up DownAudible…") {
                     openWindow(id: "workspace")
                     showingOnboarding = true
@@ -224,6 +235,12 @@ struct DownAudibleApp: App {
             }
         }
         .defaultSize(width: 840, height: 560)
+        .commandsRemoved()
+
+        Window("Listening Statistics", id: "listening-statistics") {
+            ListeningStatisticsWindow(model: model)
+        }
+        .defaultSize(width: 760, height: 480)
         .commandsRemoved()
 
         Window("DownAudible Help", id: "help") {
@@ -338,6 +355,21 @@ struct WorkspaceView: View {
         }
         .sheet(isPresented: $model.showingArchiveVerification) {
             ArchiveVerificationView(model: model)
+        }
+        .sheet(item: $model.titleCheckRequest) { request in
+            TitleInsightsView(request: request)
+        }
+        .sheet(item: $model.annotationsRequest) { request in
+            AudibleAnnotationsView(request: request)
+        }
+        .sheet(item: $model.goodreadsExport) { export in
+            GoodreadsExportView(export: export)
+        }
+        .sheet(item: $model.qualityAudit) { scope in
+            QualityAuditView(scope: scope) { try model.queueQualityUpgrades($0, from: scope) }
+        }
+        .sheet(isPresented: $model.showShelfUploads) {
+            ShelfUploadsView(model: model)
         }
         .sheet(isPresented: $showingOnboarding, onDismiss: openSetupManualIfRequested) {
             OnboardingView(model: model, softwareUpdater: softwareUpdater) { destination in

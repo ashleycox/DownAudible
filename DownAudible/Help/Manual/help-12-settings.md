@@ -4,31 +4,36 @@ Choose **DownAudible > Settings…** or press Command–Comma. Open this chapter
 
 ## General
 
-![General settings with automatic update options, Check for Updates, and Show Help Tags.](images/settings-general.png)
+![General settings with automatic update options, Check for Updates, and Show Tooltips.](images/settings-general.png)
 
 | Setting | What it does |
 | --- | --- |
 | Check for updates automatically | Checks for new DownAudible releases in the background. Your choice at the update prompt sets the initial value. |
 | Install updates automatically | Downloads updates in the background and installs them when you quit DownAudible. Turn on automatic checking to use it. |
 | Check for Updates… | Looks for a new release now. |
-| Show Help Tags | Shows short descriptions when you point to supported controls. On by default. |
+| Show Tooltips | Shows short descriptions when you point to supported controls. On by default. |
 
 ## Accounts
 
-![Accounts settings with demo accounts and actions for the selected profile.](images/settings-accounts.png)
+![Accounts settings with Demo Account selected and buttons to reconnect as Android or add a separate Android profile.](images/settings-accounts.png)
 
 | Setting | What it does |
 | --- | --- |
 | Audible Accounts | Lists your saved accounts, their marketplaces and the status of the active account. Select an account to see its available actions. |
-| Add Account… | Adds an Audible account. Choose its marketplace and sign-in method (**Web Browser** or **Enter Credentials**). You can also give the profile a name. |
-| Import from Audible CLI… | Adds a profile from an Audible CLI configuration or authentication file. Enter the file’s password if it is encrypted. |
+| Add Account… | Adds an Audible account. Choose its marketplace and sign-in method (**Web Browser**, **Enter Credentials** or **Android Browser (Advanced)**). You can also give the profile a name. |
+| Import Account… | Adds a profile from Audible CLI, a saved auth file, or an OpenAudible credentials file. Enter the auth file’s password if it is encrypted. |
 | Sign In… | Reconnects the active profile after signing out. |
 | Sign Out | Clears the saved sign-in for the active profile. You can sign in to the profile again later. |
 | Switch to This Account | Makes the selected profile active and opens its library when signed in. |
 | Rename… | Changes how the selected account is named within DownAudible. |
+| Widevine Stereo… | Shows the provisioning provider’s details and lets you enable or turn off Widevine stereo for the selected account. Off by default. |
+| Reconnect as Android (Advanced)… | Signs in again as Android while keeping the selected profile, its file matches and saved transfers. |
+| Add Separate Android Profile (Advanced)… | Signs in again to the same Audible account and creates a separate DownAudible profile. |
 | Remove Account… | Removes the selected profile and its saved sign-in and file matches from DownAudible. The app asks for confirmation. |
 
 See [Accounts and Sign-In](help-02-accounts.md) for sign-in methods, legacy usernames and Audible CLI imports.
+
+See [Widevine Stereo](help-13-widevine.md) for Android sign-in, provider details and download requirements.
 
 ## Library
 
@@ -38,6 +43,7 @@ See [Accounts and Sign-In](help-02-accounts.md) for sign-in methods, legacy user
 | --- | --- |
 | Podcasts | **Hide podcasts** is the default. Choose **Show podcast series** to list series or **Show individual episodes** to list the episodes. |
 | Library titles per request | Sets the maximum number of titles DownAudible asks Audible for in one library request. The default is 100. Enter a value from 10 through 1,000. |
+| Refresh libraries automatically | Checks signed-in accounts every 30 minutes while DownAudible is open and transfers are idle. Off by default. |
 | Purchased on or after | Enables an inclusive start date for loading the library. Turn it off to omit the start date. Off by default. |
 | Purchased on or before | Enables an inclusive end date for loading the library. Turn it off to omit the end date. Off by default. |
 | Refresh Library | Reloads the active library after you change the podcast, request size or date settings. |
@@ -49,14 +55,14 @@ The purchase date settings affect which titles the library loads. Use **Filter L
 
 ## Downloads
 
-![Downloads settings with audio, companion files, conversion, and Apple Books options.](images/settings-downloads.png)
+![Downloads settings highlighting Download format, Download quality, and Prefer whole-book downloads above the additional file options.](images/settings-downloads.png)
 
 ![Downloads settings showing companion file options and cover sizes.](images/download-extras.png)
 
 | Setting | What it does |
 | --- | --- |
 | Download audio | Fetches audio when you download a title. On by default. Turn it off to request companion files only. |
-| Download format | **AAX with fallback** is the default. It tries AAX, then AAXC if needed. **AAX only** requires AAX. **AAXC** requests AAXC directly. |
+| Download format | **AAX with fallback** is the default. It tries Widevine stereo first when enabled for the account, then AAX and AAXC as available. **AAX only** requires AAX. **AAXC** requests AAXC directly. |
 | Download quality | Requests **Best**, **High** or **Normal** from Audible. The default is **Best**. The available audio depends on the title and marketplace. |
 | Prefer whole-book downloads | Tries to download the whole book in one file before requesting parts. On by default. Turn it off to request individual files for titles Audible lists as multipart. |
 | Convert to M4B, M4A or MP3 | Creates a playable copy in the format selected in **Conversion**. Off by default. The label shows your chosen file format. |
@@ -126,6 +132,7 @@ See [Naming and Folders](help-06-files.md) for the full list of tokens and file 
 | Simultaneous conversions | Sets how many conversions can run at once, from 1 through 12. The default is 2. |
 | Request timeout | Limits how long DownAudible waits for a request, from 0 through 600 seconds. The default is 45 seconds. Enter 0 to turn off the timeout. |
 | Bandwidth per download (kbps) | Caps each running download’s bandwidth. **Unlimited** is the default. Choose a preset or **Custom** and enter **Custom bandwidth (kbps)**. |
+| Daily download limit | **Off** by default. Choose **All titles** or **Audible Plus only** to limit downloads by book count or audio data over a rolling 24 hours. |
 | Continue after a job fails | Lets other jobs run after a failure. On by default. Turn it off to stop waiting jobs after an error. |
 | Show detailed transfer progress | Shows progress for active transfers and the queue. On by default. |
 | Log | **Off** is the default. Choose **Errors only** to record failures or **Transfer results** to record outcomes. |
@@ -152,3 +159,14 @@ See [Downloads and Recovery](help-07-transfers.md) for queue controls.
 | Play Sound | Plays the selected sound again. |
 
 DownAudible groups each outcome into one alert when an active queue or retry finishes. Click a transfer notification to go to its jobs in **Downloads**. If enabled, **Queue Finished** plays after the outcome sounds, including for retries that only send saved audio to Books. Cancelled queues and restored history are quiet.
+
+## Audiobookshelf
+
+| Setting | What it does |
+| --- | --- |
+| Server URL and API token | Connect to your Audiobookshelf server. DownAudible saves the token in Keychain. Choose **Forget Saved Token** to disconnect. |
+| Book library and Server folder | Choose where DownAudible sends your audio files. |
+| Upload new downloads automatically | Adds newly saved playable audio to the upload queue. Off by default. |
+| Include companion PDFs | Sends a saved companion PDF with the audio when available. Off by default. |
+
+See [Audiobookshelf](help-14-audiobookshelf.md) for connecting a server, uploading saved books and retrying failed uploads.

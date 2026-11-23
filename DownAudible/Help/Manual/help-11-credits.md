@@ -16,7 +16,7 @@ Ashley Cox develops DownAudible. The source is available under version 3 of the 
 
 DownAudible uses Sparkle to check for and install updates. Sparkle is available under the MIT licence. The app includes Sparkle’s licence and third-party notices.
 
-![General settings with automatic update options, Check for Updates, and Show Help Tags.](images/settings-general.png)
+![General settings with automatic update options, Check for Updates, and Show Tooltips.](images/settings-general.png)
 
 [Sparkle project](https://sparkle-project.org/)
 
@@ -53,6 +53,10 @@ The bundled helper uses mkb79’s Audible library to communicate with Audible an
 [Audible CLI source](https://github.com/mkb79/audible-cli)
 
 [Audible CLI 0.6.0 licence](https://github.com/mkb79/audible-cli/blob/v0.6.0/LICENSE)
+
+The optional Widevine stereo download feature uses pywidevine, which is licensed under the GNU General Public License, version 3.
+
+[pywidevine source and licence](https://github.com/devine-dl/pywidevine/tree/v1.9.0)
 
 The helper runs on Python 3.13, sends requests with HTTPX and parses HTML with Beautiful Soup. The dependency lock lists the versions of its direct and transitive Python packages.
 
@@ -115,6 +119,6 @@ Libation and AAX Audio Converter informed DownAudible’s download and conversio
 
 ## Support DownAudible
 
-If this app has helped you, a donation is one way to support my work. There’s no pressure or hard sell. DownAudible is and always will be free.
+If you like DownAudible, a donation is one way to support my work. There’s no pressure or hard sell. DownAudible is and always will be free.
 
 [Make a donation](https://www.paypal.com/donate/?hosted_button_id=WMLX4PLED9PRE)

@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 
 extension MediaTools {
     @concurrent func bookEditingLayout(
-        _ inputs: [MediaInput], metadata: MediaMetadata = .init(),
+        _ inputs: [MediaInput], metadata: MediaMetadata = .init(), chapterRepair: ChapterRepairSelection? = nil,
         refreshActivation: (@Sendable () async throws -> String)? = nil
     ) async throws -> BookEditingLayout {
         guard let first = inputs.first else { throw MediaError.noInput }
@@ -17,7 +17,8 @@ extension MediaTools {
         )
         let probes = sources.map(\.probe)
         let title = MediaTags.values(probes: probes, source: first.url, metadata: metadata, format: .m4b)["title"]
-        let chapters = MediaTags.markers(probes: probes, supplied: metadata.chapters, title: title)
+        let chapters = try chapterRepair?.markers(for: probes)
+            ?? MediaTags.markers(probes: probes, supplied: metadata.chapters, title: title)
         return try BookEditingLayout(probes: probes, chapters: chapters)
     }
 
@@ -69,14 +70,16 @@ extension MediaTools {
         let tags = MediaTags.values(
             probes: probes, source: firstInput.url, metadata: metadata, format: preferences.format
         )
-        let sourceChapters = MediaTags.markers(probes: probes, supplied: metadata.chapters, title: tags["title"])
+        let sourceChapters = try bookEdit?.chapterRepair?.markers(for: probes)
+            ?? MediaTags.markers(probes: probes, supplied: metadata.chapters, title: tags["title"])
         let selection: BookEditSelection?
-        if let bookEdit, !bookEdit.excludedSections.isEmpty {
+        if let bookEdit, bookEdit.chapterRepair != nil || !bookEdit.excludedSections.isEmpty {
             guard preferences.format == .m4b, preferences.chapterMode == .single else {
                 throw BookEditError.unsupportedConversion
             }
             let layout = try BookEditingLayout(probes: probes, chapters: sourceChapters)
-            selection = try BookEditSelection(edit: bookEdit, layout: layout)
+            guard bookEdit.layout == layout else { throw BookEditError.sourceChanged }
+            selection = bookEdit.excludedSections.isEmpty ? nil : try BookEditSelection(edit: bookEdit, layout: layout)
         } else {
             selection = nil
         }

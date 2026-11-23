@@ -36,6 +36,11 @@ elif command == "catalog":
     result = [demo_book(number) for number in range(10, 14)]
 elif command == "inspectAuthFile":
     result = True
+elif command == "inspectOpenAudible":
+    result = [
+        {"name": "Demo Account", "marketplace": "uk", "isDefault": True, "checkpoint": "1" * 64},
+        {"name": "Demo Account 2", "marketplace": "us", "isDefault": False, "checkpoint": "2" * 64},
+    ]
 else:
     sys.exit(1)
 print(json.dumps({"result": result}), flush=True)

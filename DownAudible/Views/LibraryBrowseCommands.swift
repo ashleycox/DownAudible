@@ -6,6 +6,11 @@ struct LibraryBrowseActions {
     let field: Binding<LibrarySortField>
     let direction: Binding<LibrarySortDirection>
     let filters: Binding<LibraryFilters>
+    let savedViews: [SavedLibraryView]
+    let tags: [String]
+    let applyView: (SavedLibraryView) -> Void
+    let saveView: () -> Void
+    let manageViews: () -> Void
     let editFilter: (LibraryFilters.Field) -> Void
 }
 
@@ -23,6 +28,7 @@ struct LibraryBrowseCommands: View {
                 .appHelp("Choose the field and direction used to order the library.")
             Menu(LibraryBrowseMenu.filter.rawValue) { LibraryFilterItems(actions: actions) }
                 .appHelp("Choose what to show in the library without changing its contents.")
+            Menu("Saved Views") { LibrarySavedViewItems(actions: actions) }
             Button("Open Sort Menu", action: LibraryBrowseMenu.sort.open)
                 .keyboardShortcut("s", modifiers: [.command, .shift])
                 .appHelp("Open the menu for choosing a library sort field and direction.")
@@ -114,12 +120,52 @@ struct LibraryFilterItems: View {
         }
         .appHelp("Show books with a particular download status.")
 
+        Menu("Access") {
+            Picker("Access", selection: actions.filters.access) {
+                Text("Any Access").tag(nil as LibraryFilters.Access?)
+                ForEach(LibraryFilters.Access.allCases) { value in Text(value.rawValue).tag(Optional(value)) }
+            }
+            .pickerStyle(.inline)
+        }
+
+        Menu("Listening Progress") {
+            Picker("Listening Progress", selection: actions.filters.listening) {
+                Text("Any Progress").tag(nil as LibraryFilters.Listening?)
+                ForEach(LibraryFilters.Listening.allCases) { value in Text(value.rawValue).tag(Optional(value)) }
+            }
+            .pickerStyle(.inline)
+        }
+
+        if !actions.tags.isEmpty {
+            Menu("Tags") {
+                Picker("Tag", selection: actions.filters.tag) {
+                    Text("Any Tag").tag(nil as String?)
+                    ForEach(actions.tags, id: \.self) { tag in Text(tag).tag(Optional(tag)) }
+                }
+                .pickerStyle(.inline)
+            }
+        }
+
         Divider()
 
         Button("Clear Filters") { actions.filters.wrappedValue = LibraryFilters() }
             .keyboardShortcut("f", modifiers: [.command, .option, .shift])
             .disabled(actions.filters.wrappedValue.isEmpty)
             .appHelp("Remove all filters from the library table.")
+    }
+}
+
+struct LibrarySavedViewItems: View {
+    let actions: LibraryBrowseActions
+
+    var body: some View {
+        ForEach(actions.savedViews) { view in
+            Button(view.name) { actions.applyView(view) }
+        }
+        if !actions.savedViews.isEmpty { Divider() }
+        Button("Save Current View…", action: actions.saveView)
+        Button("Manage Saved Views…", action: actions.manageViews)
+            .disabled(actions.savedViews.isEmpty)
     }
 }
 

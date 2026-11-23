@@ -64,6 +64,7 @@ enum NamingLetterCase: String, Codable, CaseIterable, Identifiable, Sendable {
 struct ArchiveLayout: Codable, Equatable, Sendable {
     static let defaultTemplate = "{format}/{author}/{title}"
     private static let invalidFilenameCharacters = CharacterSet(charactersIn: "/:\\").union(.controlCharacters)
+    private static let optionalSegment = #"\{\?([A-Za-z][A-Za-z0-9]*)\|((?:[^{}]|\{[A-Za-z][A-Za-z0-9]*\})+)\}"#
     static let tokens = [
         "title", "subtitle", "author", "authors", "narrator", "narrators", "series", "seriesNumber",
         "publisher", "year", "language", "asin", "format", "chapter", "chapterNumber", "partNumber"
@@ -92,7 +93,11 @@ struct ArchiveLayout: Codable, Equatable, Sendable {
         let resolvedRoot = root.standardizedFileURL.resolvingSymlinksInPath()
         var directory = resolvedRoot
         for component in template.split(separator: "/") {
-            let value = Self.render(component, values: values)
+            let active = Self.activeSegments(component) { field in
+                !values[field, default: ""].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
+            guard !active.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+            let value = Self.render(active[...], values: values)
             let next = directory.appending(component: Self.filename(naming.apply(to: value)), directoryHint: .isDirectory)
             let resolved = next.resolvingSymlinksInPath()
             guard resolved.pathComponents.starts(with: resolvedRoot.pathComponents) else {
@@ -113,6 +118,9 @@ struct ArchiveLayout: Codable, Equatable, Sendable {
     ) -> String {
         let values = substitutions(book, format: format, chapterNumber: chapterNumber, chapterTitle: chapterTitle, partNumber: partNumber)
         let pattern = chapterNumber == nil ? naming.filenameTemplate : naming.chapterFilenameTemplate
+        let active = Self.activeSegments(pattern[...]) { field in
+            !values[field, default: ""].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
         var stem: String
         if pattern.isEmpty {
             stem = filenameStyle.name(for: book)
@@ -121,9 +129,9 @@ struct ArchiveLayout: Codable, Equatable, Sendable {
                 if let chapterTitle, !chapterTitle.isEmpty { stem += " - \(chapterTitle)" }
             }
         } else {
-            stem = Self.render(pattern[...], values: values)
+            stem = Self.render(active[...], values: values)
         }
-        if let partNumber, !pattern.contains("{partNumber}") { stem += " - Part \(partNumber)" }
+        if let partNumber, !active.contains("{partNumber}") { stem += " - Part \(partNumber)" }
         let cleaned = naming.apply(to: stem)
         return cleaned.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? naming.apply(to: filenameStyle.name(for: book))
@@ -163,8 +171,27 @@ struct ArchiveLayout: Codable, Equatable, Sendable {
               component.utf8.count <= 240, component.rangeOfCharacter(from: .controlCharacters) == nil else {
             return false
         }
-        let literal = tokens.reduce(component) { text, token in text.replacingOccurrences(of: "{\(token)}", with: "") }
-        return !literal.contains("{") && !literal.contains("}")
+        var validFields = true
+        let unwrapped = activeSegments(component[...]) { token in
+            validFields = validFields && tokens.contains(token)
+            return true
+        }
+        let literal = tokens.reduce(unwrapped) { text, token in text.replacingOccurrences(of: "{\(token)}", with: "") }
+        return validFields && !literal.contains("{") && !literal.contains("}")
+    }
+
+    private static func activeSegments(_ pattern: Substring, include: (String) -> Bool) -> String {
+        var remaining = pattern
+        var result = ""
+        while let match = remaining.range(of: optionalSegment, options: .regularExpression) {
+            result += remaining[..<match.lowerBound]
+            let segment = remaining[match].dropFirst(2).dropLast()
+            if let separator = segment.firstIndex(of: "|"), include(String(segment[..<separator])) {
+                result += segment[segment.index(after: separator)...]
+            }
+            remaining = remaining[match.upperBound...]
+        }
+        return result + remaining
     }
 
     private static func render(_ pattern: Substring, values: [String: String]) -> String {

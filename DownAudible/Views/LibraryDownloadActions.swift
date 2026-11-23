@@ -69,6 +69,12 @@ struct LibraryDownloadActions: View {
             .keyboardShortcut(shortcut("d", modifiers: [.command, .option, .shift]))
             .appHelp("Review the destination and file options before downloading missing audio.")
             .disabled(!model.canDownloadMissing)
+        Button("Download Missing PDFs…") {
+            activateLibrary?()
+            Task { await model.downloadMissingPDFs() }
+        }
+        .disabled(!model.canRequestDownloads || !model.books.contains(where: \.hasPDF))
+        .appHelp("Check the archive for missing companion PDFs and download them without replacing audio.")
         Divider()
         Button("Download Entire Library") {
             activateLibrary?()

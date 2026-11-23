@@ -34,7 +34,7 @@ Reconnect the disk, make sure the destination still points to the archive, and c
 
 Check the error in **Downloads**. If a request times out, check your connection or increase **Request timeout** in **Settings > Jobs**. **Retry** uses any valid partial file. Audible can supply a different file or a server that does not support byte ranges, in which case DownAudible starts from zero. Use **Restart Download…** from the transfer’s contextual menu to discard the partial audio and start again.
 
-![Failed demo download and its error in Downloads.](images/transfer-error.png)
+![Download error for Demo Book 4 reads “The download arrived incomplete.”](images/transfer-error.png)
 
 ![Contextual menu for a failed demo transfer with Retry, Restart Download, Show Partial Files, and Copy Error.](images/transfer-recovery-menu.png)
 
@@ -80,6 +80,6 @@ Choose **Window > Show DownAudible** to bring the main window back. Use the **Vi
 
 ## Support DownAudible
 
-If this app has helped you, a donation is one way to support my work. There’s no pressure or hard sell. DownAudible is and always will be free.
+If you like DownAudible, a donation is one way to support my work. There’s no pressure or hard sell. DownAudible is and always will be free.
 
 [Make a donation](https://www.paypal.com/donate/?hosted_button_id=WMLX4PLED9PRE)

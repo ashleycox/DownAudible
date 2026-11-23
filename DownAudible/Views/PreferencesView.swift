@@ -2,7 +2,7 @@ import SwiftUI
 
 // The order and content here apply to both Settings and the setup assistant.
 enum SettingsPane: CaseIterable, Identifiable {
-    case general, accounts, library, downloads, conversion, files, jobs, notifications
+    case general, accounts, library, downloads, conversion, files, jobs, notifications, audiobookshelf
 
     var id: Self { self }
 
@@ -16,6 +16,7 @@ enum SettingsPane: CaseIterable, Identifiable {
         case .files: "Files"
         case .jobs: "Jobs"
         case .notifications: "Notifications"
+        case .audiobookshelf: "Audiobookshelf"
         }
     }
 
@@ -29,6 +30,7 @@ enum SettingsPane: CaseIterable, Identifiable {
         case .files: "folder"
         case .jobs: "list.bullet.rectangle"
         case .notifications: "bell"
+        case .audiobookshelf: "server.rack"
         }
     }
 
@@ -42,6 +44,7 @@ enum SettingsPane: CaseIterable, Identifiable {
         case .files: "Choose where and how DownAudible names saved files."
         case .jobs: "Set transfer speed, progress, and logging."
         case .notifications: "Check macOS permissions and choose how DownAudible announces transfer results."
+        case .audiobookshelf: "Connect your Audiobookshelf server and choose what to upload."
         }
     }
 
@@ -68,6 +71,8 @@ enum SettingsPane: CaseIterable, Identifiable {
             JobPreferencesView(model: model)
         case .notifications:
             TransferFeedbackSettingsView(model: model)
+        case .audiobookshelf:
+            AudiobookshelfPreferencesView(model: model)
         }
     }
 }
@@ -111,6 +116,8 @@ private struct LibraryPreferencesView: View {
                     }
                 }
                 .appHelp("Hide podcasts or include podcast series or individual episodes when loading the library.")
+                Toggle("Refresh libraries automatically", isOn: $model.backgroundLibraryRefresh)
+                    .appHelp("Check signed-in accounts every 30 minutes while DownAudible is open and transfers are idle.")
                 NumberPreference("Library titles per request", value: $model.apiOptions.pageSize, range: 10...1_000,
                                  help: "Set the maximum number of library titles requested from Audible at a time.")
                 Text("DownAudible requests more batches automatically until it has loaded all titles that match your library settings.")
@@ -407,6 +414,20 @@ private struct JobPreferencesView: View {
                 DownloadBandwidthPicker(bytesPerSecond: $model.apiOptions.bytesPerSecond)
                 Text("Enter 0 seconds to turn off the request timeout.")
                     .foregroundStyle(.secondary)
+            }
+
+            Section("Download pacing") {
+                Picker("Daily download limit", selection: $model.downloadPacing.scope) {
+                    ForEach(DownloadPacing.Scope.allCases) { scope in Text(scope.label).tag(scope) }
+                }
+                .appHelp("Limit successful audio downloads over a rolling 24 hours.")
+                if model.downloadPacing.scope != .off {
+                    NumberPreference("Download limit", value: $model.downloadPacing.limit, range: 1...100_000,
+                                     help: "Set how many books or how much audio data to download in 24 hours.")
+                    Picker("Unit", selection: $model.downloadPacing.unit) {
+                        ForEach(DownloadPacing.Unit.allCases) { unit in Text(unit.label).tag(unit) }
+                    }
+                }
             }
 
             Section("Batch behavior") {

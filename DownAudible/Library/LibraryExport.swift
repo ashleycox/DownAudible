@@ -5,6 +5,7 @@ enum LibraryExportFormat: String, CaseIterable, Identifiable, Sendable {
     case json
     case csv
     case tsv
+    case xlsx
 
     var id: String { rawValue }
 
@@ -13,6 +14,7 @@ enum LibraryExportFormat: String, CaseIterable, Identifiable, Sendable {
         case .json: .json
         case .csv: .commaSeparatedText
         case .tsv: .tabSeparatedText
+        case .xlsx: UTType(filenameExtension: "xlsx") ?? .spreadsheet
         }
     }
 
@@ -23,7 +25,7 @@ enum LibraryExportFormat: String, CaseIterable, Identifiable, Sendable {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
             contents = try encoder.encode(books)
-        case .csv, .tsv:
+        case .csv, .tsv, .xlsx:
             let sharedColumns = [
                 "ASIN", "Title", "Subtitle", "Authors", "Narrators", "Series", "Series Number",
                 "Publisher", "Language", "Genres", "Release Date", "Date Added",
@@ -46,14 +48,29 @@ enum LibraryExportFormat: String, CaseIterable, Identifiable, Sendable {
                     book.purchaseDate ?? "", String(book.hasPDF), String(book.isDownloadable)
                 ]
             }
-            let separator = self == .csv ? "," : "\t"
-            let text = ([header] + rows).map { row in
-                row.map { Self.field($0, separator: separator) }.joined(separator: separator)
-            }.joined(separator: "\r\n")
-            contents = Data((text + "\r\n").utf8)
+            if self == .xlsx {
+                contents = try SpreadsheetExport.data(headers: header, rows: rows, title: wishlist ? "Wish List" : "Library")
+            } else {
+                contents = delimitedData(headers: header, rows: rows)
+            }
         }
         try Task.checkCancellation()
         try contents.write(to: path, options: .atomic)
+    }
+
+    func delimitedData(headers: [String], rows: [[String]]) -> Data {
+        let separator = self == .csv ? "," : "\t"
+        let text = ([headers] + rows).map { row in
+            row.map { Self.field($0, separator: separator) }.joined(separator: separator)
+        }.joined(separator: "\r\n")
+        return Data((text + "\r\n").utf8)
+    }
+
+    static func spreadsheetText(_ value: String) -> String {
+        let first = value.trimmingCharacters(in: .whitespacesAndNewlines).first
+        if value.hasPrefix("\t") || value.hasPrefix("\n") || value.hasPrefix("\r") ||
+            first.map({ "=+-@".contains($0) }) == true { return "'" + value }
+        return value
     }
 
     private static func field(_ value: String, separator: String) -> String {

@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-struct AudibleCLIImportView: View {
+struct AudibleAccountImportView: View {
     @Environment(\.dismiss) private var dismiss
     let model: WorkspaceModel
 
@@ -12,6 +12,11 @@ struct AudibleCLIImportView: View {
     @State private var authFile: URL?
     @State private var inspectedAuthFile: URL?
     @State private var authFileRequiresPassword = false
+    @State private var openAudibleFile: URL?
+    @State private var openAudibleRead = UUID()
+    @State private var inspectedOpenAudibleFile: URL?
+    @State private var openAudibleProfiles: [OpenAudibleProfile] = []
+    @State private var openAudibleCheckpoint: String?
     @State private var name = ""
     @State private var password = ""
     @State private var marketplace: AudibleMarketplace?
@@ -20,12 +25,16 @@ struct AudibleCLIImportView: View {
     @State private var problem: String?
 
     #if HELP_SCREENSHOTS
-    init(model: WorkspaceModel, demoAuthFile: URL? = nil) {
+    init(model: WorkspaceModel, demoAuthFile: URL? = nil, demoOpenAudibleFile: URL? = nil) {
         self.model = model
         if let demoAuthFile {
             _source = State(initialValue: .authFile)
             _authFile = State(initialValue: demoAuthFile)
             _password = State(initialValue: "password12345")
+        }
+        if let demoOpenAudibleFile {
+            _source = State(initialValue: .openAudible)
+            _openAudibleFile = State(initialValue: demoOpenAudibleFile)
         }
     }
     #endif
@@ -33,13 +42,14 @@ struct AudibleCLIImportView: View {
     private enum Source: String, Identifiable, CaseIterable {
         case profile = "CLI profile"
         case authFile = "Auth file"
+        case openAudible = "OpenAudible"
 
         var id: Self { self }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Import from Audible CLI")
+            Text("Import Account")
                 .font(.title2.bold())
                 .accessibilityAddTraits(.isHeader)
             Picker("Import source", selection: $source) {
@@ -48,13 +58,13 @@ struct AudibleCLIImportView: View {
             .pickerStyle(.segmented)
             .disabled(isImporting)
             .onChange(of: source) { resetFields() }
-            .appHelp("Choose a profile from an Audible CLI configuration, or choose an auth file directly.")
+            .appHelp("Choose an Audible CLI profile, a saved auth file, or an OpenAudible credentials file.")
 
             Group {
-                if source == .profile {
-                    profileFields
-                } else {
-                    authFileFields
+                switch source {
+                case .profile: profileFields
+                case .authFile: authFileFields
+                case .openAudible: openAudibleFields
                 }
 
                 if importFile != nil {
@@ -72,14 +82,18 @@ struct AudibleCLIImportView: View {
                                 .appHelp("Enter the password used to encrypt the selected auth file.")
                         }
                     }
-                    Picker("Marketplace", selection: $marketplace) {
-                        Text(selectedProfile?.marketplace?.displayName ?? "Read from Auth File")
-                            .tag(nil as AudibleMarketplace?)
-                        ForEach(AudibleMarketplace.allCases) { market in
-                            Text(market.displayName).tag(Optional(market))
+                    if let openAudible = selectedOpenAudibleProfile, source == .openAudible {
+                        LabeledContent("Marketplace", value: openAudible.marketplace.displayName)
+                    } else {
+                        Picker("Marketplace", selection: $marketplace) {
+                            Text(selectedProfile?.marketplace?.displayName ?? "Read from Auth File")
+                                .tag(nil as AudibleMarketplace?)
+                            ForEach(AudibleMarketplace.allCases) { market in
+                                Text(market.displayName).tag(Optional(market))
+                            }
                         }
+                        .appHelp("Use the marketplace detected in the file, or choose the Audible store for this account.")
                     }
-                    .appHelp("Use the marketplace detected in the file, or choose the Audible store for this account.")
                 }
             }
             .disabled(isImporting)
@@ -88,7 +102,9 @@ struct AudibleCLIImportView: View {
                 Label(problem, systemImage: "exclamationmark.circle")
                     .foregroundStyle(.secondary)
             } else {
-                Text("DownAudible saves imported accounts in Keychain.")
+                Text(source == .openAudible
+                     ? "DownAudible verifies the saved sign-in with Audible and stores it in Keychain."
+                     : "DownAudible saves imported accounts in Keychain.")
                     .foregroundStyle(.secondary)
             }
 
@@ -96,8 +112,7 @@ struct AudibleCLIImportView: View {
                 if isReading || isImporting {
                     ProgressView()
                         .controlSize(.small)
-                        .accessibilityLabel(isImporting ? "Importing account" : "Reading Audible CLI files")
-                        .appHelp("DownAudible is reading the Audible CLI account.")
+                        .accessibilityLabel(isImporting ? "Importing account" : "Reading account file")
                 }
                 Spacer()
                 Button("Cancel") { dismiss() }
@@ -148,6 +163,30 @@ struct AudibleCLIImportView: View {
         .task(id: authFile) { await readAuthFile() }
     }
 
+    private var openAudibleFields: some View {
+        Group {
+            filePicker("Credentials file", url: openAudibleFile, hint: "Choose credentials.json from OpenAudible.") {
+                inspectedOpenAudibleFile = nil
+                openAudibleFile = $0
+                openAudibleRead = UUID()
+            }
+            if !openAudibleProfiles.isEmpty {
+                Picker("Profile", selection: $openAudibleCheckpoint) {
+                    ForEach(openAudibleProfiles) { profile in
+                        Text("\(profile.name) (\(profile.marketplace.displayName))")
+                            .tag(Optional(profile.checkpoint))
+                    }
+                }
+                .onChange(of: openAudibleCheckpoint) {
+                    name = selectedOpenAudibleProfile?.name ?? ""
+                    problem = nil
+                }
+                .appHelp("Choose the OpenAudible profile you want to import.")
+            }
+        }
+        .task(id: openAudibleRead) { await readOpenAudibleFile() }
+    }
+
     private func filePicker(_ title: String, url: URL?, hint: String, select: @escaping (URL) -> Void) -> some View {
         LabeledContent(title) {
             HStack(spacing: 8) {
@@ -167,7 +206,7 @@ struct AudibleCLIImportView: View {
                     select(selected)
                 }
                 .keyboardShortcut("o", modifiers: [.control, .shift])
-                .accessibilityLabel("Choose \(title.lowercased()) file")
+                .accessibilityLabel("Choose \(title.lowercased())")
                 .appHelp(hint)
             }
         }
@@ -177,12 +216,24 @@ struct AudibleCLIImportView: View {
         profiles.first { $0.name == selectedProfileName }
     }
 
+    private var selectedOpenAudibleProfile: OpenAudibleProfile? {
+        openAudibleProfiles.first { $0.checkpoint == openAudibleCheckpoint }
+    }
+
     private var importFile: URL? {
-        source == .profile ? selectedProfile?.authFile : inspectedAuthFile
+        switch source {
+        case .profile: selectedProfile?.authFile
+        case .authFile: inspectedAuthFile
+        case .openAudible: selectedOpenAudibleProfile == nil ? nil : inspectedOpenAudibleFile
+        }
     }
 
     private var requiresPassword: Bool {
-        source == .profile ? selectedProfile?.requiresPassword == true : authFileRequiresPassword
+        switch source {
+        case .profile: selectedProfile?.requiresPassword == true
+        case .authFile: authFileRequiresPassword
+        case .openAudible: false
+        }
     }
 
     private func resetFields() {
@@ -242,17 +293,44 @@ struct AudibleCLIImportView: View {
         }
     }
 
+    private func readOpenAudibleFile() async {
+        inspectedOpenAudibleFile = nil
+        openAudibleProfiles = []
+        openAudibleCheckpoint = nil
+        isReading = false
+        guard let requested = openAudibleFile else { return }
+        isReading = true
+        defer { if openAudibleFile == requested && source == .openAudible { isReading = false } }
+        do {
+            let profiles = try await model.openAudibleProfiles(requested)
+            try Task.checkCancellation()
+            guard openAudibleFile == requested && source == .openAudible else { return }
+            openAudibleProfiles = profiles
+            inspectedOpenAudibleFile = requested
+            let selected = profiles.first(where: \.isDefault) ?? profiles.first
+            openAudibleCheckpoint = selected?.checkpoint
+            name = selected?.name ?? ""
+            problem = nil
+        } catch is CancellationError {
+            return
+        } catch {
+            guard openAudibleFile == requested && source == .openAudible else { return }
+            problem = error.localizedDescription
+        }
+    }
+
     private func importAccount() {
         guard let file = importFile else { return }
         let region = marketplace ?? (source == .profile ? selectedProfile?.marketplace : nil)
         let secret = requiresPassword ? password : nil
         let accountName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let openAudible = source == .openAudible ? selectedOpenAudibleProfile : nil
         isImporting = true
         problem = nil
         Task {
             defer { isImporting = false }
             do {
-                try await model.importAccount(from: file, name: accountName, password: secret, marketplace: region)
+                try await model.importAccount(from: file, name: accountName, password: secret, marketplace: region, openAudible: openAudible)
                 password = ""
                 dismiss()
             } catch {

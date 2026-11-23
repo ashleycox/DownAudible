@@ -58,6 +58,7 @@ struct PreparedBookEdit: Sendable {
     let sources: [BookEditSource]
     let audibleChapters: [MediaChapter]
     let layout: BookEditingLayout
+    var chapterRepair: ChapterRepairSelection? = nil
 }
 
 struct BookEditWork: Codable, Sendable {
@@ -78,13 +79,15 @@ struct TransferBatch: Codable, Sendable {
     let preferences: TransferPreferences
     let jobLimit: Int
     var repairsArchive: Bool? = nil
+    var forcesRemoteAudio: Bool? = nil
     var startedAt: Date? = nil
 
     // An activation code entered in Convert Files is only held for this session.
     var activation: String? = nil
 
     enum CodingKeys: CodingKey {
-        case work, account, apiOptions, layout, options, conversion, appleBooks, preferences, jobLimit, repairsArchive, startedAt
+        case work, account, apiOptions, layout, options, conversion, appleBooks, preferences, jobLimit
+        case repairsArchive, forcesRemoteAudio, startedAt
     }
 }
 

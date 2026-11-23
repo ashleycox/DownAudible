@@ -17,7 +17,7 @@ enum FixtureMenu {
 
 extension HelpCapture {
     func captureMenus() throws {
-        try capture("library-actions", title: "Library", size: (1080, 405), menu: .toolbar("Library Actions")) {
+        try capture("library-actions", title: "Library", size: (1080, 495), menu: .toolbar("Library Actions")) {
             workspace(.library)
         }
         try capture("download-menu", title: "Library", size: (1080, 405), menu: .toolbar("Download")) {
@@ -36,6 +36,9 @@ extension HelpCapture {
             workspace(.library)
         }
         try capture("library-book-menu", title: "Library", size: (1080, 405), menu: .row("Demo Book 3")) {
+            workspace(.library)
+        }
+        try capture("library-saved-book-menu", title: "Library", size: (1080, 405), menu: .row("Demo Book 1")) {
             workspace(.library)
         }
         try capture("transfer-output-menu", title: "Downloads", size: (870, 396), menu: .row("Demo Book 1")) {

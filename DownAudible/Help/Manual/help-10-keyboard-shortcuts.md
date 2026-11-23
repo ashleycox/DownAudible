@@ -148,7 +148,7 @@ The **Audiobooks** menu groups download commands under **Download** and library 
 | Add Account… in Settings or setup | Control–Shift–A |
 | Sign In… / Switch to This Account in Settings or setup | Control–Shift–S |
 | Sign Out | Control–Shift–Q |
-| Import from Audible CLI… | Control–Shift–I |
+| Import Account… | Control–Shift–I |
 | Choose a configuration or auth file in the import sheet | Control–Shift–O |
 | Import in the import sheet | Return |
 | Continue or Sign In in the sign-in sheet | Return |
@@ -161,7 +161,7 @@ The **Audiobooks** menu groups download commands under **Download** and library 
 
 ## Settings and setup
 
-![Help menu with DownAudible Help, Keyboard Shortcuts, Settings Reference, and Set Up DownAudible.](images/help-menu.png)
+![Help menu with DownAudible Help, Keyboard Shortcuts, Settings Reference, Widevine Stereo, and Audiobookshelf.](images/help-menu.png)
 
 | Command | Shortcut |
 | --- | --- |
@@ -241,6 +241,6 @@ On most Mac keyboards, the key labelled Delete works as Backspace. Press Fn–De
 
 ## Support DownAudible
 
-If this app has helped you, a donation is one way to support my work. There’s no pressure or hard sell. DownAudible is and always will be free.
+If you like DownAudible, a donation is one way to support my work. There’s no pressure or hard sell. DownAudible is and always will be free.
 
 [Make a donation](https://www.paypal.com/donate/?hosted_button_id=WMLX4PLED9PRE)

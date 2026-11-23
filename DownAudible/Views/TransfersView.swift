@@ -273,6 +273,11 @@ private struct TransferSelectionActions: View {
                 .appHelp("Review restarting these selected downloads from the beginning.")
         }
         if inMenuBar || !files.isEmpty {
+            let cueFiles = files.filter(CueSheet.supports)
+            if items.count == 1, cueFiles.count == 1, let audio = cueFiles.first {
+                Button("Export CUE Sheet…") { Task { await model.exportCue(for: audio) } }
+                    .appHelp("Save a chapter sheet beside the selected audio file.")
+            }
             Button("Show Output in Finder", systemImage: "folder") { NSWorkspace.shared.activateFileViewerSelecting(files) }
                 .keyboardShortcut(shortcut("f"))
                 .disabled(files.isEmpty)
@@ -330,7 +335,13 @@ private struct TransferRow: View {
                     .font(.headline)
                 switch transfer.status {
                 case .waiting:
-                    status("Waiting")
+                    if let retry = transfer.audibleRetry {
+                        status("\(retry.reason) · Retries after \(retry.until.formatted(date: .abbreviated, time: .shortened))")
+                    } else if let retry = transfer.paceResumeAt {
+                        status("Waiting for download limit · Checks again \(retry.formatted(date: .abbreviated, time: .shortened))")
+                    } else {
+                        status("Waiting")
+                    }
                 case .active(let name, let progress):
                     status(name)
                     if showProgress, let progress, progress.isFinite {

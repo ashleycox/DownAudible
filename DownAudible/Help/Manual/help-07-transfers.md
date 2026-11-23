@@ -10,7 +10,7 @@ Open **Downloads** to follow downloads and conversions. Each row shows whether t
 
 ![Download Actions menu showing Restart Incomplete Downloads, Clear Completed, and Remove from List.](images/transfer-actions.png)
 
-![Downloads showing demo transfers in different states and batch controls.](images/transfers.png)
+![Downloads batch with two books done, three unfinished, and the Retry Incomplete button.](images/transfers.png)
 
 Control-click a row to see its available actions and shortcuts. From the menu, you can cancel, retry, or restart that transfer, show its partial files, copy its error, or open its saved audio with **Add to Apple Books**.
 
@@ -54,7 +54,23 @@ Open **Settings > Jobs** to set simultaneous downloads and conversions. Lower th
 
 **Continue after a job fails** lets other books in the batch run. If you turn it off, DownAudible stops starting new items after a failure. **Show detailed transfer progress** controls the progress bars and detail in **Downloads**.
 
-![Jobs settings showing simultaneous downloads and conversions, request timeout, and bandwidth per download.](images/jobs-limits.png)
+![Jobs settings showing simultaneous downloads and conversions, request timeout, and bandwidth per download.](images/settings-jobs.png)
+
+**Daily download limit** is off by default. Choose **All titles** or **Audible Plus only**, then set a **Download limit** in books, MB or GB over a rolling 24 hours. Data limits count the audio bytes fetched by successful requests. The last title can take the total over the limit because Audible may only supply its size during the download.
+
+When a download reaches the limit, its row shows when it will check again. Waiting downloads resume automatically while DownAudible is open. To continue a saved batch after quitting, choose **Retry Incomplete**. Using an existing audio file and saving companion files do not use the limit.
+
+![Daily download limit set to 25 books over a rolling 24 hours.](images/settings-jobs-pacing.png)
+
+## Retry after an Audible refusal
+
+When Audible reports a request limit, license throttle, or temporary server error, **Downloads** shows the reason and the earliest retry time. DownAudible makes one automatic retry while it remains open. Authorization and download-rights refusals need attention before you retry. Use **Retry Incomplete** to resume waiting jobs after reopening the app.
+
+![Downloads showing an Audible request limit and the scheduled retry time for Demo Book 2.](images/transfers-audible-retry.png)
+
+## Upload to Audiobookshelf
+
+Audiobookshelf uploads run in a separate queue. To see their status or retry failed uploads, choose **Downloads > Audiobookshelf Uploads…**. See [Audiobookshelf](help-14-audiobookshelf.md) for connecting a server and sending new or saved books.
 
 ## Set transfer sounds and notifications
 
@@ -107,6 +123,6 @@ In **Settings > Jobs**, choose **Errors only** to keep warnings and errors or **
 
 ## Support DownAudible
 
-If this app has helped you, a donation is one way to support my work. There’s no pressure or hard sell. DownAudible is and always will be free.
+If you like DownAudible, a donation is one way to support my work. There’s no pressure or hard sell. DownAudible is and always will be free.
 
 [Make a donation](https://www.paypal.com/donate/?hosted_button_id=WMLX4PLED9PRE)

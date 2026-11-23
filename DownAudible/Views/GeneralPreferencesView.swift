@@ -18,7 +18,7 @@ struct GeneralPreferencesView: View {
             }
 
             Section("Interface") {
-                Toggle("Show Help Tags", isOn: $showsHelpTags)
+                Toggle("Show Tooltips", isOn: $showsHelpTags)
                     .appHelp("Show descriptions when you point to DownAudible controls.")
             }
         }

@@ -132,7 +132,7 @@ struct MediaTools: Sendable {
         )
     }
 
-    private static func taggedIdentifier(in tags: [String: String]) -> String? {
+    static func taggedIdentifier(in tags: [String: String]) -> String? {
         let identifiers = ["asin", "audible_asin", "audibleasin"].flatMap { [$0, "com.apple.itunes:" + $0] }
         return identifiers.lazy.compactMap { tags[$0]?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .first { $0.range(of: #"^[A-Za-z0-9]{10}$"#, options: .regularExpression) != nil }?
