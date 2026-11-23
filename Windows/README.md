@@ -27,7 +27,7 @@ DownAudible can check for updates automatically if enabled, or you can choose **
 
 The Windows version uses wxPython for its desktop interface. It shares the Python Audible helper and the pinned FFmpeg and LAME sources with the Mac app. See the [build guide](BUILD.md) for instructions on building under Windows, and cross-building on an Apple silicon Mac, running tests and capturing the manual screenshots.
 
-I welcome code contributions. For guidance, see [/CONTRIBUTING.md](CONTRIBUTING.md)
+I welcome code contributions. For guidance, see [/CONTRIBUTING.md](../CONTRIBUTING.md)
 
 ## Support DownAudible
 
